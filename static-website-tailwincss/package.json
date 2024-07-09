@@ -1,0 +1,14 @@
+{
+  "name": "static-website",
+  "version": "1.0.0",
+  "description": "Codehooks web site app",
+  "main": "server.js",
+  "scripts": {
+    "deploy": "codehooks deploy && codehooks logs --follow"
+  },
+  "author": "jones@codehooks.io",
+  "license": "ISC",
+  "dependencies": {
+    "codehooks-js": "^1.2.11"
+  }
+}
