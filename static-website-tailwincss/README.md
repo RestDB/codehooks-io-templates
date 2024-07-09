@@ -9,5 +9,5 @@ npm install codehooks-js
 ## Deploy
 
 ```
-npm deploy
+npm run deploy
 ```
