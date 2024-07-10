@@ -17,7 +17,7 @@ coho init --empty
 
 ```
 coho install 'crud-api-backend'
-npm install codehooks-js
+npm install codehooks-js yup
 ```
 Verify that all the files are downloaded ok, and the run the deploy command next.
 

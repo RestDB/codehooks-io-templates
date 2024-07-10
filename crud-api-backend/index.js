@@ -1,7 +1,7 @@
 
 /*
 * Codehooks (c) template app
-* Install: npm i codehooks-js
+* Install: npm install codehooks-js yup
 * Deploy: npm run deploy
 */
 import {app} from 'codehooks-js'
