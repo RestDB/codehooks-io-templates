@@ -32,6 +32,6 @@ npm run deploy
 Use curl or Postman to verify your API endpoints.
 
 ```bash
-curl https://{YOUR_PROJECTID_HERE}/api.codehooks.io/dev/products \
+curl https://{YOUR_PROJECTID_HERE}/api.codehooks.io/dev/api/products \
 -H 'x-apikey: YOUR_API_TOKEN'
 ```
