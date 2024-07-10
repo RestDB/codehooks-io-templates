@@ -30,3 +30,7 @@ npm run deploy
 ## Test
 
 Visit https://{YOUR-DOMAIN-HERE}/index.html to verify a successful deployment.
+
+You should see something like this in your browser:
+
+![screenshot](../screenshots/webpage.png)
