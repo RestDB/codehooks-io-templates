@@ -1,6 +1,6 @@
-# Simple static web site
+# CRUD API database backend
 
-Get started with development of a simple CRUD API backend.
+Get started with development of a simple CRUD API database backend.
 This template uses https://codehooks.io/docs/database-rest-api for creating a database REST API.
 
 ## Connect to a project
