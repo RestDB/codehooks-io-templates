@@ -1,0 +1,17 @@
+{
+  "name": "react-bff",
+  "version": "1.0.0",
+  "description": "Codehooks.io boilerplate example for React",
+  "main": "./backend/index.js",
+  "dependencies": {
+    "backend": "file:./my-backend",
+    "frontend": "file:./my-react-app"    
+  },
+  "scripts": {
+    "deploy": "cd my-react-app && npm run build && cp -r dist ../my-backend && cd ../my-backend && npm run deploy",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Codehooks.io",
+  "license": "ISC"
+}
