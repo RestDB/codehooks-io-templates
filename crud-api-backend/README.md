@@ -13,7 +13,7 @@ cd mybackend
 coho init --empty
 ```
 
-## Install the template with the CLIL
+## Install the template with the CLI
 
 ```
 coho install 'crud-api-backend'
