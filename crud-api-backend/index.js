@@ -13,13 +13,14 @@ app.get('/test', (req, res) => {
 
 /**
  * Use Crudlify to create a REST API for two collection: products and customers
+ * collections are null because we are using database JSON Schema to define the schema
  * @docs https://codehooks.io/docs/crudlify
  */
-app.crudlify({products: {}, customers: {}}, {prefix: '/api'})
+app.crudlify({products: null, customers: null}, {prefix: '/api'})
 
 function onDeploy() {
   console.log('Deployed my app')
-  const db = datastore().open()
+  const db = datastore.open()
   // set the schema for the products collection
   db.setSchema('products', productJsonSchema)
   // set the schema for the customers collection
