@@ -1,6 +1,6 @@
 {
   "name": "crud-api",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Codehooks CRUD API backend",
   "main": "index.js",
   "scripts": {
@@ -9,7 +9,7 @@
   "author": "jones@codehooks.io",
   "license": "ISC",
   "dependencies": {
-    "codehooks-js": "^1.2.11",
+    "codehooks-js": "^1.2.19",
     "yup": "^1.4.0"
   }
 }

@@ -1,23 +1,35 @@
 
 /*
 * Codehooks (c) template app
-* Install: npm install codehooks-js yup
+* Install: npm install codehooks-js
 * Deploy: npm run deploy
 */
-import {app} from 'codehooks-js'
-import { object, string, number, date } from 'yup'
+import {app, datastore} from 'codehooks-js'
 
-// Define a Yup schema that allows anything
-const flexibleSchema = object().shape({}).noUnknown(false);
+// test API route
+app.get('/test', (req, res) => {
+  res.send('Hello World')
+})
 
-// database schema for a Product
-const productSchema = object({
-  name: string().required(),
-  price: number().required()
-});
+// database schema for a Product using JSON Schema
+const productJsonSchema = {
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    price: { type: "number" }
+  },
+  required: ["name", "price"],
+  additionalProperties: false
+};
 
 // Use Crudlify to create a REST API for two collection: products and users
-app.crudlify({products: productSchema, users: flexibleSchema}, {prefix: '/api'})
+app.crudlify({products: {}, users: {}}, {prefix: '/api'})
+
+function onDeploy() {
+  console.log('Deployed my app')
+  const db = datastore().open()
+  db.setSchema('products', productJsonSchema)
+}
 
 // bind to serverless runtime
-export default app.init();
+export default app.init(onDeploy);
