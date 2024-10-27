@@ -13,11 +13,11 @@ cd mybackend
 coho init --empty
 ```
 
-## Install the template
+## Install the template with the CLIL
 
 ```
 coho install 'crud-api-backend'
-npm install codehooks-js yup
+npm install codehooks-js
 ```
 Verify that all the files are downloaded ok, and the run the deploy command next.
 
