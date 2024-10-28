@@ -18,13 +18,13 @@ app.get('/test', (req, res) => {
  */
 app.crudlify({products: null, customers: null}, {prefix: '/api'})
 
-function onDeploy() {
+async function onDeploy() {
   console.log('Deployed my app')
   const db = datastore.open()
-  // set the schema for the products collection
-  db.setSchema('products', productJsonSchema)
-  // set the schema for the customers collection
-  db.setSchema('customers', customerJsonSchema)
+  //
+  await db.createCollection('products', {schema: productJsonSchema});
+  // create the customers collection with the customerJsonSchema
+  await db.createCollection('customers', {schema: customerJsonSchema});
 }
 
 // bind to serverless runtime
