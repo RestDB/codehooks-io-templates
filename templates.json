@@ -1,0 +1,24 @@
+{
+    "templates": [
+      {
+        "name": "crud-api-backend",
+        "description": "Basic CRUD example with events"
+      },
+      {
+        "name": "react-bff",
+        "description": "A complete example with a React frontend app and a Codehooks backend-for-frontend"
+      },
+      {
+        "name": "slack-memory-bot",
+        "description": "A production-ready Slack bot that stores and recalls information using pluggable memory adapters"
+      },
+      {
+        "name": "static-website-tailwindcss",
+        "description": "Get started with development of a simple html web site"
+      },
+      {
+        "name": "stripe-webhook-handler",
+        "description": "A TypeScript webhook handler for Stripe events"
+      }
+    ]
+  }
