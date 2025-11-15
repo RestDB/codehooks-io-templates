@@ -48,28 +48,24 @@ A production-ready Slack bot that stores and recalls information using pluggable
                                          └──────────────────┘
 ```
 
-## Connect to a project
+## Quick Setup
 
-Create or use an existing project folder for the code.
+### Option 1: Create a new project with this template (Recommended)
+
+```bash
+coho create my-slack-bot --template slack-memory-bot
+cd my-slack-bot
+npm install
+coho deploy
+```
+
+### Option 2: Install in an existing project
 
 ```bash
 mkdir my-slack-bot
 cd my-slack-bot
-coho init --empty
-```
-
-## Install the template with the CLI
-
-```bash
-coho install 'slack-memory-bot'
+coho install slack-memory-bot
 npm install
-```
-
-Verify that all the files are downloaded ok, then run the deploy command next.
-
-## Deploy
-
-```bash
 coho deploy
 ```
 

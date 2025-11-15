@@ -23,13 +23,22 @@ npm run dev
 ```bash
 npm i -g codehooks
 coho login
-cd my-backend
 ```
 
-### Connect to a Codehooks project
+### Setup backend with template
 
+**Option 1: Create new project with template (Recommended)**
 ```bash
-coho init --empty
+coho create my-backend --template react-bff
+cd my-backend
+npm install
+```
+
+**Option 2: Install in existing directory**
+```bash
+mkdir my-backend
+cd my-backend
+coho install react-bff
 npm install
 ```
 

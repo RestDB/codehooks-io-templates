@@ -3,28 +3,29 @@
 Get started with development of a simple CRUD API database backend.
 This template uses https://codehooks.io/docs/database-rest-api for creating a database REST API.
 
-## Connect to a project
+## Quick Setup
 
-Create or use an existing project folder for the code.
+### Option 1: Create a new project with this template (Recommended)
 
+```bash
+coho create mybackend --template crud-api-backend
+cd mybackend
+npm install
 ```
+
+### Option 2: Install in an existing directory
+
+```bash
 mkdir mybackend
 cd mybackend
-coho init --empty
+coho install crud-api-backend
+npm install
 ```
-
-## Install the template with the CLI
-
-```
-coho install 'crud-api-backend'
-npm install codehooks-js
-```
-Verify that all the files are downloaded ok, and the run the deploy command next.
 
 ## Deploy
 
-```
-npm run deploy
+```bash
+coho deploy
 ```
 
 ## Test
