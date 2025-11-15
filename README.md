@@ -24,7 +24,7 @@ coho install 'react-bff'
 Static website template with Tailwind CSS.
 
 ```bash
-coho install 'static-website-tailwincss'
+coho install 'static-website-tailwindcss'
 ```
 
 ### Stripe Webhook Handler
