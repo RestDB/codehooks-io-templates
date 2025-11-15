@@ -1,0 +1,36 @@
+{
+  "display_information": {
+    "name": "CohoMemoryBot",
+    "description": "A memory bot that remembers and recalls information for you",
+    "background_color": "#2c2d30"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "CohoMemoryBot",
+      "always_online": true
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "chat:write",
+        "im:history",
+        "im:read",
+        "im:write"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "request_url": "https://YOUR_PROJECT.api.codehooks.io/dev/slack/events",
+      "bot_events": [
+        "app_mention",
+        "message.im"
+      ]
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

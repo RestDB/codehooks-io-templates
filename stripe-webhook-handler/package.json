@@ -1,0 +1,28 @@
+{
+  "name": "stripe-webhook-handler",
+  "version": "1.0.0",
+  "description": "Stripe webhook handler for Codehooks",
+  "main": "index.ts",
+  "type": "module",
+  "scripts": {
+    "deploy": "coho deploy",
+    "compile": "coho compile"
+  },
+  "keywords": [
+    "stripe",
+    "webhook",
+    "codehooks",
+    "payments",
+    "serverless"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "codehooks-js": "^1.3.17",
+    "stripe": "^17.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}
