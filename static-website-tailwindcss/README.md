@@ -3,28 +3,29 @@
 Get started with development of a simple html web site.
 This template uses https://tailwindcss.com for basic layout and styling.
 
-## Connect to a project
+## Quick Setup
 
-Create or use an existing project folder for the code.
+### Option 1: Create a new project with this template (Recommended)
 
+```bash
+coho create myweb --template static-website-tailwindcss
+cd myweb
+npm install
 ```
+
+### Option 2: Install in an existing directory
+
+```bash
 mkdir myweb
 cd myweb
-coho init --empty
+coho install static-website-tailwindcss
+npm install
 ```
-
-## Install the template
-
-```
-coho install 'static-website-tailwincss'
-npm install codehooks-js
-```
-Verify that all the files are downloaded ok, and the run the deploy command next.
 
 ## Deploy
 
-```
-npm run deploy
+```bash
+coho deploy
 ```
 
 ## Test

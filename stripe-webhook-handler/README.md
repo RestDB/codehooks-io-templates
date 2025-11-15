@@ -9,24 +9,24 @@ A TypeScript webhook handler for Stripe events using Codehooks.io.
 - Stores events in a `stripe_events` collection
 - Includes health check endpoint
 
-## Connect to a project
+## Quick Setup
 
-Create or use an existing project folder for the code.
+### Option 1: Create a new project with this template (Recommended)
+
+```bash
+coho create my-stripe-handler --template stripe-webhook-handler
+cd my-stripe-handler
+npm install
+```
+
+### Option 2: Install in an existing directory
 
 ```bash
 mkdir my-stripe-handler
 cd my-stripe-handler
-coho init --empty
-```
-
-## Install the template with the CLI
-
-```bash
-coho install 'stripe-webhook-handler'
+coho install stripe-webhook-handler
 npm install
 ```
-
-Verify that all the files are downloaded ok, then run the deploy command next.
 
 ## Deploy
 
