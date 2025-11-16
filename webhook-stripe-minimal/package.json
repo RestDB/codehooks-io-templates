@@ -1,0 +1,14 @@
+{
+  "name": "webhook-stripe-minimal",
+  "version": "1.0.0",
+  "description": "Minimal Stripe webhook handler for Codehooks.io",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "deploy": "coho deploy"
+  },
+  "dependencies": {
+    "codehooks-js": "latest",
+    "stripe": "^17.4.0"
+  }
+}

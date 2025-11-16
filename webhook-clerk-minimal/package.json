@@ -1,0 +1,14 @@
+{
+  "name": "webhook-clerk-minimal",
+  "version": "1.0.0",
+  "description": "Minimal Clerk webhook handler for Codehooks.io",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "deploy": "coho deploy"
+  },
+  "dependencies": {
+    "codehooks-js": "latest",
+    "svix": "^1.40.0"
+  }
+}
