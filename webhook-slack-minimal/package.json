@@ -1,0 +1,13 @@
+{
+  "name": "webhook-slack-minimal",
+  "version": "1.0.0",
+  "description": "Minimal Slack webhook handler for Codehooks.io",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "deploy": "coho deploy"
+  },
+  "dependencies": {
+    "codehooks-js": "latest"
+  }
+}

@@ -37,6 +37,10 @@
         "description": "Minimal Shopify webhook handler for e-commerce events"
       },
       {
+        "name": "webhook-slack-minimal",
+        "description": "Minimal Slack webhook handler with echo bot"
+      },
+      {
         "name": "webhook-clerk-minimal",
         "description": "Minimal Clerk webhook handler for authentication events"
       },
