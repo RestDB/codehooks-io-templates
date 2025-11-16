@@ -19,6 +19,30 @@
       {
         "name": "stripe-webhook-handler",
         "description": "A TypeScript webhook handler for Stripe events"
+      },
+      {
+        "name": "webhook-github-minimal",
+        "description": "Minimal GitHub webhook handler with signature verification"
+      },
+      {
+        "name": "webhook-stripe-minimal",
+        "description": "Minimal Stripe webhook handler for payment events"
+      },
+      {
+        "name": "webhook-discord-minimal",
+        "description": "Minimal Discord interactions webhook for bot commands"
+      },
+      {
+        "name": "webhook-shopify-minimal",
+        "description": "Minimal Shopify webhook handler for e-commerce events"
+      },
+      {
+        "name": "webhook-clerk-minimal",
+        "description": "Minimal Clerk webhook handler for authentication events"
+      },
+      {
+        "name": "webhook-twilio-minimal",
+        "description": "Minimal Twilio webhook handler for SMS and voice calls"
       }
     ]
   }
