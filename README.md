@@ -112,6 +112,13 @@ Handle Clerk authentication events (user signup, login, session management) with
 coho create clerk-webhook --template webhook-clerk-minimal
 ```
 
+#### Slack Webhooks
+Handle Slack events and bot interactions with signature verification and URL verification.
+
+```bash
+coho create slack-webhook --template webhook-slack-minimal
+```
+
 #### Twilio Webhooks
 Handle Twilio SMS and voice call events with TwiML responses and signature verification.
 
