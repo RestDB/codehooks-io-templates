@@ -23,10 +23,16 @@ coho deploy
 
 ### 2. Set Environment Variables
 
-In your Codehooks.io project settings, add:
+Set your environment variables using one of these methods:
 
-```
-TWILIO_AUTH_TOKEN=your_auth_token_here
+**Option A: Via Codehooks Studio**
+1. Go to your project in Codehooks Studio
+2. Navigate to Settings → Environment Variables
+3. Add: `TWILIO_AUTH_TOKEN` with your auth token value
+
+**Option B: Via CLI**
+```bash
+coho set-env TWILIO_AUTH_TOKEN your_auth_token_here
 ```
 
 Get your Auth Token from: [Twilio Console](https://console.twilio.com/)

@@ -36,10 +36,18 @@ coho deploy
 
 ## Setup
 
-1. **Configure environment variables** in your Codehooks project:
+1. **Configure environment variables** using one of these methods:
+
+   **Option A: Via Codehooks Studio**
+   - Go to your project in Codehooks Studio
+   - Navigate to Settings → Environment Variables
+   - Add: `STRIPE_SECRET_KEY` with value `sk_test_...`
+   - Add: `STRIPE_WEBHOOK_SECRET` with value `whsec_...`
+
+   **Option B: Via CLI**
    ```bash
-   coho env set STRIPE_SECRET_KEY "sk_test_..."
-   coho env set STRIPE_WEBHOOK_SECRET "whsec_..."
+   coho set-env STRIPE_SECRET_KEY "sk_test_..."
+   coho set-env STRIPE_WEBHOOK_SECRET "whsec_..."
    ```
 
 2. **Configure Stripe webhook**:

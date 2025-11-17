@@ -30,10 +30,16 @@ coho deploy
 
 ### 3. Set Environment Variables
 
-In your Codehooks.io project settings, add:
+Set your environment variables using one of these methods:
 
-```
-SLACK_SIGNING_SECRET=your_signing_secret_here
+**Option A: Via Codehooks Studio**
+1. Go to your project in Codehooks Studio
+2. Navigate to Settings → Environment Variables
+3. Add: `SLACK_SIGNING_SECRET` with your signing secret value
+
+**Option B: Via CLI**
+```bash
+coho set-env SLACK_SIGNING_SECRET your_signing_secret_here
 ```
 
 Get your Signing Secret from: Slack App → Basic Information → App Credentials → Signing Secret

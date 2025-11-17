@@ -22,10 +22,16 @@ coho deploy
 
 ### 2. Set Environment Variables
 
-In your Codehooks.io project settings, add:
+Set your environment variables using one of these methods:
 
-```
-CLERK_WEBHOOK_SECRET=whsec_...
+**Option A: Via Codehooks Studio**
+1. Go to your project in Codehooks Studio
+2. Navigate to Settings → Environment Variables
+3. Add: `CLERK_WEBHOOK_SECRET` with value `whsec_...`
+
+**Option B: Via CLI**
+```bash
+coho set-env CLERK_WEBHOOK_SECRET whsec_...
 ```
 
 ### 3. Configure Clerk Webhook

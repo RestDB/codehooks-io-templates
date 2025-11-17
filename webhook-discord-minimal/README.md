@@ -29,10 +29,16 @@ coho deploy
 
 ### 3. Set Environment Variables
 
-In your Codehooks.io project settings, add:
+Set your environment variables using one of these methods:
 
-```
-DISCORD_PUBLIC_KEY=your_public_key_here
+**Option A: Via Codehooks Studio**
+1. Go to your project in Codehooks Studio
+2. Navigate to Settings → Environment Variables
+3. Add: `DISCORD_PUBLIC_KEY` with your public key value
+
+**Option B: Via CLI**
+```bash
+coho set-env DISCORD_PUBLIC_KEY your_public_key_here
 ```
 
 ### 4. Configure Discord Webhook

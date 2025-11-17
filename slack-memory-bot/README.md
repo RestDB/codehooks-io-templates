@@ -75,14 +75,26 @@ Your API is now live at `https://YOUR_PROJECT.api.codehooks.io/dev/`
 
 ### 1. Configure Slack Credentials
 
+Set your environment variables using one of these methods:
+
+**Option A: Via Codehooks Studio**
+- Go to your project in Codehooks Studio
+- Navigate to Settings → Environment Variables
+- Add the following variables:
+  - `MEMORY_ADAPTER` with value `simple`
+  - `SLACK_BOT_TOKEN` with value `xoxb-...`
+  - `SLACK_SIGNING_SECRET` with your signing secret
+  - `SLACK_BOT_USER_ID` with value `U...`
+
+**Option B: Via CLI**
 ```bash
 # Set up Simple adapter (default - no external dependencies)
-coho env set MEMORY_ADAPTER "simple"
+coho set-env MEMORY_ADAPTER "simple"
 
 # Add your Slack credentials (get from api.slack.com/apps)
-coho env set SLACK_BOT_TOKEN "xoxb-..."
-coho env set SLACK_SIGNING_SECRET "..."
-coho env set SLACK_BOT_USER_ID "U..."
+coho set-env SLACK_BOT_TOKEN "xoxb-..."
+coho set-env SLACK_SIGNING_SECRET "..."
+coho set-env SLACK_BOT_USER_ID "U..."
 ```
 
 ### 2. Create & Configure Slack App
@@ -166,27 +178,35 @@ https://YOUR_PROJECT.api.codehooks.io/dev/
 
 ### 5. Configure Environment Variables
 
-Set these in your Codehooks project settings or via CLI:
+Set your environment variables using one of these methods:
+
+**Option A: Via Codehooks Studio**
+- Go to your project in Codehooks Studio
+- Navigate to Settings → Environment Variables
+- Add the required variables listed below
+
+**Option B: Via CLI**
+- Use the commands listed below
 
 #### Required for All Adapters
 
 ```bash
-coho env set SLACK_BOT_TOKEN "xoxb-your-bot-token"
-coho env set SLACK_SIGNING_SECRET "your-signing-secret"
-coho env set SLACK_BOT_USER_ID "U123456789"  # Your bot's user ID
+coho set-env SLACK_BOT_TOKEN "xoxb-your-bot-token"
+coho set-env SLACK_SIGNING_SECRET "your-signing-secret"
+coho set-env SLACK_BOT_USER_ID "U123456789"  # Your bot's user ID
 ```
 
 #### For Simple Adapter (Default)
 
 ```bash
-coho env set MEMORY_ADAPTER "simple"
+coho set-env MEMORY_ADAPTER "simple"
 ```
 
 #### For OpenAI Vector Adapter
 
 ```bash
-coho env set MEMORY_ADAPTER "openai"
-coho env set OPENAI_API_KEY "sk-..."
+coho set-env MEMORY_ADAPTER "openai"
+coho set-env OPENAI_API_KEY "sk-..."
 ```
 
 **Finding Your Values:**
@@ -253,7 +273,7 @@ clear all
 - **Setup**: No configuration needed (default)
 
 ```bash
-coho env set MEMORY_ADAPTER "simple"
+coho set-env MEMORY_ADAPTER "simple"
 ```
 
 ### OpenAIVectorAdapter
@@ -264,8 +284,8 @@ coho env set MEMORY_ADAPTER "simple"
 - **Setup**: Requires OpenAI API key
 
 ```bash
-coho env set MEMORY_ADAPTER "openai"
-coho env set OPENAI_API_KEY "sk-..."
+coho set-env MEMORY_ADAPTER "openai"
+coho set-env OPENAI_API_KEY "sk-..."
 ```
 
 **Semantic Search Example:**

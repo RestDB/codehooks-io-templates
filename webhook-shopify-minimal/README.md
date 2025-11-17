@@ -22,10 +22,16 @@ coho deploy
 
 ### 2. Set Environment Variables
 
-In your Codehooks.io project settings, add:
+Set your environment variables using one of these methods:
 
-```
-SHOPIFY_WEBHOOK_SECRET=your_webhook_secret_here
+**Option A: Via Codehooks Studio**
+1. Go to your project in Codehooks Studio
+2. Navigate to Settings → Environment Variables
+3. Add: `SHOPIFY_WEBHOOK_SECRET` with your webhook secret value
+
+**Option B: Via CLI**
+```bash
+coho set-env SHOPIFY_WEBHOOK_SECRET your_webhook_secret_here
 ```
 
 ### 3. Configure Shopify Webhook
