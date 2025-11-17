@@ -14,8 +14,10 @@ A minimal GitHub webhook handler for Codehooks.io that receives and processes Gi
 ### 1. Deploy to Codehooks.io
 
 ```bash
+coho create myapp --template webhook-github-minimal
+cd myapp
 npm install
-npm run deploy
+coho deploy
 ```
 
 ### 2. Set Environment Variables

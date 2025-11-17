@@ -22,8 +22,10 @@ A minimal Slack webhook handler for Codehooks.io that receives and processes Sla
 ### 2. Deploy to Codehooks.io
 
 ```bash
+coho create myapp --template webhook-slack-minimal
+cd myapp
 npm install
-npm run deploy
+coho deploy
 ```
 
 ### 3. Set Environment Variables

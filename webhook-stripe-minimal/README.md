@@ -14,8 +14,10 @@ A minimal Stripe webhook handler for Codehooks.io that receives and processes St
 ### 1. Deploy to Codehooks.io
 
 ```bash
+coho create myapp --template webhook-stripe-minimal
+cd myapp
 npm install
-npm run deploy
+coho deploy
 ```
 
 ### 2. Set Environment Variables

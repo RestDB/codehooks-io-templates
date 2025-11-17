@@ -21,8 +21,10 @@ A minimal Discord interactions webhook handler for Codehooks.io that receives an
 ### 2. Deploy to Codehooks.io
 
 ```bash
+coho create myapp --template webhook-discord-minimal
+cd myapp
 npm install
-npm run deploy
+coho deploy
 ```
 
 ### 3. Set Environment Variables

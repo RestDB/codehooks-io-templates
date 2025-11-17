@@ -14,8 +14,10 @@ A minimal Clerk webhook handler for Codehooks.io that receives and processes aut
 ### 1. Deploy to Codehooks.io
 
 ```bash
+coho create myapp --template webhook-clerk-minimal
+cd myapp
 npm install
-npm run deploy
+coho deploy
 ```
 
 ### 2. Set Environment Variables

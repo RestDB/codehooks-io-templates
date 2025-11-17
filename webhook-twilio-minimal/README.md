@@ -15,8 +15,10 @@ A minimal Twilio webhook handler for Codehooks.io that receives and processes SM
 ### 1. Deploy to Codehooks.io
 
 ```bash
+coho create myapp --template webhook-twilio-minimal
+cd myapp
 npm install
-npm run deploy
+coho deploy
 ```
 
 ### 2. Set Environment Variables
