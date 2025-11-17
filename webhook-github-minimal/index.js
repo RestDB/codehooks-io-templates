@@ -3,6 +3,16 @@ import crypto from 'crypto';
 
 const WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || '';
 
+// Allow webhook endpoint without API key (GitHub uses HMAC signature auth)
+app.auth('/webhook', (req, res, next) => {
+  next();
+});
+
+// Allow health check without API key
+app.auth('/', (req, res, next) => {
+  next();
+});
+
 // Verify GitHub webhook signature
 function verifyGitHubSignature(payload, signature) {
   if (!WEBHOOK_SECRET) {

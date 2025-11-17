@@ -3,6 +3,16 @@ import crypto from 'crypto';
 
 const SHOPIFY_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET || '';
 
+// Allow webhook endpoint without API key (Shopify uses HMAC signature auth)
+app.auth('/webhook', (req, res, next) => {
+  next();
+});
+
+// Allow health check without API key
+app.auth('/', (req, res, next) => {
+  next();
+});
+
 // Verify Shopify webhook signature
 function verifyShopifySignature(payload, hmacHeader) {
   if (!SHOPIFY_SECRET) {

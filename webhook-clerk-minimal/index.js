@@ -3,6 +3,16 @@ import { Webhook } from 'svix';
 
 const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET || '';
 
+// Allow webhook endpoint without API key (Clerk uses Svix signature auth)
+app.auth('/webhook', (req, res, next) => {
+  next();
+});
+
+// Allow health check without API key
+app.auth('/', (req, res, next) => {
+  next();
+});
+
 // Clerk webhook endpoint
 app.post('/webhook', async (req, res) => {
   if (!WEBHOOK_SECRET) {

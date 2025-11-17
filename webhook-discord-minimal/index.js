@@ -3,6 +3,16 @@ import crypto from 'crypto';
 
 const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY || '';
 
+// Allow interactions endpoint without API key (Discord uses Ed25519 signature auth)
+app.auth('/interactions', (req, res, next) => {
+  next();
+});
+
+// Allow health check without API key
+app.auth('/', (req, res, next) => {
+  next();
+});
+
 // Verify Discord interaction signature
 function verifyDiscordSignature(body, signature, timestamp) {
   if (!PUBLIC_KEY) {

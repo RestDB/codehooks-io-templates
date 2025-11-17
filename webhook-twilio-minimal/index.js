@@ -3,6 +3,16 @@ import crypto from 'crypto';
 
 const AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
 
+// Allow webhook endpoint without API key (Twilio uses HMAC signature auth)
+app.auth('/webhook', (req, res, next) => {
+  next();
+});
+
+// Allow health check without API key
+app.auth('/', (req, res, next) => {
+  next();
+});
+
 // Verify Twilio request signature
 function verifyTwilioSignature(url, params, signature) {
   if (!AUTH_TOKEN) {
