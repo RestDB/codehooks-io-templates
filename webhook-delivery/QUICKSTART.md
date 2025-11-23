@@ -5,13 +5,13 @@ Get your outgoing webhook system up and running in 5 minutes.
 ## Step 1: Deploy (30 seconds)
 
 ```bash
-coho create my-webhook-system --template webhook-delivery
-cd my-webhook-system
+coho create mywebhooks --template webhook-delivery
+cd mywebhooks
 npm install
 coho deploy
 ```
 
-Note your deployment URL (e.g., `https://my-webhook-system-abc123.api.codehooks.io/dev`)
+Note your deployment URL (e.g., `https://mywebhooks-abc123.api.codehooks.io/dev`)
 
 ## Step 2: Test with webhook.site (2 minutes)
 

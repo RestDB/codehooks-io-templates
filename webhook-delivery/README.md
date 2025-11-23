@@ -41,8 +41,8 @@ This is the opposite of incoming webhooks, where external services notify your a
 ### 1. Deploy to Codehooks.io
 
 ```bash
-coho create my-webhook-system --template webhook-delivery
-cd my-webhook-system
+coho create mywebhooks --template webhook-delivery
+cd mywebhooks
 npm install
 coho deploy
 ```

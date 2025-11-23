@@ -79,8 +79,9 @@ Several services exist for webhook delivery:
 Instead of weeks of development or expensive SaaS subscriptions:
 
 ```bash
-coho create my-webhook-system --template webhook-delivery
-cd my-webhook-system
+coho create mywebhooks --template webhook-delivery
+cd mywebhooks
+npm install
 coho deploy
 ```
 
@@ -97,8 +98,9 @@ coho deploy
 ### 1. Deploy (2 minutes)
 
 ```bash
-coho create my-webhooks --template webhook-delivery
-cd my-webhooks
+coho create mywebhooks --template webhook-delivery
+cd mywebhooks
+npm install
 coho deploy
 ```
 
@@ -400,8 +402,8 @@ Absolutely! The code-first approach makes webhook customization easy. Common web
 Deploy your webhook system in minutes:
 
 ```bash
-coho create my-webhooks --template webhook-delivery
-cd my-webhooks
+coho create mywebhooks --template webhook-delivery
+cd mywebhooks
 coho deploy
 ```
 
