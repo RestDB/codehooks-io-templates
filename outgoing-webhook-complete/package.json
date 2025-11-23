@@ -1,0 +1,14 @@
+{
+  "name": "outgoing-webhook-complete",
+  "version": "1.0.0",
+  "description": "Complete outgoing webhook system with verification and event management for Codehooks.io",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "deploy": "coho deploy"
+  },
+  "dependencies": {
+    "codehooks-js": "latest",
+    "codehooks-cron": "latest"
+  }
+}
