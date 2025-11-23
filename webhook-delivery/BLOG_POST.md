@@ -64,7 +64,7 @@ Several services exist for webhook delivery:
    - "Add webhook filtering by customer tier"
    - The AI understands your code and makes changes directly
 
-3. **Cost-Effective** - Codehooks.io free tier includes 100,000 requests/month. Scale to millions of webhooks for pennies, not hundreds of dollars.
+3. **Cost-Effective** - Free tier for development. Production plans start at $19/month with generous API limits and predictable costs. No surprise bills as you scale.
 
 4. **No Vendor Lock-In** - The code is yours. Move it anywhere if needed. Export your webhook data anytime.
 
