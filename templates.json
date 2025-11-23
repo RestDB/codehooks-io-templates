@@ -21,6 +21,10 @@
         "description": "A TypeScript webhook handler for Stripe events"
       },
       {
+        "name": "webhook-delivery",
+        "description": "Production-ready webhook delivery system with queue-based processing, automatic retries, and HMAC signing"
+      },
+      {
         "name": "webhook-github-minimal",
         "description": "Minimal GitHub webhook handler with signature verification"
       },

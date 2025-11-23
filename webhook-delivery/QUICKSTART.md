@@ -5,7 +5,7 @@ Get your outgoing webhook system up and running in 5 minutes.
 ## Step 1: Deploy (30 seconds)
 
 ```bash
-coho create my-webhook-system --template outgoing-webhook-complete
+coho create my-webhook-system --template webhook-delivery
 cd my-webhook-system
 npm install
 coho deploy
@@ -24,7 +24,9 @@ Note your deployment URL (e.g., `https://my-webhook-system-abc123.api.codehooks.
 ```bash
 curl -X POST https://YOUR-APP.api.codehooks.io/dev/webhooks \
   -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY" \
   -d '{
+    "clientId": "test-client-1",
     "url": "https://webhook.site/YOUR-UNIQUE-ID",
     "events": ["*"]
   }'
@@ -37,6 +39,7 @@ curl -X POST https://YOUR-APP.api.codehooks.io/dev/webhooks \
 ```bash
 curl -X POST https://YOUR-APP.api.codehooks.io/dev/events/trigger/user.created \
   -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY" \
   -d '{
     "userId": "user_123",
     "email": "test@example.com",
@@ -70,7 +73,9 @@ Copy the ngrok URL (e.g., `https://abc123.ngrok.io`)
 # Terminal 3
 curl -X POST https://YOUR-APP.api.codehooks.io/dev/webhooks \
   -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY" \
   -d '{
+    "clientId": "test-client-2",
     "url": "https://YOUR-NGROK-ID.ngrok.io/webhook",
     "events": ["*"]
   }'
@@ -91,6 +96,7 @@ WEBHOOK_SECRET=whsec_YOUR_SECRET node test-receiver.js
 # Terminal 3
 curl -X POST https://YOUR-APP.api.codehooks.io/dev/events/trigger/user.created \
   -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY" \
   -d '{"userId": "user_123", "email": "test@example.com"}'
 ```
 
@@ -110,7 +116,10 @@ Add event triggers to your application:
 // In your app when something happens
 await fetch('https://YOUR-APP.api.codehooks.io/dev/events/trigger/order.created', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    'x-apikey': process.env.CODEHOOKS_API_KEY
+  },
   body: JSON.stringify({
     orderId: order.id,
     customerId: customer.id,
@@ -136,25 +145,31 @@ Use the examples in [examples/](examples/) to implement a webhook receiver in yo
 
 ```bash
 # List all webhooks
-curl https://YOUR-APP.api.codehooks.io/dev/webhooks
+curl https://YOUR-APP.api.codehooks.io/dev/webhooks \
+  -H "x-apikey: YOUR_API_KEY"
 
 # Get webhook details
-curl https://YOUR-APP.api.codehooks.io/dev/webhooks/WEBHOOK_ID
+curl https://YOUR-APP.api.codehooks.io/dev/webhooks/WEBHOOK_ID \
+  -H "x-apikey: YOUR_API_KEY"
 
 # Check webhook statistics
-curl https://YOUR-APP.api.codehooks.io/dev/webhooks/WEBHOOK_ID/stats
+curl https://YOUR-APP.api.codehooks.io/dev/webhooks/WEBHOOK_ID/stats \
+  -H "x-apikey: YOUR_API_KEY"
 
 # Update webhook
 curl -X PATCH https://YOUR-APP.api.codehooks.io/dev/webhooks/WEBHOOK_ID \
   -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY" \
   -d '{"status": "paused"}'
 
 # Delete webhook
-curl -X DELETE https://YOUR-APP.api.codehooks.io/dev/webhooks/WEBHOOK_ID
+curl -X DELETE https://YOUR-APP.api.codehooks.io/dev/webhooks/WEBHOOK_ID \
+  -H "x-apikey: YOUR_API_KEY"
 
 # Trigger event
 curl -X POST https://YOUR-APP.api.codehooks.io/dev/events/trigger/EVENT_TYPE \
   -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY" \
   -d '{"key": "value"}'
 ```
 

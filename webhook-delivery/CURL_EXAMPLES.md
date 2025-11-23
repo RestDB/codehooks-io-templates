@@ -28,6 +28,7 @@ curl $API_URL/
 curl -X POST $API_URL/webhooks \
   -H "Content-Type: application/json" \
   -d '{
+    "clientId": "customer-123",
     "url": "https://your-service.com/webhook",
     "events": ["user.created", "user.updated"],
     "verificationType": "stripe",
@@ -44,6 +45,7 @@ curl -X POST $API_URL/webhooks \
 curl -X POST $API_URL/webhooks \
   -H "Content-Type: application/json" \
   -d '{
+    "clientId": "customer-456",
     "url": "https://your-service.com/webhook",
     "events": ["order.created", "order.completed"],
     "verificationType": "slack"
@@ -56,6 +58,7 @@ curl -X POST $API_URL/webhooks \
 curl -X POST $API_URL/webhooks \
   -H "Content-Type: application/json" \
   -d '{
+    "clientId": "monitoring-system",
     "url": "https://your-service.com/webhook",
     "events": ["*"]
   }'
@@ -67,9 +70,25 @@ curl -X POST $API_URL/webhooks \
 curl -X POST $API_URL/webhooks \
   -H "Content-Type: application/json" \
   -d '{
+    "clientId": "iot-device-789",
     "url": "https://your-service.com/webhook",
     "events": ["sensor.reading", "device.online", "alert.triggered"]
   }'
+```
+
+### Update existing webhook (same clientId + url)
+
+```bash
+# Calling POST with same clientId and url updates the webhook
+curl -X POST $API_URL/webhooks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clientId": "customer-123",
+    "url": "https://your-service.com/webhook",
+    "events": ["user.created", "user.updated", "user.deleted"],
+    "verificationType": "stripe"
+  }'
+# Response: 200 OK with "Webhook updated" message
 ```
 
 ### List all webhooks
@@ -272,6 +291,7 @@ ngrok http 3000
 curl -X POST $API_URL/webhooks \
   -H "Content-Type: application/json" \
   -d '{
+    "clientId": "local-test",
     "url": "https://abc123.ngrok.io/webhook",
     "events": ["*"]
   }' | jq .
@@ -341,6 +361,7 @@ Use webhook.site for quick testing without setting up a local receiver:
 curl -X POST $API_URL/webhooks \
   -H "Content-Type: application/json" \
   -d '{
+    "clientId": "webhook-site-test",
     "url": "https://webhook.site/your-unique-id",
     "events": ["*"],
     "verificationType": "stripe"
@@ -394,14 +415,17 @@ curl -X POST $API_URL/webhooks/WEBHOOK_ID/retry
 cat > webhooks.json << 'EOF'
 [
   {
+    "clientId": "service-1",
     "url": "https://service1.com/webhook",
     "events": ["user.created", "user.updated"]
   },
   {
+    "clientId": "service-2",
     "url": "https://service2.com/webhook",
     "events": ["order.created", "order.completed"]
   },
   {
+    "clientId": "monitoring",
     "url": "https://service3.com/webhook",
     "events": ["*"]
   }

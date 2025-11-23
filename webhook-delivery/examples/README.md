@@ -60,7 +60,9 @@ To test with a public URL:
    ```bash
    curl -X POST https://your-app.api.codehooks.io/dev/webhooks \
      -H "Content-Type: application/json" \
+     -H "x-apikey: YOUR_API_KEY" \
      -d '{
+       "clientId": "test-client-1",
        "url": "https://your-id.ngrok.io/webhook",
        "events": ["*"]
      }'
@@ -75,6 +77,7 @@ To test with a public URL:
    ```bash
    curl -X POST https://your-app.api.codehooks.io/dev/events/trigger/user.created \
      -H "Content-Type: application/json" \
+     -H "x-apikey: YOUR_API_KEY" \
      -d '{"userId": "user_123", "email": "test@example.com"}'
    ```
 

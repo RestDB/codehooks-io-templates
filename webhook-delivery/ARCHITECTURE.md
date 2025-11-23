@@ -160,12 +160,12 @@ const result = await conn.enqueueFromQuery(
          │
          ▼
 ┌────────────────────────────────────────┐
-│  Message Queue                          │
-│  ┌──────────┐ ┌──────────┐ ┌────────┐ │
-│  │ Message 1│ │ Message 2│...│Msg 1247│ │
-│  │webhook+  │ │webhook+  │ │webhook+│ │
-│  │event     │ │event     │ │event   │ │
-│  └──────────┘ └──────────┘ └────────┘ │
+│  Message Queue                         │
+│  ┌──────────┐ ┌──────────┐ ┌────────┐  │
+│  │ Message 1│ │ Message 2│ │Msg 1247│  │
+│  │webhook+  │ │webhook+  │ │webhook+│  │
+│  │event     │ │event     │ │event   │  │
+│  └──────────┘ └──────────┘ └────────┘  │
 └────────┬───────────┬───────────┬───────┘
          │           │           │
          ▼           ▼           ▼

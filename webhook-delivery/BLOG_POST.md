@@ -79,7 +79,7 @@ Several services exist for webhook delivery:
 Instead of weeks of development or expensive SaaS subscriptions:
 
 ```bash
-coho create my-webhook-system --template outgoing-webhook-complete
+coho create my-webhook-system --template webhook-delivery
 cd my-webhook-system
 coho deploy
 ```
@@ -97,7 +97,7 @@ coho deploy
 ### 1. Deploy (2 minutes)
 
 ```bash
-coho create my-webhooks --template outgoing-webhook-complete
+coho create my-webhooks --template webhook-delivery
 cd my-webhooks
 coho deploy
 ```
@@ -115,6 +115,7 @@ curl -X POST $API_URL/webhooks \
   -H "Content-Type: application/json" \
   -H "x-apikey: $CODEHOOKS_API_KEY" \
   -d '{
+    "clientId": "test-client-1",
     "url": "https://webhook.site/your-unique-id",
     "events": ["order.created"]
   }'
@@ -312,29 +313,32 @@ Don't expose the webhook service directly to customers. Build your own UI/API:
 app.post('/api/customer/webhooks', authenticateCustomer, async (req, res) => {
   const customer = req.customer;
 
-  // Create webhook in the webhook service with Codehooks auth token
+  // Create or update webhook in the webhook service
   const response = await fetch(`${WEBHOOK_SERVICE}/webhooks`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-apikey': process.env.CODEHOOKS_API_KEY // Your Codehooks API key
+      'x-apikey': process.env.CODEHOOKS_API_KEY
     },
     body: JSON.stringify({
+      clientId: customer.id, // Use customer ID as clientId
       url: req.body.url,
       events: req.body.events,
-      metadata: { customerId: customer.id }
+      metadata: {
+        customerName: customer.name,
+        tier: customer.tier
+      }
     })
   });
 
   const webhook = await response.json();
 
-  // Store mapping in YOUR database
-  await db.customerWebhooks.insert({
-    customerId: customer.id,
-    webhookId: webhook.id
+  // Webhook automatically updates if customer registers same URL again
+  res.json({
+    success: true,
+    webhookId: webhook.id,
+    message: webhook.message // "Webhook created" or "Webhook updated"
   });
-
-  res.json({ success: true });
 });
 ```
 
@@ -396,7 +400,7 @@ Absolutely! The code-first approach makes webhook customization easy. Common web
 Deploy your webhook system in minutes:
 
 ```bash
-coho create my-webhooks --template outgoing-webhook-complete
+coho create my-webhooks --template webhook-delivery
 cd my-webhooks
 coho deploy
 ```
@@ -430,7 +434,7 @@ The webhook delivery system handles everything else automatically.
 
 ## Webhook Resources
 
-- [Complete Webhook Template on GitHub](https://github.com/codehooks-io/codehooks-io-templates/tree/main/outgoing-webhook-complete)
+- [Complete Webhook Template on GitHub](https://github.com/codehooks-io/codehooks-io-templates/tree/main/webhook-delivery)
 - [Codehooks.io Documentation](https://codehooks.io/docs)
 - [Webhook API Reference](./CURL_EXAMPLES.md)
 - [Webhook Architecture Guide](./ARCHITECTURE.md)

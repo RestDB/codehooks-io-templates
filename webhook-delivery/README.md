@@ -1,6 +1,6 @@
-# Outgoing Webhook System (Complete)
+# Webhook Delivery System
 
-A production-ready outgoing webhook system for Codehooks.io that allows you to send webhooks to external services when events occur in your application. Perfect for developers who need a robust webhook delivery system without building one from scratch.
+A production-ready webhook delivery system for Codehooks.io that allows you to send webhooks to external services when events occur in your application. Perfect for developers who need a robust webhook delivery system without building one from scratch.
 
 ## Use Case
 
@@ -41,7 +41,7 @@ This is the opposite of incoming webhooks, where external services notify your a
 ### 1. Deploy to Codehooks.io
 
 ```bash
-coho create my-webhook-system --template outgoing-webhook-complete
+coho create my-webhook-system --template webhook-delivery
 cd my-webhook-system
 npm install
 coho deploy
@@ -85,11 +85,14 @@ curl -X POST https://your-project.api.codehooks.io/dev/webhooks \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: your-api-key" \
   -d '{
+    "clientId": "customer-123",
     "url": "https://your-service.com/webhook",
     "events": ["user.created", "user.updated"],
     "verificationType": "stripe"
   }'
 ```
+
+**Note:** The `clientId` is a unique identifier for the webhook listener (e.g., customer ID, tenant ID, or application ID). If you register a webhook with the same `clientId` and `url`, it will **update** the existing webhook instead of creating a duplicate.
 
 Response:
 ```json
@@ -98,6 +101,7 @@ Response:
   "url": "https://your-service.com/webhook",
   "events": ["user.created", "user.updated"],
   "secret": "whsec_8f3h2...",
+  "clientId": "customer-123",
   "status": "pending_verification",
   "verificationToken": "tok_9j2k...",
   "message": "Webhook created. Verification in progress."
@@ -153,7 +157,7 @@ coho deploy
 
 ### Webhook Management
 
-#### Create Webhook
+#### Create or Update Webhook
 ```
 POST /webhooks
 Headers: X-Api-Key: your-api-key
@@ -162,6 +166,7 @@ Headers: X-Api-Key: your-api-key
 Request body:
 ```json
 {
+  "clientId": "customer-123",
   "url": "https://your-service.com/webhook",
   "events": ["user.created", "order.completed", "*"],
   "verificationType": "stripe",
@@ -170,6 +175,15 @@ Request body:
   }
 }
 ```
+
+**Fields:**
+- `clientId` (required): Unique identifier for the webhook listener (e.g., customer ID, tenant ID)
+- `url` (required): Webhook endpoint URL
+- `events` (required): Array of event types to subscribe to (use `["*"]` for all events)
+- `verificationType` (optional): `"stripe"` or `"slack"` (default: `"stripe"`)
+- `metadata` (optional): Additional data to store with the webhook
+
+**Upsert Behavior:** If a webhook with the same `clientId` and `url` already exists, it will be updated. This prevents duplicate webhook registrations.
 
 #### List Webhooks
 ```
@@ -254,6 +268,66 @@ curl -X POST $API_URL/events/trigger/report.generated -d '{"reportId":"rpt_001"}
 ```
 
 The system is completely flexible - use any event naming convention that fits your domain.
+
+## Client ID and Idempotent Registration
+
+### What is clientId?
+
+Every webhook registration requires a `clientId` - a unique identifier for the webhook listener. This is typically:
+- Customer ID in a multi-tenant SaaS application
+- Tenant ID in an enterprise system
+- Application ID for service-to-service webhooks
+- User ID for personal integrations
+
+### Upsert Behavior
+
+The webhook registration endpoint (`POST /webhooks`) uses **upsert logic** based on `clientId` + `url`:
+
+```javascript
+// First registration - creates webhook
+POST /webhooks {
+  "clientId": "customer-123",
+  "url": "https://example.com/webhook",
+  "events": ["order.created"]
+}
+// Result: 201 Created
+
+// Same clientId + url - updates webhook
+POST /webhooks {
+  "clientId": "customer-123",
+  "url": "https://example.com/webhook",
+  "events": ["order.created", "order.shipped"]  // Changed events
+}
+// Result: 200 OK - webhook updated, secret preserved
+```
+
+**Benefits:**
+- ✅ **No duplicates** - Same clientId + URL = same webhook
+- ✅ **Idempotent** - Safe to call multiple times
+- ✅ **Secret preserved** - Existing webhooks keep their HMAC secret on update
+- ✅ **Automatic cleanup** - Updating events automatically removes old subscriptions
+
+### Use Cases
+
+**Multi-tenant SaaS:**
+```javascript
+// Each customer can register one webhook per URL
+fetch('/webhooks', {
+  body: JSON.stringify({
+    clientId: customer.id,  // Customer's unique ID
+    url: customer.webhookUrl,
+    events: customer.selectedEvents
+  })
+});
+```
+
+**Multiple webhooks per client:**
+```javascript
+// Same customer, different URLs = different webhooks
+POST /webhooks { "clientId": "customer-123", "url": "https://a.com/hook" }
+POST /webhooks { "clientId": "customer-123", "url": "https://b.com/hook" }
+// Both webhooks are registered
+```
 
 ## Architecture: Queue-Based Delivery
 
@@ -512,7 +586,8 @@ The system automatically retries failed webhook deliveries:
 ### Check webhook statistics
 
 ```bash
-curl https://your-project.api.codehooks.io/dev/webhooks/:id/stats
+curl https://your-project.api.codehooks.io/dev/webhooks/:id/stats \
+  -H "x-apikey: YOUR_API_KEY"
 ```
 
 Response:
@@ -591,7 +666,9 @@ ngrok http 3000
 # Terminal 3: Register webhook with ngrok URL
 curl -X POST https://your-project.api.codehooks.io/dev/webhooks \
   -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY" \
   -d '{
+    "clientId": "test-local",
     "url": "https://your-ngrok-url.ngrok.io/webhook",
     "events": ["*"]
   }'

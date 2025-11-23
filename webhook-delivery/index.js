@@ -1,5 +1,4 @@
 import { app, Datastore } from 'codehooks-js';
-import { cron } from 'codehooks-cron';
 import crypto from 'crypto';
 
 // Database connection helpers
@@ -113,14 +112,20 @@ app.get('/', (req, res) => {
   });
 });
 
-// Create a new webhook subscription
+// Create or update webhook subscription
 app.post('/webhooks', async (req, res) => {
   try {
-    const { url, events, verificationType = 'stripe', metadata = {} } = req.body;
+    const { url, events, verificationType = 'stripe', metadata = {}, clientId } = req.body;
 
     if (!url || !events || !Array.isArray(events) || events.length === 0) {
       return res.status(400).json({
         error: 'Missing required fields: url and events array'
+      });
+    }
+
+    if (!clientId) {
+      return res.status(400).json({
+        error: 'Missing required field: clientId (unique identifier for the webhook listener)'
       });
     }
 
@@ -145,10 +150,16 @@ app.post('/webhooks', async (req, res) => {
     // Events can be anything - no validation needed
     // This allows maximum flexibility for any use case
 
-    const verificationToken = generateVerificationToken();
-    const secret = generateWebhookSecret();
+    const db = await getWebhooksDB();
 
-    const webhook = {
+    // Check if webhook with this clientId and URL already exists
+    const existingWebhook = await db.findOne({ clientId, url });
+
+    const verificationToken = generateVerificationToken();
+    const secret = existingWebhook?.secret || generateWebhookSecret(); // Keep existing secret if updating
+    const now = new Date().toISOString();
+
+    const webhookData = {
       url,
       events,
       secret,
@@ -156,20 +167,32 @@ app.post('/webhooks', async (req, res) => {
       verificationType,
       status: 'pending_verification',
       metadata,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      deliveryCount: 0,
-      consecutiveFailures: 0
+      clientId,
+      updatedAt: now
     };
 
-    const db = await getWebhooksDB();
-    const result = await db.insertOne(webhook);
+    // Use upsert to create or update existing webhook
+    const result = await db.updateOne(
+      { clientId, url },
+      {
+        $set: webhookData,
+        $setOnInsert: {
+          createdAt: now,
+          deliveryCount: 0,
+          consecutiveFailures: 0
+        }
+      },
+      { upsert: true }
+    );
+
+    const webhookId = result.upsertedId || existingWebhook?._id;
+    const isUpdate = !result.upsertedId;
 
     // Start verification process asynchronously
     setTimeout(async () => {
       const verified = await verifyWebhookUrl(url, verificationToken, verificationType);
       await db.updateOne(
-        { _id: result._id },
+        { _id: webhookId },
         {
           $set: {
             status: verified ? 'active' : 'verification_failed',
@@ -178,22 +201,25 @@ app.post('/webhooks', async (req, res) => {
           }
         }
       );
-      console.log(`Webhook ${result._id} verification: ${verified ? 'SUCCESS' : 'FAILED'}`);
+      console.log(`Webhook ${webhookId} verification: ${verified ? 'SUCCESS' : 'FAILED'}`);
     }, 100);
 
-    res.status(201).json({
-      id: result._id,
+    res.status(isUpdate ? 200 : 201).json({
+      id: webhookId,
       url,
       events,
       secret,
+      clientId,
       status: 'pending_verification',
       verificationToken,
       verificationType,
-      message: 'Webhook created. Verification in progress.'
+      message: isUpdate
+        ? 'Webhook updated. Verification in progress.'
+        : 'Webhook created. Verification in progress.'
     });
   } catch (error) {
-    console.error('Error creating webhook:', error);
-    res.status(500).json({ error: 'Failed to create webhook' });
+    console.error('Error creating/updating webhook:', error);
+    res.status(500).json({ error: 'Failed to create/update webhook' });
   }
 });
 
@@ -436,6 +462,32 @@ app.post('/events/trigger/:eventType', async (req, res) => {
   }
 });
 
+// Helper function: Deliver webhook with event data
+async function deliverWebhook(webhook, eventData) {
+  const eventPayload = JSON.stringify(eventData);
+  const { signature, timestamp } = generateSignature(eventPayload, webhook.secret);
+
+  console.log(`Sending webhook ${webhook._id} for event ${eventData.type}`);
+
+  const response = await fetch(webhook.url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Webhook-Signature': signature,
+      'X-Webhook-Timestamp': timestamp.toString(),
+      'X-Webhook-Id': webhook._id,
+      'X-Event-Id': eventData.id,
+      'User-Agent': 'Codehooks-Webhook/2.0'
+    },
+    body: eventPayload,
+    signal: AbortSignal.timeout(10000) // 10 second timeout per attempt
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+}
+
 // Worker function: Process webhook deliveries from queue
 async function webhookDeliveryWorker(req, res) {
   try {
@@ -452,28 +504,8 @@ async function webhookDeliveryWorker(req, res) {
       return res.status(400).json({ error: 'Missing webhook or event data' });
     }
 
-    const eventPayload = JSON.stringify(eventData);
-    const { signature, timestamp } = generateSignature(eventPayload, webhook.secret);
-
-    console.log(`Sending webhook ${webhook._id} for event ${eventData.type}`);
-
-    const response = await fetch(webhook.url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Webhook-Signature': signature,
-        'X-Webhook-Timestamp': timestamp.toString(),
-        'X-Webhook-Id': webhook._id,
-        'X-Event-Id': eventData.id,
-        'User-Agent': 'Codehooks-Webhook/2.0'
-      },
-      body: eventPayload,
-      signal: AbortSignal.timeout(10000) // 10 second timeout per attempt
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
+    // Deliver the webhook
+    await deliverWebhook(webhook, eventData);
 
     // Update webhook with successful delivery
     const db = await getWebhooksDB();
@@ -493,8 +525,8 @@ async function webhookDeliveryWorker(req, res) {
 
     console.log(`✅ Webhook ${webhook._id} delivered successfully`);
 
-    // Return success
-    res.json({ success: true, webhook: webhook._id });
+    // Return success - workers use res.end()
+    res.end(JSON.stringify({ success: true, webhook: webhook._id }));
 
   } catch (error) {
     console.error(`❌ Webhook delivery failed:`, error.message);
@@ -523,16 +555,136 @@ async function webhookDeliveryWorker(req, res) {
       await db.updateOne({ _id: webhook._id }, { $set: updateData });
     }
 
-    // Return error to trigger retry
-    res.status(500).json({ error: error.message, webhook: webhook?._id });
+    // Return error to trigger retry - workers use res.end()
+    res.status(500).end(JSON.stringify({ error: error.message, webhook: webhook?._id }));
   }
 }
 
 // Register the worker
 app.worker('webhook-delivery', webhookDeliveryWorker);
 
-// Cron job to clean up old events and failed webhooks (runs daily)
-cron('0 0 * * *', async () => {
+// Cron job to retry failed webhooks (runs every 30 minutes)
+app.job('*/30 * * * *', retryFailedWebhooks);
+
+async function retryFailedWebhooks(_req, res) {
+  try {
+    console.log('🔄 Running failed webhook retry job...');
+
+    const conn = await Datastore.open();
+    const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+    // Retry webhooks that:
+    // - Have consecutive failures (1-9, not disabled yet)
+    // - Last delivery was more than 1 hour ago (to avoid hammering failing endpoints)
+    // - Are still active
+    const result = await conn.enqueueFromQuery(
+      'webhooks',
+      {
+        status: 'active',
+        consecutiveFailures: { $gte: 1, $lt: 10 },
+        lastDeliveryAt: { $lt: oneHourAgo.toISOString() }
+      },
+      'webhook-retry', // Separate queue for retries
+      {
+        isRetry: true,
+        retries: 2, // Fewer retries for already-failed webhooks
+        retryDelay: 2000,
+        timeout: 30000
+      }
+    );
+
+    console.log(`✅ Retry job complete: ${result.queued || 0} failed webhooks queued for retry`);
+
+    res.end();
+  } catch (error) {
+    console.error('Error in retry job:', error);
+    res.status(500).end();
+  }
+}
+
+// Worker for webhook retries (uses same delivery logic)
+app.worker('webhook-retry', async (req, res) => {
+  try {
+    const webhook = req.body.payload?.event;
+
+    if (!webhook) {
+      console.error('❌ Retry worker: No webhook in payload');
+      return res.status(400).end();
+    }
+
+    console.log(`🔄 Retrying webhook ${webhook._id} (failures: ${webhook.consecutiveFailures})`);
+
+    // Use the latest event for this webhook's subscribed events
+    const eventsDB = await getEventsDB();
+    const latestEvent = await eventsDB.findOne(
+      { type: { $in: webhook.events.includes('*') ? ['*'] : webhook.events } },
+      { sort: { processedAt: -1 }, limit: 1 }
+    );
+
+    if (!latestEvent) {
+      console.log(`⚠️ No events found for webhook ${webhook._id} retry, skipping`);
+      return res.end();
+    }
+
+    // Deliver the webhook with the latest event
+    await deliverWebhook(webhook, latestEvent);
+
+    // Update webhook on success
+    const db = await getWebhooksDB();
+    await db.updateOne(
+      { _id: webhook._id },
+      {
+        $set: {
+          lastDeliveryAt: new Date().toISOString(),
+          lastDeliveryStatus: 'success',
+          consecutiveFailures: 0, // Reset failures on successful retry
+          updatedAt: new Date().toISOString()
+        },
+        $inc: { deliveryCount: 1 }
+      }
+    );
+
+    console.log(`✅ Webhook ${webhook._id} retry successful, failures reset`);
+    res.end();
+
+  } catch (error) {
+    console.error(`❌ Webhook retry failed:`, error.message);
+
+    const webhook = req.body.payload?.event;
+    if (webhook) {
+      const consecutiveFailures = (webhook.consecutiveFailures || 0) + 1;
+
+      const db = await getWebhooksDB();
+      const updateData = {
+        lastDeliveryAt: new Date().toISOString(),
+        lastDeliveryStatus: 'failed',
+        lastDeliveryError: error.message,
+        consecutiveFailures,
+        updatedAt: new Date().toISOString()
+      };
+
+      // Disable webhook after too many consecutive failures
+      if (consecutiveFailures >= 10) {
+        updateData.status = 'disabled';
+        updateData.disabledReason = 'Too many consecutive failures';
+        console.log(`🚫 Webhook ${webhook._id} disabled after 10 failures`);
+      }
+
+      await db.updateOne(
+        { _id: webhook._id },
+        { $set: updateData }
+      );
+    }
+
+    res.status(500).end();
+  }
+});
+
+// Cron job to clean up old events and failed webhooks (runs daily at midnight)
+app.job('0 0 * * *', cleanupJob);
+
+async function cleanupJob(_req, res) {
   try {
     console.log('🧹 Running cleanup job...');
 
@@ -568,9 +720,12 @@ cron('0 0 * * *', async () => {
     });
 
     console.log(`✅ Cleanup complete: ${disabledResult || 0} webhooks disabled, ${eventsResult || 0} old events removed`);
+
+    res.end();
   } catch (error) {
     console.error('Error in cleanup cron:', error);
+    res.status(500).end();
   }
-});
+}
 
 export default app.init();
