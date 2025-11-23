@@ -83,7 +83,7 @@ coho use dev
 ```bash
 curl -X POST https://your-project.api.codehooks.io/dev/webhooks \
   -H "Content-Type: application/json" \
-  -H "X-Api-Key: your-api-key" \
+  -H "x-apikey: your-api-key" \
   -d '{
     "clientId": "customer-123",
     "url": "https://your-service.com/webhook",
@@ -113,7 +113,7 @@ Response:
 ```bash
 curl -X POST https://your-project.api.codehooks.io/dev/events/trigger/user.created \
   -H "Content-Type: application/json" \
-  -H "X-Api-Key: your-api-key" \
+  -H "x-apikey: your-api-key" \
   -d '{
     "userId": "user_123",
     "email": "john@example.com",
@@ -128,7 +128,7 @@ curl -X POST https://your-project.api.codehooks.io/dev/events/trigger/user.creat
 All endpoints require an API key (both webhook management and event triggering):
 
 ```bash
--H "X-Api-Key: your-api-key"
+-H "x-apikey: your-api-key"
 ```
 
 **Managing API Tokens:**
@@ -160,7 +160,7 @@ coho deploy
 #### Create or Update Webhook
 ```
 POST /webhooks
-Headers: X-Api-Key: your-api-key
+Headers: x-apikey: your-api-key
 ```
 
 Request body:
@@ -337,32 +337,52 @@ This system uses **Codehooks Queue API with `enqueueFromQuery`** for efficient, 
 
 1. **Event Triggered**: Your app calls `/events/trigger/:eventType`
 2. **Event Stored**: Event is logged in database for audit trail
-3. **Bulk Queue Operation**: `enqueueFromQuery` finds ALL matching webhooks and queues them in one atomic operation
-4. **Queue Consumer**: `app.queue('webhook-delivery')` processes messages in parallel
-5. **Webhook Delivery**: Each webhook is delivered with HMAC signature verification
-6. **Auto Retries**: Failed deliveries automatically retry (3 attempts with exponential backoff)
-7. **Stats Updated**: Delivery statistics tracked in real-time
-
-**Key Efficiency:** Using `enqueueFromQuery` means ONE database query queues thousands of webhooks - no loops, no iteration, just efficient bulk processing!
+3. **Mark Webhooks**: All matching active webhooks are tagged with `pendingEventId`
+4. **Bulk Queue**: `enqueueFromQuery` queues ALL matching webhooks in one atomic operation
+5. **Queue Consumer**: `app.worker('webhook-delivery')` processes messages in parallel
+6. **Fetch Event**: Worker retrieves event data from database using `pendingEventId`
+7. **Webhook Delivery**: Each webhook is delivered with HMAC signature verification
+8. **Auto Retries**: Queue automatically retries failed deliveries
+9. **Stats Updated**: Delivery statistics tracked in real-time
 
 ### Code Overview
 
 ```javascript
-// Event triggering (ONE operation queues all webhooks)
-const result = await conn.enqueueFromQuery(
+// Event triggering - bulk queue operation
+// 1. Store event in database
+await conn.insertOne('events', { ...eventData, processedAt: new Date().toISOString() });
+
+// 2. Mark all matching webhooks with the event ID
+await conn.updateMany(
   'webhooks',
   { status: 'active', $or: [{ events: eventType }, { events: '*' }] },
-  'webhook-delivery',
-  { event: eventData, retries: 3, retryDelay: 1000 }
+  { $set: { pendingEventId: eventData.id } }
+);
+
+// 3. Queue all marked webhooks in one operation
+const result = await conn.enqueueFromQuery(
+  'webhooks',
+  { status: 'active', pendingEventId: eventData.id },
+  'webhook-delivery'
 );
 
 // Worker processes messages from queue (runs in parallel)
 async function webhookDeliveryWorker(req, res) {
-  const { payload } = req.body;
-  const webhook = payload.document;  // Webhook from enqueueFromQuery
-  const event = payload.event;       // Event data
-  // ... sign and deliver webhook
-  res.json({ success: true });
+  const webhook = req.body.payload; // Webhook from enqueueFromQuery
+
+  // Fetch event data from database
+  const conn = await getDB();
+  const eventDoc = await conn.getOne('events', { id: webhook.pendingEventId });
+
+  // Deliver webhook with HMAC signature
+  await deliverWebhook(webhook, eventDoc);
+
+  // Clear pendingEventId and return success
+  await conn.updateOne('webhooks', { _id: webhook._id },
+    { $set: { pendingEventId: null, consecutiveFailures: 0 } }
+  );
+
+  res.end(JSON.stringify({ success: true }));
 }
 
 app.worker('webhook-delivery', webhookDeliveryWorker);
@@ -370,13 +390,13 @@ app.worker('webhook-delivery', webhookDeliveryWorker);
 
 ### Benefits
 
-- **⚡ Ultra-Fast**: Bulk queue operation - no loops
+- **⚡ Ultra-Fast**: Bulk queue operation - no loops, one atomic database operation
 - **💾 Memory Efficient**: Doesn't load all webhooks into memory
 - **🚀 Scalable**: Handle thousands of webhooks simultaneously
-- **🔄 Reliable**: Automatic retries with exponential backoff
+- **🔄 Reliable**: Automatic retries on failures
 - **⏱️ Non-Blocking**: API returns 202 Accepted immediately
 - **🛡️ Fault Tolerant**: Queue handles failures gracefully
-- **⏳ Long Running**: 30s timeout per webhook (slow receivers supported)
+- **⏳ Long Running**: Configurable timeout per webhook
 
 ### Example Flow
 
@@ -396,7 +416,7 @@ curl -X POST $API_URL/events/trigger/order.placed \
 # 2. Queue processes 1247 webhooks in parallel
 # 3. Stats are updated as deliveries complete
 # 4. Check stats anytime:
-curl -H "X-Api-Key: $API_KEY" $API_URL/webhooks/webhook_id/stats
+curl -H "x-apikey: $API_KEY" $API_URL/webhooks/webhook_id/stats
 ```
 
 This architecture ensures instant event triggering and reliable delivery, even with thousands of subscribers.
@@ -681,6 +701,7 @@ Webhooks are stored in the `webhooks` collection with this structure:
 ```javascript
 {
   _id: "abc123",
+  clientId: "customer-123",
   url: "https://your-service.com/webhook",
   events: ["user.created", "order.completed"],
   secret: "whsec_...",
@@ -688,6 +709,8 @@ Webhooks are stored in the `webhooks` collection with this structure:
   verificationType: "stripe",
   status: "active",
   metadata: { description: "Production webhook" },
+  pendingEventId: "evt_456",           // Event ID being processed (null when idle)
+  pendingEventType: "user.created",    // Event type being processed
   createdAt: "2025-01-15T10:00:00.000Z",
   updatedAt: "2025-01-15T10:00:05.000Z",
   verifiedAt: "2025-01-15T10:00:05.000Z",

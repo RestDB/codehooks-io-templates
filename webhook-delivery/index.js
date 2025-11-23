@@ -1,15 +1,12 @@
 import { app, Datastore } from 'codehooks-js';
 import crypto from 'crypto';
+import { URL } from 'url';
+import https from 'https';
+import http from 'http';
 
-// Database connection helpers
-const getWebhooksDB = async () => {
-  const conn = await Datastore.open();
-  return conn.collection('webhooks');
-};
-
-const getEventsDB = async () => {
-  const conn = await Datastore.open();
-  return conn.collection('events');
+// Database connection helper
+const getDB = async () => {
+  return await Datastore.open();
 };
 
 // Generate verification token for webhook URLs
@@ -33,6 +30,47 @@ function generateSignature(payload, secret) {
   return { signature: `v1=${signature}`, timestamp };
 }
 
+// Helper function: Make HTTP request using native Node.js modules
+function makeHttpRequest(url, options, body) {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const protocol = parsedUrl.protocol === 'https:' ? https : http;
+
+    const requestOptions = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: options.method || 'GET',
+      headers: options.headers || {},
+      timeout: options.timeout || 10000
+    };
+
+    const req = protocol.request(requestOptions, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        resolve({
+          statusCode: res.statusCode,
+          statusMessage: res.statusMessage,
+          headers: res.headers,
+          body: data
+        });
+      });
+    });
+
+    req.on('error', (error) => reject(error));
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+
+    if (body) {
+      req.write(body);
+    }
+    req.end();
+  });
+}
+
 // Verify webhook URL (Stripe-style or Slack-style challenge)
 async function verifyWebhookUrl(url, verificationToken, verificationType = 'stripe') {
   try {
@@ -44,17 +82,17 @@ async function verifyWebhookUrl(url, verificationToken, verificationType = 'stri
         created: Math.floor(Date.now() / 1000)
       });
 
-      const response = await fetch(url, {
+      const response = await makeHttpRequest(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'Codehooks-Webhook/1.0'
+          'User-Agent': 'Codehooks-Webhook/1.0',
+          'Content-Length': Buffer.byteLength(testPayload)
         },
-        body: testPayload,
-        signal: AbortSignal.timeout(10000)
-      });
+        timeout: 10000
+      }, testPayload);
 
-      return response.ok;
+      return response.statusCode >= 200 && response.statusCode < 300;
     } else if (verificationType === 'slack') {
       // Slack-style: Send challenge parameter
       const challenge = crypto.randomBytes(16).toString('hex');
@@ -64,20 +102,24 @@ async function verifyWebhookUrl(url, verificationToken, verificationType = 'stri
         token: verificationToken
       });
 
-      const response = await fetch(url, {
+      const response = await makeHttpRequest(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'Codehooks-Webhook/1.0'
+          'User-Agent': 'Codehooks-Webhook/1.0',
+          'Content-Length': Buffer.byteLength(testPayload)
         },
-        body: testPayload,
-        signal: AbortSignal.timeout(10000)
-      });
+        timeout: 10000
+      }, testPayload);
 
-      if (!response.ok) return false;
+      if (response.statusCode < 200 || response.statusCode >= 300) return false;
 
-      const responseData = await response.json();
-      return responseData.challenge === challenge;
+      try {
+        const responseData = JSON.parse(response.body);
+        return responseData.challenge === challenge;
+      } catch {
+        return false;
+      }
     }
 
     return false;
@@ -117,6 +159,16 @@ app.post('/webhooks', async (req, res) => {
   try {
     const { url, events, verificationType = 'stripe', metadata = {}, clientId } = req.body;
 
+    // Debug logging
+    console.log('Received webhook registration request:', {
+      url: url,
+      urlType: typeof url,
+      urlValue: JSON.stringify(url),
+      events,
+      clientId,
+      fullBody: JSON.stringify(req.body)
+    });
+
     if (!url || !events || !Array.isArray(events) || events.length === 0) {
       return res.status(400).json({
         error: 'Missing required fields: url and events array'
@@ -131,6 +183,7 @@ app.post('/webhooks', async (req, res) => {
 
     // Validate URL format
     try {
+      console.log('Attempting to parse URL:', url);
       const parsedUrl = new URL(url);
 
       // Prevent SSRF attacks - block internal/private IPs
@@ -143,65 +196,106 @@ app.post('/webhooks', async (req, res) => {
           hostname.match(/^172\.(1[6-9]|2[0-9]|3[01])\./)) {
         return res.status(400).json({ error: 'Internal/private URLs not allowed' });
       }
-    } catch {
-      return res.status(400).json({ error: 'Invalid URL format' });
+    } catch (urlError) {
+      console.error('URL parsing error:', urlError.message, 'for URL:', url);
+      return res.status(400).json({
+        error: 'Invalid URL format',
+        details: urlError.message,
+        receivedUrl: url
+      });
     }
 
     // Events can be anything - no validation needed
     // This allows maximum flexibility for any use case
 
-    const db = await getWebhooksDB();
+    console.log('Getting database connection...');
+    const conn = await getDB();
+    console.log('Database connection obtained');
 
     // Check if webhook with this clientId and URL already exists
-    const existingWebhook = await db.findOne({ clientId, url });
+    console.log('Checking for existing webhook with clientId:', clientId, 'and url:', url);
+    let existingWebhook = null;
+    try {
+      existingWebhook = await conn.getOne('webhooks', { clientId, url });
+      console.log('Existing webhook check result:', existingWebhook ? 'Found' : 'Not found');
+    } catch (findError) {
+      // Collection might not exist yet, that's ok - treat as no existing webhook
+      console.log('getOne error (likely collection does not exist yet):', findError.message);
+      existingWebhook = null;
+    }
 
     const verificationToken = generateVerificationToken();
     const secret = existingWebhook?.secret || generateWebhookSecret(); // Keep existing secret if updating
     const now = new Date().toISOString();
 
-    const webhookData = {
-      url,
-      events,
-      secret,
-      verificationToken,
-      verificationType,
-      status: 'pending_verification',
-      metadata,
-      clientId,
-      updatedAt: now
-    };
+    let webhookId;
+    let isUpdate = false;
 
-    // Use upsert to create or update existing webhook
-    const result = await db.updateOne(
-      { clientId, url },
-      {
-        $set: webhookData,
-        $setOnInsert: {
-          createdAt: now,
-          deliveryCount: 0,
-          consecutiveFailures: 0
-        }
-      },
-      { upsert: true }
-    );
-
-    const webhookId = result.upsertedId || existingWebhook?._id;
-    const isUpdate = !result.upsertedId;
-
-    // Start verification process asynchronously
-    setTimeout(async () => {
-      const verified = await verifyWebhookUrl(url, verificationToken, verificationType);
-      await db.updateOne(
-        { _id: webhookId },
+    if (existingWebhook) {
+      // Update existing webhook
+      console.log('Updating existing webhook:', existingWebhook._id);
+      await conn.updateOne(
+        'webhooks',
+        { _id: existingWebhook._id },
         {
           $set: {
-            status: verified ? 'active' : 'verification_failed',
-            verifiedAt: verified ? new Date().toISOString() : null,
-            updatedAt: new Date().toISOString()
+            url,
+            events,
+            secret,
+            verificationToken,
+            verificationType,
+            status: 'pending_verification',
+            metadata,
+            clientId,
+            updatedAt: now
           }
         }
       );
-      console.log(`Webhook ${webhookId} verification: ${verified ? 'SUCCESS' : 'FAILED'}`);
+      webhookId = existingWebhook._id;
+      isUpdate = true;
+    } else {
+      // Create new webhook
+      console.log('Creating new webhook');
+      const webhookData = {
+        url,
+        events,
+        secret,
+        verificationToken,
+        verificationType,
+        status: 'pending_verification',
+        metadata,
+        clientId,
+        createdAt: now,
+        updatedAt: now,
+        deliveryCount: 0,
+        consecutiveFailures: 0
+      };
+
+      const result = await conn.insertOne('webhooks', webhookData);
+      webhookId = result._id;
+      console.log('Created webhook with ID:', webhookId);
+    }
+
+    // Start verification process asynchronously
+    setTimeout(async () => {
+      try {
+        const verified = await verifyWebhookUrl(url, verificationToken, verificationType);
+        const conn2 = await getDB();
+        await conn2.updateOne(
+          'webhooks',
+          { _id: webhookId },
+          {
+            $set: {
+              status: verified ? 'active' : 'verification_failed',
+              verifiedAt: verified ? new Date().toISOString() : null,
+              updatedAt: new Date().toISOString()
+            }
+          }
+        );
+        console.log(`Webhook ${webhookId} verification: ${verified ? 'SUCCESS' : 'FAILED'}`);
+      } catch (verifyError) {
+        console.error('Error during verification:', verifyError);
+      }
     }, 100);
 
     res.status(isUpdate ? 200 : 201).json({
@@ -219,7 +313,12 @@ app.post('/webhooks', async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating/updating webhook:', error);
-    res.status(500).json({ error: 'Failed to create/update webhook' });
+    console.error('Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    res.status(500).json({
+      error: 'Failed to create/update webhook',
+      details: error.message,
+      errorType: error.constructor.name
+    });
   }
 });
 
@@ -227,13 +326,13 @@ app.post('/webhooks', async (req, res) => {
 app.get('/webhooks', async (req, res) => {
   try {
     const { status, event } = req.query;
-    const db = await getWebhooksDB();
+    const conn = await getDB();
 
     let query = {};
     if (status) query.status = status;
     if (event) query.events = event;
 
-    const webhooks = await db.getMany(query).toArray();
+    const webhooks = await conn.getMany('webhooks', query).toArray();
 
     // Don't expose secrets in list view
     const sanitized = webhooks.map(({ secret, verificationToken, ...rest }) => rest);
@@ -251,8 +350,8 @@ app.get('/webhooks', async (req, res) => {
 // Get a specific webhook
 app.get('/webhooks/:id', async (req, res) => {
   try {
-    const db = await getWebhooksDB();
-    const webhook = await db.getOne({ _id: req.params.id });
+    const conn = await getDB();
+    const webhook = await conn.getOne('webhooks', { _id: req.params.id });
 
     if (!webhook) {
       return res.status(404).json({ error: 'Webhook not found' });
@@ -269,9 +368,9 @@ app.get('/webhooks/:id', async (req, res) => {
 app.patch('/webhooks/:id', async (req, res) => {
   try {
     const { url, events, status, metadata } = req.body;
-    const db = await getWebhooksDB();
+    const conn = await getDB();
 
-    const webhook = await db.getOne({ _id: req.params.id });
+    const webhook = await conn.getOne('webhooks', { _id: req.params.id });
     if (!webhook) {
       return res.status(404).json({ error: 'Webhook not found' });
     }
@@ -281,9 +380,15 @@ app.patch('/webhooks/:id', async (req, res) => {
     if (url && url !== webhook.url) {
       // If URL changed, need to re-verify
       try {
+        console.log('Validating new URL in PATCH:', url);
         new URL(url);
-      } catch {
-        return res.status(400).json({ error: 'Invalid URL format' });
+      } catch (urlError) {
+        console.error('URL parsing error in PATCH:', urlError.message, 'for URL:', url);
+        return res.status(400).json({
+          error: 'Invalid URL format',
+          details: urlError.message,
+          receivedUrl: url
+        });
       }
       updates.url = url;
       updates.status = 'pending_verification';
@@ -296,7 +401,9 @@ app.patch('/webhooks/:id', async (req, res) => {
           updates.verificationToken,
           webhook.verificationType
         );
-        await db.updateOne(
+        const conn2 = await getDB();
+        await conn2.updateOne(
+          'webhooks',
           { _id: req.params.id },
           {
             $set: {
@@ -324,9 +431,9 @@ app.patch('/webhooks/:id', async (req, res) => {
       updates.metadata = { ...webhook.metadata, ...metadata };
     }
 
-    await db.updateOne({ _id: req.params.id }, { $set: updates });
+    await conn.updateOne('webhooks', { _id: req.params.id }, { $set: updates });
 
-    const updated = await db.getOne({ _id: req.params.id });
+    const updated = await conn.getOne('webhooks', { _id: req.params.id });
     res.json(updated);
   } catch (error) {
     console.error('Error updating webhook:', error);
@@ -337,14 +444,14 @@ app.patch('/webhooks/:id', async (req, res) => {
 // Delete a webhook
 app.delete('/webhooks/:id', async (req, res) => {
   try {
-    const db = await getWebhooksDB();
-    const webhook = await db.getOne({ _id: req.params.id });
+    const conn = await getDB();
+    const webhook = await conn.getOne('webhooks', { _id: req.params.id });
 
     if (!webhook) {
       return res.status(404).json({ error: 'Webhook not found' });
     }
 
-    await db.removeOne({ _id: req.params.id });
+    await conn.removeOne('webhooks', { _id: req.params.id });
     res.json({ message: 'Webhook deleted', id: req.params.id });
   } catch (error) {
     console.error('Error deleting webhook:', error);
@@ -355,15 +462,16 @@ app.delete('/webhooks/:id', async (req, res) => {
 // Retry a failed webhook
 app.post('/webhooks/:id/retry', async (req, res) => {
   try {
-    const db = await getWebhooksDB();
-    const webhook = await db.getOne({ _id: req.params.id });
+    const conn = await getDB();
+    const webhook = await conn.getOne('webhooks', { _id: req.params.id });
 
     if (!webhook) {
       return res.status(404).json({ error: 'Webhook not found' });
     }
 
     // Reset failure count and status
-    await db.updateOne(
+    await conn.updateOne(
+      'webhooks',
       { _id: req.params.id },
       {
         $set: {
@@ -384,8 +492,8 @@ app.post('/webhooks/:id/retry', async (req, res) => {
 // Get webhook delivery statistics
 app.get('/webhooks/:id/stats', async (req, res) => {
   try {
-    const db = await getWebhooksDB();
-    const webhook = await db.getOne({ _id: req.params.id });
+    const conn = await getDB();
+    const webhook = await conn.getOne('webhooks', { _id: req.params.id });
 
     if (!webhook) {
       return res.status(404).json({ error: 'Webhook not found' });
@@ -418,30 +526,34 @@ app.post('/events/trigger/:eventType', async (req, res) => {
     };
 
     // Store event in database for audit trail
-    const eventsDB = await getEventsDB();
-    await eventsDB.insertOne({
+    const conn = await getDB();
+    await conn.insertOne('events', {
       ...eventData,
       processedAt: new Date().toISOString()
     });
 
-    // Efficiently queue all matching webhooks using enqueueFromQuery
-    const conn = await Datastore.open();
-    const result = await conn.enqueueFromQuery(
-      'webhooks', // collection
+    // Update all matching webhooks with the current eventId to process
+    // This allows enqueueFromQuery to work while preserving event data
+    console.log(`Looking for active webhooks matching event type: ${eventType}`);
+    const updateResult = await conn.updateMany(
+      'webhooks',
       {
         status: 'active',
         $or: [{ events: eventType }, { events: '*' }]
-      }, // query
-      'webhook-delivery', // topic/queue name
+      },
       {
-        eventData: eventData, // Additional data to include in queue message
-        retries: 3,
-        retryDelay: 1000, // 1 second initial delay
-        timeout: 30000 // 30 second timeout per delivery
+        $set: {
+          pendingEventId: eventData.id,
+          pendingEventType: eventType
+        }
       }
     );
 
-    if (result.queued === 0) {
+    console.log('updateMany result:', JSON.stringify(updateResult, null, 2));
+    const matchedCount = updateResult.count || updateResult.modifiedCount || updateResult.matchedCount || 0;
+
+    if (matchedCount === 0) {
+      console.log(`No active webhooks found for event type: ${eventType}`);
       return res.json({
         message: 'Event received but no active webhooks subscribed',
         eventType,
@@ -449,11 +561,23 @@ app.post('/events/trigger/:eventType', async (req, res) => {
       });
     }
 
+    console.log(`Found ${matchedCount} active webhook(s) for event ${eventType}`);
+
+    // Efficiently queue all matching webhooks using enqueueFromQuery
+    const result = await conn.enqueueFromQuery(
+      'webhooks',
+      {
+        status: 'active',
+        pendingEventId: eventData.id
+      },
+      'webhook-delivery'
+    );
+
     res.status(202).json({
       message: 'Event accepted for delivery',
       eventType,
       eventId: eventData.id,
-      webhookCount: result.queued,
+      webhookCount: result.count || matchedCount,
       queuedAt: new Date().toISOString()
     });
   } catch (error) {
@@ -469,7 +593,7 @@ async function deliverWebhook(webhook, eventData) {
 
   console.log(`Sending webhook ${webhook._id} for event ${eventData.type}`);
 
-  const response = await fetch(webhook.url, {
+  const response = await makeHttpRequest(webhook.url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -477,14 +601,14 @@ async function deliverWebhook(webhook, eventData) {
       'X-Webhook-Timestamp': timestamp.toString(),
       'X-Webhook-Id': webhook._id,
       'X-Event-Id': eventData.id,
-      'User-Agent': 'Codehooks-Webhook/2.0'
+      'User-Agent': 'Codehooks-Webhook/2.0',
+      'Content-Length': Buffer.byteLength(eventPayload)
     },
-    body: eventPayload,
-    signal: AbortSignal.timeout(10000) // 10 second timeout per attempt
-  });
+    timeout: 10000
+  }, eventPayload);
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`);
   }
 }
 
@@ -494,22 +618,31 @@ async function webhookDeliveryWorker(req, res) {
     const { payload } = req.body;
 
     // Payload structure from enqueueFromQuery:
-    // - payload.event: The webhook document from the collection
-    // - payload.eventData: Our custom event data passed in options
-    const webhook = payload.event;
-    const eventData = payload.eventData;
+    // - payload IS the webhook document
+    const webhook = payload;
 
-    if (!webhook || !eventData) {
-      console.error('Invalid worker payload: missing webhook or eventData');
+    if (!webhook || !webhook.pendingEventId) {
+      console.error('Invalid worker payload: missing webhook or pendingEventId');
+      console.error('Received payload:', JSON.stringify(payload, null, 2));
       return res.status(400).json({ error: 'Missing webhook or event data' });
     }
 
-    // Deliver the webhook
-    await deliverWebhook(webhook, eventData);
+    // Look up the event data from the events collection
+    const conn = await getDB();
+    const eventDoc = await conn.getOne('events', { id: webhook.pendingEventId });
 
-    // Update webhook with successful delivery
-    const db = await getWebhooksDB();
-    await db.updateOne(
+    if (!eventDoc) {
+      console.error(`Event ${webhook.pendingEventId} not found for webhook ${webhook._id}`);
+      return res.status(400).json({ error: 'Event not found' });
+    }
+
+    // Deliver the webhook
+    await deliverWebhook(webhook, eventDoc);
+
+    // Update webhook with successful delivery and clear pendingEventId
+    const conn2 = await getDB();
+    await conn2.updateOne(
+      'webhooks',
       { _id: webhook._id },
       {
         $set: {
@@ -517,6 +650,8 @@ async function webhookDeliveryWorker(req, res) {
           lastDeliveryStatus: 'success',
           lastDeliveryError: null,
           consecutiveFailures: 0,
+          pendingEventId: null,
+          pendingEventType: null,
           updatedAt: new Date().toISOString()
         },
         $inc: { deliveryCount: 1 }
@@ -531,17 +666,19 @@ async function webhookDeliveryWorker(req, res) {
   } catch (error) {
     console.error(`❌ Webhook delivery failed:`, error.message);
 
-    const webhook = req.body.payload?.event;
+    const webhook = req.body.payload;
     if (webhook) {
       const consecutiveFailures = (webhook.consecutiveFailures || 0) + 1;
 
-      // Update webhook with failure info
-      const db = await getWebhooksDB();
+      // Update webhook with failure info and clear pendingEventId
+      const conn = await getDB();
       const updateData = {
         lastDeliveryAt: new Date().toISOString(),
         lastDeliveryStatus: 'failed',
         lastDeliveryError: error.message,
         consecutiveFailures,
+        pendingEventId: null,
+        pendingEventType: null,
         updatedAt: new Date().toISOString()
       };
 
@@ -552,7 +689,7 @@ async function webhookDeliveryWorker(req, res) {
         console.log(`🚫 Webhook ${webhook._id} disabled after 10 failures`);
       }
 
-      await db.updateOne({ _id: webhook._id }, { $set: updateData });
+      await conn.updateOne('webhooks', { _id: webhook._id }, { $set: updateData });
     }
 
     // Return error to trigger retry - workers use res.end()
@@ -606,7 +743,8 @@ async function retryFailedWebhooks(_req, res) {
 // Worker for webhook retries (uses same delivery logic)
 app.worker('webhook-retry', async (req, res) => {
   try {
-    const webhook = req.body.payload?.event;
+    // When using enqueueFromQuery, payload IS the webhook document
+    const webhook = req.body.payload;
 
     if (!webhook) {
       console.error('❌ Retry worker: No webhook in payload');
@@ -616,11 +754,14 @@ app.worker('webhook-retry', async (req, res) => {
     console.log(`🔄 Retrying webhook ${webhook._id} (failures: ${webhook.consecutiveFailures})`);
 
     // Use the latest event for this webhook's subscribed events
-    const eventsDB = await getEventsDB();
-    const latestEvent = await eventsDB.findOne(
+    const conn = await getDB();
+    const latestEventCursor = await conn.getMany(
+      'events',
       { type: { $in: webhook.events.includes('*') ? ['*'] : webhook.events } },
       { sort: { processedAt: -1 }, limit: 1 }
     );
+    const latestEvents = await latestEventCursor.toArray();
+    const latestEvent = latestEvents.length > 0 ? latestEvents[0] : null;
 
     if (!latestEvent) {
       console.log(`⚠️ No events found for webhook ${webhook._id} retry, skipping`);
@@ -631,8 +772,9 @@ app.worker('webhook-retry', async (req, res) => {
     await deliverWebhook(webhook, latestEvent);
 
     // Update webhook on success
-    const db = await getWebhooksDB();
-    await db.updateOne(
+    const conn2 = await getDB();
+    await conn2.updateOne(
+      'webhooks',
       { _id: webhook._id },
       {
         $set: {
@@ -651,11 +793,11 @@ app.worker('webhook-retry', async (req, res) => {
   } catch (error) {
     console.error(`❌ Webhook retry failed:`, error.message);
 
-    const webhook = req.body.payload?.event;
+    const webhook = req.body.payload;
     if (webhook) {
       const consecutiveFailures = (webhook.consecutiveFailures || 0) + 1;
 
-      const db = await getWebhooksDB();
+      const conn = await getDB();
       const updateData = {
         lastDeliveryAt: new Date().toISOString(),
         lastDeliveryStatus: 'failed',
@@ -671,7 +813,8 @@ app.worker('webhook-retry', async (req, res) => {
         console.log(`🚫 Webhook ${webhook._id} disabled after 10 failures`);
       }
 
-      await db.updateOne(
+      await conn.updateOne(
+        'webhooks',
         { _id: webhook._id },
         { $set: updateData }
       );
@@ -688,15 +831,15 @@ async function cleanupJob(_req, res) {
   try {
     console.log('🧹 Running cleanup job...');
 
-    const webhooksDB = await getWebhooksDB();
-    const eventsDB = await getEventsDB();
+    const conn = await getDB();
 
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
 
     // Disable webhooks that have been failing for 30 days
-    const disabledResult = await webhooksDB.updateMany(
+    const disabledResult = await conn.updateMany(
+      'webhooks',
       {
         status: 'verification_failed',
         createdAt: { $lt: thirtyDaysAgoISO }
@@ -715,7 +858,7 @@ async function cleanupJob(_req, res) {
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
     const ninetyDaysAgoISO = ninetyDaysAgo.toISOString();
 
-    const eventsResult = await eventsDB.removeMany({
+    const eventsResult = await conn.removeMany('events', {
       processedAt: { $lt: ninetyDaysAgoISO }
     });
 

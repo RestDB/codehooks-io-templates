@@ -11,26 +11,40 @@
 **Now:** Uses Codehooks queue API with `enqueueFromQuery` for efficient, scalable processing:
 
 ```javascript
-// Efficiently queue all matching webhooks in one operation
+// 1. Store event in database
+await conn.insertOne('events', { ...eventData, processedAt: new Date().toISOString() });
+
+// 2. Mark all matching webhooks with the event ID
+await conn.updateMany(
+  'webhooks',
+  { status: 'active', $or: [{ events: eventType }, { events: '*' }] },
+  { $set: { pendingEventId: eventData.id } }
+);
+
+// 3. Efficiently queue all marked webhooks in one operation
 const result = await conn.enqueueFromQuery(
-  'webhooks', // collection
-  { status: 'active', $or: [{ events: eventType }, { events: '*' }] }, // query
-  'webhook-delivery', // queue topic
-  {
-    eventData: eventData,
-    retries: 3,
-    retryDelay: 1000,
-    timeout: 30000
-  }
+  'webhooks',
+  { status: 'active', pendingEventId: eventData.id },
+  'webhook-delivery'
 );
 
 // Worker processes messages from queue
 async function webhookDeliveryWorker(req, res) {
-  const { payload } = req.body;
-  const webhook = payload.event;       // Webhook from enqueueFromQuery
-  const eventData = payload.eventData; // Event data from options
-  // ... deliver webhook
-  res.json({ success: true });
+  const webhook = req.body.payload; // Webhook from enqueueFromQuery
+
+  // Fetch event data from database
+  const conn = await getDB();
+  const eventDoc = await conn.getOne('events', { id: webhook.pendingEventId });
+
+  // Deliver webhook
+  await deliverWebhook(webhook, eventDoc);
+
+  // Clear pendingEventId
+  await conn.updateOne('webhooks', { _id: webhook._id },
+    { $set: { pendingEventId: null } }
+  );
+
+  res.end(JSON.stringify({ success: true }));
 }
 
 app.worker('webhook-delivery', webhookDeliveryWorker);
@@ -128,12 +142,9 @@ POST /events/trigger/my.custom.event.name
 
 ```javascript
 // Store event in database for audit trail
-const eventsDB = await getEventsDB();
-await eventsDB.insertOne({
-  id: eventData.id,
-  type: eventData.type,
-  data: eventData.data,
-  created: eventData.created,
+const conn = await getDB();
+await conn.insertOne('events', {
+  ...eventData,
   processedAt: new Date().toISOString()
 });
 ```
@@ -205,7 +216,7 @@ POST /events/trigger/user.created → 202 Accepted
 curl -X GET $API_URL/webhooks
 
 # v2.0 - API key required
-curl -X GET -H "X-Api-Key: $API_KEY" $API_URL/webhooks
+curl -X GET -H "x-apikey: $API_KEY" $API_URL/webhooks
 ```
 
 **3. Event Triggering Still Public**
@@ -248,7 +259,7 @@ curl -X POST $API_URL/events/trigger/order.shipped \
 # 6. Stats updated in real-time
 
 # Your Customers (with API key)
-curl -X POST -H "X-Api-Key: customer-key" $API_URL/webhooks \
+curl -X POST -H "x-apikey: customer-key" $API_URL/webhooks \
   -d '{
     "url": "https://customer.com/webhook",
     "events": ["order.shipped", "order.delivered"]

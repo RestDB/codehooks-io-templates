@@ -10,19 +10,28 @@ This outgoing webhook system uses Codehooks Queue API with `enqueueFromQuery` fo
 
 ```javascript
 app.post('/events/trigger/:eventType', async (req, res) => {
-  // Store event for audit trail
-  await eventsDB.insertOne(eventData);
+  // 1. Store event for audit trail
+  await conn.insertOne('events', {
+    ...eventData,
+    processedAt: new Date().toISOString()
+  });
 
-  // Efficiently queue ALL matching webhooks in ONE operation
-  const result = await conn.enqueueFromQuery(
+  // 2. Mark all matching webhooks with the event ID
+  await conn.updateMany(
     'webhooks',
     { status: 'active', $or: [{ events: eventType }, { events: '*' }] },
-    'webhook-delivery',
-    { eventData: eventData, retries: 3, retryDelay: 1000, timeout: 30000 }
+    { $set: { pendingEventId: eventData.id } }
+  );
+
+  // 3. Efficiently queue ALL marked webhooks in ONE operation
+  const result = await conn.enqueueFromQuery(
+    'webhooks',
+    { status: 'active', pendingEventId: eventData.id },
+    'webhook-delivery'
   );
 
   // Return immediately (202 Accepted)
-  res.status(202).json({ webhookCount: result.queued });
+  res.status(202).json({ webhookCount: result.count });
 });
 ```
 
@@ -30,12 +39,14 @@ app.post('/events/trigger/:eventType', async (req, res) => {
 
 ```javascript
 async function webhookDeliveryWorker(req, res) {
-  const { payload } = req.body;
-  const webhook = payload.event;     // Webhook from enqueueFromQuery
-  const eventData = payload.eventData; // Event data passed in options
+  const webhook = req.body.payload; // Webhook from enqueueFromQuery
+
+  // Fetch event data from database
+  const conn = await getDB();
+  const eventDoc = await conn.getOne('events', { id: webhook.pendingEventId });
 
   // Sign payload
-  const eventPayload = JSON.stringify(eventData);
+  const eventPayload = JSON.stringify(eventDoc);
   const { signature, timestamp } = generateSignature(eventPayload, webhook.secret);
 
   // Deliver webhook
@@ -45,20 +56,30 @@ async function webhookDeliveryWorker(req, res) {
       'X-Webhook-Signature': signature,
       'X-Webhook-Timestamp': timestamp.toString(),
       'X-Webhook-Id': webhook._id,
-      'X-Event-Id': eventData.id
+      'X-Event-Id': eventDoc.id
     },
     body: eventPayload
   });
 
-  // Update stats
-  await updateWebhookStats(webhook._id, response.ok ? 'success' : 'failed');
+  // Update webhook stats and clear pendingEventId
+  await conn.updateOne(
+    'webhooks',
+    { _id: webhook._id },
+    {
+      $set: {
+        pendingEventId: null,
+        consecutiveFailures: 0,
+        lastDeliveryStatus: 'success'
+      }
+    }
+  );
 
   // Return response (error triggers retry)
   if (!response.ok) {
-    return res.status(500).json({ error: `HTTP ${response.status}` });
+    return res.status(500).end();
   }
 
-  res.json({ success: true });
+  res.end(JSON.stringify({ success: true }));
 }
 
 app.worker('webhook-delivery', webhookDeliveryWorker);
@@ -187,34 +208,32 @@ const result = await conn.enqueueFromQuery(
 
 ## Message Structure
 
-When a webhook is queued, the message contains:
+When a webhook is queued using `enqueueFromQuery`, the payload IS the webhook document:
 
 ```javascript
-{
-  event: {
-    _id: "webhook_123",
-    url: "https://customer.com/webhook",
-    events: ["order.placed"],
-    secret: "whsec_abc...",
-    status: "active",
-    // ... all webhook fields
-  },
-  eventData: {
-    id: "evt_456",
-    type: "order.placed",
-    data: { orderId: "123", total: 99.99 },
-    created: 1234567890
-  },
-  attempt: 1,
-  retries: 3,
-  retryDelay: 1000,
-  timeout: 30000
+// Worker receives:
+req.body.payload = {
+  _id: "webhook_123",
+  url: "https://customer.com/webhook",
+  events: ["order.placed"],
+  secret: "whsec_abc...",
+  status: "active",
+  pendingEventId: "evt_456",  // References event in database
+  pendingEventType: "order.placed",
+  // ... all other webhook fields
 }
+
+// Worker fetches event data:
+const eventDoc = await conn.getOne('events', { id: webhook.pendingEventId });
+// eventDoc = {
+//   id: "evt_456",
+//   type: "order.placed",
+//   data: { orderId: "123", total: 99.99 },
+//   created: 1234567890
+// }
 ```
 
-The consumer receives:
-- `payload.event`: The webhook document from the collection (from enqueueFromQuery)
-- `payload.eventData`: Our custom event data (from options)
+**Key Design Point:** The webhook document stores a reference to the event ID (`pendingEventId`) rather than embedding the full event data. This allows `enqueueFromQuery` to work efficiently while still delivering the event payload to webhook receivers.
 
 ## Retry Mechanism
 
