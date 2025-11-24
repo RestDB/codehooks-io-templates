@@ -21,7 +21,7 @@ You have a system that fires events, but don't want to build a full-fledged robu
 - ✅ **Audit Trail** - Event logging for compliance and debugging
 - ✅ **Production-Ready** - Proper error handling, timeouts, and SSRF protection
 
->[Read blog post about webhook delivery here.](http://localhost:3000/blog/build-webhook-delivery-system-5-minutes-codehooks-io)
+>[Read blog post about webhook delivery here.](https://codehooks.io/blog/build-webhook-delivery-system-5-minutes-codehooks-io)
 
 ## What are Outgoing Webhooks?
 
