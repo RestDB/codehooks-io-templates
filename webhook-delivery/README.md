@@ -21,6 +21,8 @@ You have a system that fires events, but don't want to build a full-fledged robu
 - ✅ **Audit Trail** - Event logging for compliance and debugging
 - ✅ **Production-Ready** - Proper error handling, timeouts, and SSRF protection
 
+>[Read blog post about webhook delivery here.](http://localhost:3000/blog/build-webhook-delivery-system-5-minutes-codehooks-io)
+
 ## What are Outgoing Webhooks?
 
 Outgoing webhooks (also called "reverse webhooks" or "webhook delivery") allow your application to notify external services when events occur. When something happens in your system (user created, order placed, payment completed, etc.), your application sends HTTP POST requests to registered webhook URLs.
