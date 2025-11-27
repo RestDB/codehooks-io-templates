@@ -156,7 +156,9 @@ const result = await conn.enqueueFromQuery(
 
 **Result:** 100x faster, 50,000x less memory!
 
-## Data Flow Diagram
+## Data Flow Diagrams
+
+### Webhook Event Delivery Flow
 
 ```
 ┌─────────────────┐
@@ -205,6 +207,94 @@ const result = await conn.enqueueFromQuery(
          ▼           ▼           ▼
     Update Stats  Update Stats  Update Stats
 ```
+
+### Webhook Verification Flow
+
+When a new webhook is registered, it must be verified before becoming active:
+
+```
+┌─────────────────┐
+│  Client/Customer│
+│  registers hook │
+└────────┬────────┘
+         │ POST /webhooks
+         │ { clientId, url, events }
+         ▼
+┌─────────────────────────────────────────┐
+│  Webhook Registration Endpoint          │
+│  1. Check for existing (clientId + url) │
+│  2. Generate secret & token             │
+│  3. Save webhook (status: pending)      │
+│  4. Return response immediately         │
+│  5. Trigger verification async          │
+└────────┬────────────────────────────────┘
+         │
+         ├─────────────────────────────────┐
+         │                                 │
+         │ Response to client:             │ Async verification:
+         │ 201 Created                     │
+         │ { id, secret,                   ▼
+         │   verificationToken,    ┌───────────────┐
+         │   status: "pending" }   │Send test POST │
+         │                         │to webhook URL │
+         ▼                         └───────┬───────┘
+┌─────────────────┐                       │
+│  Client stores  │                       │ Stripe style:
+│  webhook secret │                       │ { type: "webhook.verification",
+│  for signature  │                       │   verification_token: "tok_..." }
+│  validation     │                       │
+└─────────────────┘                       │ Slack style:
+                                          │ { type: "url_verification",
+                                          │   challenge: "abc123..." }
+                                          │
+                                          ▼
+                                   ┌──────────────────┐
+                                   │ Customer's       │
+                                   │ Webhook Endpoint │
+                                   └────────┬─────────┘
+                                            │
+                    ┌───────────────────────┼───────────────────────┐
+                    │                       │                       │
+                    ▼ Success (200 OK)      │ Timeout/Error         │
+         ┌──────────────────────┐           ▼                       ▼
+         │ Update webhook:       │   ┌──────────────┐      ┌──────────────┐
+         │ status: "active"      │   │ Update:      │      │ Update:      │
+         │ verifiedAt: now       │   │ status: "    │      │ status: "    │
+         │                       │   │  pending"    │      │  failed"     │
+         └───────────────────────┘   │ (retry later)│      │              │
+                                     └──────────────┘      └──────────────┘
+                    │
+                    ▼
+         ┌──────────────────────┐
+         │ Webhook is now       │
+         │ active and ready     │
+         │ to receive events    │
+         └──────────────────────┘
+```
+
+**Verification Methods:**
+
+1. **Stripe-Style**: Customer endpoint must respond with 200 OK
+   ```json
+   POST to customer URL:
+   { "type": "webhook.verification", "verification_token": "tok_abc..." }
+
+   Expected response: HTTP 200 OK
+   ```
+
+2. **Slack-Style**: Customer endpoint must echo the challenge
+   ```json
+   POST to customer URL:
+   { "type": "url_verification", "challenge": "abc123...", "token": "tok_..." }
+
+   Expected response: HTTP 200 OK
+   { "challenge": "abc123..." }
+   ```
+
+**Verification States:**
+- `pending_verification` → Initial state, verification in progress
+- `active` → Verification successful, ready to receive events
+- `failed` → Verification failed (URL unreachable, wrong response, timeout)
 
 ## Message Structure
 
