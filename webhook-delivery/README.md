@@ -744,20 +744,6 @@ curl -X POST -H "x-apikey: $API_KEY" $API_URL/webhooks \
   -d '{"url": "https://example.com/hook", "events": ["*"]}'
 ```
 
-### Modify retry behavior
-
-Edit [index.js:412-414](index.js#L412-L414) to adjust queue delivery settings:
-
-```javascript
-{
-  eventData: eventData,
-  retries: 5,           // Increase retry attempts (default: 3)
-  retryDelay: 2000,     // Longer initial delay (default: 1000ms)
-  timeout: 45000        // Longer timeout (default: 30000ms)
-}
-```
-
-The queue handles exponential backoff automatically between retries.
 
 ## Production Considerations
 

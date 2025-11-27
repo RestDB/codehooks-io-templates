@@ -276,27 +276,20 @@ app.post('/webhooks', async (req, res) => {
       console.log('Created webhook with ID:', webhookId);
     }
 
-    // Start verification process asynchronously
-    setTimeout(async () => {
-      try {
-        const verified = await verifyWebhookUrl(url, verificationToken, verificationType);
-        const conn2 = await getDB();
-        await conn2.updateOne(
-          'webhooks',
-          { _id: webhookId },
-          {
-            $set: {
-              status: verified ? 'active' : 'verification_failed',
-              verifiedAt: verified ? new Date().toISOString() : null,
-              updatedAt: new Date().toISOString()
-            }
-          }
-        );
-        console.log(`Webhook ${webhookId} verification: ${verified ? 'SUCCESS' : 'FAILED'}`);
-      } catch (verifyError) {
-        console.error('Error during verification:', verifyError);
+    // Queue webhook verification using worker
+    await conn.enqueue(
+      'webhook-verification',
+      {
+        webhookId,
+        url,
+        verificationToken,
+        verificationType
+      },
+      {
+        retries: 2,
+        retryDelay: 1000
       }
-    }, 100);
+    );
 
     res.status(isUpdate ? 200 : 201).json({
       id: webhookId,
@@ -394,26 +387,20 @@ app.patch('/webhooks/:id', async (req, res) => {
       updates.status = 'pending_verification';
       updates.verificationToken = generateVerificationToken();
 
-      // Trigger re-verification
-      setTimeout(async () => {
-        const verified = await verifyWebhookUrl(
+      // Queue re-verification using worker
+      await conn.enqueue(
+        'webhook-verification',
+        {
+          webhookId: req.params.id,
           url,
-          updates.verificationToken,
-          webhook.verificationType
-        );
-        const conn2 = await getDB();
-        await conn2.updateOne(
-          'webhooks',
-          { _id: req.params.id },
-          {
-            $set: {
-              status: verified ? 'active' : 'verification_failed',
-              verifiedAt: verified ? new Date().toISOString() : null,
-              updatedAt: new Date().toISOString()
-            }
-          }
-        );
-      }, 100);
+          verificationToken: updates.verificationToken,
+          verificationType: webhook.verificationType
+        },
+        {
+          retries: 2,
+          retryDelay: 1000
+        }
+      );
     }
 
     if (events) {
@@ -697,7 +684,69 @@ async function webhookDeliveryWorker(req, res) {
   }
 }
 
-// Register the worker
+// Worker function: Process webhook verification from queue
+async function webhookVerificationWorker(req, res) {
+  try {
+    const { payload } = req.body;
+    const { webhookId, url, verificationToken, verificationType } = payload;
+
+    if (!webhookId || !url || !verificationToken) {
+      console.error('Invalid verification worker payload:', payload);
+      return res.status(400).json({ error: 'Missing required verification data' });
+    }
+
+    console.log(`Verifying webhook ${webhookId}...`);
+
+    // Perform verification
+    const verified = await verifyWebhookUrl(url, verificationToken, verificationType);
+
+    // Update webhook with verification result
+    const conn = await getDB();
+    await conn.updateOne(
+      'webhooks',
+      { _id: webhookId },
+      {
+        $set: {
+          status: verified ? 'active' : 'verification_failed',
+          verifiedAt: verified ? new Date().toISOString() : null,
+          updatedAt: new Date().toISOString()
+        }
+      }
+    );
+
+    console.log(`✅ Webhook ${webhookId} verification: ${verified ? 'SUCCESS' : 'FAILED'}`);
+    res.end(JSON.stringify({ success: true, verified, webhookId }));
+
+  } catch (error) {
+    console.error('❌ Webhook verification error:', error.message);
+
+    // Mark verification as failed
+    const { webhookId } = req.body.payload || {};
+    if (webhookId) {
+      try {
+        const conn = await getDB();
+        await conn.updateOne(
+          'webhooks',
+          { _id: webhookId },
+          {
+            $set: {
+              status: 'verification_failed',
+              verifiedAt: null,
+              updatedAt: new Date().toISOString()
+            }
+          }
+        );
+      } catch (updateError) {
+        console.error('Failed to update webhook status:', updateError);
+      }
+    }
+
+    res.status(500).end(JSON.stringify({ error: error.message, webhookId }));
+  }
+}
+
+// Register workers
+app.worker('webhook-verification', webhookVerificationWorker);
 app.worker('webhook-delivery', webhookDeliveryWorker);
 
 // Cron job to retry failed webhooks (runs every 30 minutes)
