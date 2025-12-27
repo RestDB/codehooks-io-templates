@@ -73,6 +73,20 @@ Production-ready Stripe webhook handler with TypeScript, signature verification,
 coho create mywebhooks --template stripe-webhook-handler
 ```
 
+#### Webhook Delivery System
+Production-ready webhook delivery system with queue-based processing, automatic retries, and HMAC signing. Perfect for sending webhooks to external services when events occur in your application.
+
+```bash
+coho create mywebhooks --template webhook-delivery
+```
+
+#### Drip Email Workflow
+3-step drip email campaign with SendGrid/Mailgun support, subscriber management, and scheduled delivery. Includes dynamic step configuration and professional email templates.
+
+```bash
+coho create my-drip-campaign --template drip-email-workflow
+```
+
 ### Minimal Webhook Templates
 
 These templates provide minimal, educational implementations of webhook handlers for popular services. Each includes proper signature verification, basic event handling, and comprehensive documentation. Perfect for learning or as a starting point for your own integrations.
