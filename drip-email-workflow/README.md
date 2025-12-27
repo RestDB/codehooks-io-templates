@@ -16,6 +16,14 @@ Easy to understand, easy to customize, infinitely scalable.
 - ✅ **Subscriber Management** - Full CRUD API
 - ✅ **Professional Design** - Beautiful, responsive emails
 
+## Email Preview
+
+Here's what your subscribers will receive:
+
+![Email Template Preview](./email-preview.png)
+
+The template features a modern, responsive design with a purple gradient header, personalized content, and clear call-to-action buttons.
+
 ## How It Works
 
 **Simple architecture with config file-based configuration:**
