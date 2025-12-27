@@ -488,7 +488,7 @@ Look for these log messages:
 ```bash
 coho set-env DRY_RUN "false"
 # or remove it entirely
-coho env delete DRY_RUN
+coho remove-env DRY_RUN
 ```
 
 ### Quick Test (5-minute intervals)
