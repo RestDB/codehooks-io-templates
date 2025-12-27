@@ -106,8 +106,6 @@ curl -X POST https://YOUR_PROJECT.api.codehooks.io/dev/subscribers \
   }'
 ```
 
-curl -X POST "https://helloworld-86zk.api.codehooks.io/dev/subscribers" -H "Content-Type: application/json" -H "x-apikey: 5f405036-2f2e-4803-8594-d64923806375" -d '{"name":"Jones", "email": "jbeejones@gmail.com"}'
-
 That's it! The cron job runs every 15 minutes and will automatically process subscribers.
 
 ## 5. Verify It's Working
@@ -231,13 +229,14 @@ coho deploy       # Deploy changes
 
 View current templates:
 ```bash
-curl https://YOUR_PROJECT.api.codehooks.io/dev/templates
+curl https://YOUR_PROJECT.api.codehooks.io/dev/templates -H "x-apikey: YOUR_API_KEY_HERE"
 ```
 
 Create a custom template override:
 ```bash
 curl -X POST https://YOUR_PROJECT.api.codehooks.io/dev/templates \
   -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY_HERE" \
   -d '{
     "step": 1,
     "subject": "🎉 Welcome to Our Community!",
@@ -266,7 +265,7 @@ coho add-token --description "Unsubscribe API"
 
 # Use it in unsubscribe requests
 curl -X POST https://YOUR_PROJECT.api.codehooks.io/dev/subscribers/abc123/unsubscribe \
-  -H "x-apikey: your-token-here"
+  -H "x-apikey: YOUR_API_KEY_HERE"
 ```
 
 ## Troubleshooting
@@ -298,19 +297,19 @@ curl -X POST https://YOUR_PROJECT.api.codehooks.io/dev/subscribers/abc123/unsubs
 
 ```bash
 # View all subscribers
-curl https://YOUR_PROJECT.api.codehooks.io/dev/subscribers
+curl https://YOUR_PROJECT.api.codehooks.io/dev/subscribers -H "x-apikey: YOUR_API_KEY_HERE" \
 
 # View only subscribed users
-curl https://YOUR_PROJECT.api.codehooks.io/dev/subscribers?subscribed=true
+curl https://YOUR_PROJECT.api.codehooks.io/dev/subscribers?subscribed=true -H "x-apikey: YOUR_API_KEY_HERE" \
 
 # Check health/configuration
-curl https://YOUR_PROJECT.api.codehooks.io/dev/
+curl https://YOUR_PROJECT.api.codehooks.io/dev/ -H "x-apikey: YOUR_API_KEY_HERE" \
 
 # View logs
 coho logs --follow
 
 # List environment variables
-coho env list
+coho info
 
 # Update an environment variable
 coho set-env VARIABLE_NAME "value"
