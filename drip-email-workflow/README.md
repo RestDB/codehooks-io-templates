@@ -21,8 +21,8 @@ Easy to understand, easy to customize, infinitely scalable.
 **Simple architecture with config file-based configuration:**
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  stepsconfig.json                                         │
+┌──────────────────────────────────────────────────────┐
+│  stepsconfig.json                                    │
 │  {                                                   │
 │    "workflowSteps": [                                │
 │      {                                               │
@@ -33,27 +33,27 @@ Easy to understand, easy to customize, infinitely scalable.
 │      { ... more steps ... }                          │
 │    ]                                                 │
 │  }                                                   │
-└─────────────────────┬───────────────────────────────┘
+└─────────────────────┬────────────────────────────────┘
                       │ Loaded on startup
                       ▼
-┌─────────────────────────────────────────────────────┐
-│  SINGLE CRON JOB (runs every 15 min)                │
+┌──────────────────────────────────────────────────────┐
+│  SINGLE CRON JOB (runs every 15 min)                 │
 │                                                      │
 │  For each step in config:                            │
-│    1. Calculate cutoff: now - hoursAfterSignup      │
+│    1. Calculate cutoff: now - hoursAfterSignup       │
 │    2. Find subscribers who:                          │
 │       - Haven't received this step                   │
 │       - Signed up before cutoff                      │
 │    3. Queue them for sending                         │
-└─────────────────────┬───────────────────────────────┘
+└─────────────────────┬────────────────────────────────┘
                       │ conn.enqueue('send-email', {...})
                       ▼
-┌─────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────┐
 │  QUEUE WORKER                                        │
 │  • Sends email via API                               │
 │  • Updates subscriber.emailsSent array               │
 │  • Marks step complete                               │
-└─────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────┘
 ```
 
 ### Example Configuration

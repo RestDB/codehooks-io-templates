@@ -99,6 +99,7 @@ Add yourself as a test subscriber:
 ```bash
 curl -X POST https://YOUR_PROJECT.api.codehooks.io/dev/subscribers \
   -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY_HERE" \
   -d '{
     "name": "Your Name",
     "email": "your-email@example.com"
