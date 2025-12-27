@@ -1,0 +1,13 @@
+{
+  "name": "drip-email-workflow",
+  "version": "1.0.0",
+  "description": "3-step drip email campaign workflow with SendGrid and Mailgun support for Codehooks.io",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "deploy": "coho deploy"
+  },
+  "dependencies": {
+    "codehooks-js": "latest"
+  }
+}

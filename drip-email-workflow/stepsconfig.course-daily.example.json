@@ -1,0 +1,88 @@
+{
+  "workflowSteps": [
+    {
+      "step": 1,
+      "hoursAfterSignup": 24,
+      "template": {
+        "subject": "Day 1: Welcome to Your Course! 📚",
+        "heading": "Let's Get Started, {{name}}!",
+        "body": "Welcome to Day 1 of your learning journey!\n\nToday's lesson: Introduction to the Fundamentals\n\nIn this lesson, you'll learn:\n• Core concepts and terminology\n• Setting up your environment\n• Your first hands-on exercise\n\nTake your time and enjoy the process!",
+        "buttonText": "Start Day 1",
+        "buttonUrl": "https://example.com/course/day-1",
+        "logoUrl": "https://via.placeholder.com/150x50?text=Course+Logo"
+      }
+    },
+    {
+      "step": 2,
+      "hoursAfterSignup": 48,
+      "template": {
+        "subject": "Day 2: Building on the Basics 🔨",
+        "heading": "Day 2 Lesson, {{name}}",
+        "body": "Welcome to Day 2!\n\nToday's lesson: Building Your First Project\n\nIn this lesson, you'll:\n• Apply what you learned yesterday\n• Work on a practical project\n• Learn debugging techniques\n\nReady to dive in?",
+        "buttonText": "Start Day 2",
+        "buttonUrl": "https://example.com/course/day-2",
+        "logoUrl": "https://via.placeholder.com/150x50?text=Course+Logo"
+      }
+    },
+    {
+      "step": 3,
+      "hoursAfterSignup": 72,
+      "template": {
+        "subject": "Day 3: Advanced Techniques 🚀",
+        "heading": "Day 3 Lesson, {{name}}",
+        "body": "Welcome to Day 3!\n\nToday's lesson: Advanced Concepts and Best Practices\n\nIn this lesson, you'll:\n• Explore advanced techniques\n• Learn industry best practices\n• Optimize your workflow\n\nLet's level up!",
+        "buttonText": "Start Day 3",
+        "buttonUrl": "https://example.com/course/day-3",
+        "logoUrl": "https://via.placeholder.com/150x50?text=Course+Logo"
+      }
+    },
+    {
+      "step": 4,
+      "hoursAfterSignup": 96,
+      "template": {
+        "subject": "Day 4: Real-World Applications 💼",
+        "heading": "Day 4 Lesson, {{name}}",
+        "body": "Welcome to Day 4!\n\nToday's lesson: Applying Skills to Real-World Scenarios\n\nIn this lesson, you'll:\n• Work on a real-world case study\n• Learn problem-solving strategies\n• Build a portfolio piece\n\nExciting work ahead!",
+        "buttonText": "Start Day 4",
+        "buttonUrl": "https://example.com/course/day-4",
+        "logoUrl": "https://via.placeholder.com/150x50?text=Course+Logo"
+      }
+    },
+    {
+      "step": 5,
+      "hoursAfterSignup": 120,
+      "template": {
+        "subject": "Day 5: Review and Consolidation 📝",
+        "heading": "Day 5 Lesson, {{name}}",
+        "body": "Welcome to Day 5!\n\nToday's lesson: Week 1 Review and Assessment\n\nIn this lesson, you'll:\n• Review everything you've learned\n• Take a practice quiz\n• Prepare for Week 2\n\nGreat progress this week!",
+        "buttonText": "Start Day 5",
+        "buttonUrl": "https://example.com/course/day-5",
+        "logoUrl": "https://via.placeholder.com/150x50?text=Course+Logo"
+      }
+    },
+    {
+      "step": 6,
+      "hoursAfterSignup": 144,
+      "template": {
+        "subject": "Day 6: Week 2 Begins! 🎯",
+        "heading": "Day 6 Lesson, {{name}}",
+        "body": "Welcome to Day 6 - Week 2!\n\nToday's lesson: New Concepts and Techniques\n\nBuilding on last week's foundation, today you'll:\n• Learn advanced frameworks\n• Explore new tools\n• Start a bigger project\n\nLet's keep the momentum going!",
+        "buttonText": "Start Day 6",
+        "buttonUrl": "https://example.com/course/day-6",
+        "logoUrl": "https://via.placeholder.com/150x50?text=Course+Logo"
+      }
+    },
+    {
+      "step": 7,
+      "hoursAfterSignup": 168,
+      "template": {
+        "subject": "Day 7: One Week Complete! 🎉",
+        "heading": "Amazing Progress, {{name}}!",
+        "body": "Congratulations on completing your first week!\n\nToday's lesson: Milestone Celebration and Next Steps\n\nReflect on:\n• What you've accomplished\n• Key takeaways from Week 1\n• Your goals for Week 2\n\nYou're doing great - keep it up!",
+        "buttonText": "Start Day 7",
+        "buttonUrl": "https://example.com/course/day-7",
+        "logoUrl": "https://via.placeholder.com/150x50?text=Course+Logo"
+      }
+    }
+  ]
+}

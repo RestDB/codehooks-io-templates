@@ -1,0 +1,64 @@
+{
+  "workflowSteps": [
+    {
+      "step": 1,
+      "hoursAfterSignup": 24,
+      "template": {
+        "subject": "Welcome to Our Community! 🎉",
+        "heading": "Welcome, {{name}}!",
+        "body": "Thank you for joining our community!\n\nWe're excited to have you here. Over the next few weeks, we'll be sharing valuable insights and tips to help you get the most out of our service.\n\nStay tuned for more updates!",
+        "buttonText": "Get Started",
+        "buttonUrl": "https://example.com/get-started",
+        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+      }
+    },
+    {
+      "step": 2,
+      "hoursAfterSignup": 72,
+      "template": {
+        "subject": "Quick Tips to Get You Started 💡",
+        "heading": "Here are some tips, {{name}}",
+        "body": "We hope you've had a chance to explore!\n\nHere are some quick tips to help you make the most of your experience:\n\n• Tip 1: Customize your profile\n• Tip 2: Connect with other members\n• Tip 3: Explore our resources\n\nIf you have any questions, feel free to reach out!",
+        "buttonText": "View Resources",
+        "buttonUrl": "https://example.com/resources",
+        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+      }
+    },
+    {
+      "step": 3,
+      "hoursAfterSignup": 168,
+      "template": {
+        "subject": "One Week In - How's It Going? 🌟",
+        "heading": "Welcome to week two, {{name}}!",
+        "body": "It's been a week since you joined us!\n\nWe hope you're enjoying your experience so far. This is a great time to dive deeper into our platform.\n\nHere are some advanced features you might have missed:\n\n• Feature 1: Advanced analytics\n• Feature 2: Team collaboration\n• Feature 3: Custom integrations\n\nLet us know if you need any help!",
+        "buttonText": "Explore Features",
+        "buttonUrl": "https://example.com/features",
+        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+      }
+    },
+    {
+      "step": 4,
+      "hoursAfterSignup": 336,
+      "template": {
+        "subject": "We'd Love to Hear From You! 💬",
+        "heading": "Your Feedback Matters, {{name}}",
+        "body": "It's been two weeks - we'd love to hear about your experience!\n\nYour feedback helps us improve and serve you better. Take a moment to share your thoughts with us.\n\nWhat would you like to see improved? What features do you love the most?",
+        "buttonText": "Share Feedback",
+        "buttonUrl": "https://example.com/feedback",
+        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+      }
+    },
+    {
+      "step": 5,
+      "hoursAfterSignup": 720,
+      "template": {
+        "subject": "One Month Strong! Thank You 🙏",
+        "heading": "Celebrating 30 days, {{name}}!",
+        "body": "Congratulations - you've been with us for a month!\n\nWe're grateful for your continued support and engagement. As a thank you, we'd like to share some exclusive content and opportunities:\n\n• Upcoming webinars and events\n• Early access to new features\n• Community spotlight opportunities\n\nHere's to many more months together!",
+        "buttonText": "View Exclusive Content",
+        "buttonUrl": "https://example.com/exclusive",
+        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+      }
+    }
+  ]
+}
