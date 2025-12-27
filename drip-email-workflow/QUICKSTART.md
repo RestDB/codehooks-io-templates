@@ -297,13 +297,13 @@ curl -X POST https://YOUR_PROJECT.api.codehooks.io/dev/subscribers/abc123/unsubs
 
 ```bash
 # View all subscribers
-curl https://YOUR_PROJECT.api.codehooks.io/dev/subscribers -H "x-apikey: YOUR_API_KEY_HERE" \
+curl https://YOUR_PROJECT.api.codehooks.io/dev/subscribers -H "x-apikey: YOUR_API_KEY_HERE"
 
 # View only subscribed users
-curl https://YOUR_PROJECT.api.codehooks.io/dev/subscribers?subscribed=true -H "x-apikey: YOUR_API_KEY_HERE" \
+curl https://YOUR_PROJECT.api.codehooks.io/dev/subscribers?subscribed=true -H "x-apikey: YOUR_API_KEY_HERE"
 
 # Check health/configuration
-curl https://YOUR_PROJECT.api.codehooks.io/dev/ -H "x-apikey: YOUR_API_KEY_HERE" \
+curl https://YOUR_PROJECT.api.codehooks.io/dev/ -H "x-apikey: YOUR_API_KEY_HERE"
 
 # View logs
 coho logs --follow

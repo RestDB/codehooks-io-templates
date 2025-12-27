@@ -158,6 +158,7 @@ coho deploy
 ```bash
 curl -X POST https://your-project.api.codehooks.io/dev/subscribers \
   -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY_HERE" \
   -d '{
     "name": "John Doe",
     "email": "john@example.com"
@@ -165,6 +166,13 @@ curl -X POST https://your-project.api.codehooks.io/dev/subscribers \
 ```
 
 That's it! The cron job runs every 15 minutes and processes all steps automatically.
+
+**Get your API key:**
+```bash
+coho add-token --description "Drip campaign"
+```
+
+Use this API key in the `x-apikey` header for all API requests.
 
 ## Configuration Examples
 
@@ -265,18 +273,19 @@ app.job('*/15 * * * *', async (req, res) => {
 
 ### Create Subscriber
 ```bash
-POST /subscribers
-Content-Type: application/json
-
-{
-  "name": "John Doe",
-  "email": "john@example.com"
-}
+curl -X POST https://your-project.api.codehooks.io/dev/subscribers \
+  -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY_HERE" \
+  -d '{
+    "name": "John Doe",
+    "email": "john@example.com"
+  }'
 ```
 
 ### List Subscribers
 ```bash
-GET /subscribers?subscribed=true
+curl https://your-project.api.codehooks.io/dev/subscribers?subscribed=true \
+  -H "x-apikey: YOUR_API_KEY_HERE"
 ```
 
 Response shows which steps each subscriber has received:
@@ -295,46 +304,45 @@ Response shows which steps each subscriber has received:
 
 ### Get Subscriber Details
 ```bash
-GET /subscribers/:id
+curl https://your-project.api.codehooks.io/dev/subscribers/:id \
+  -H "x-apikey: YOUR_API_KEY_HERE"
 ```
 
-### Unsubscribe (Requires API Token)
+### Unsubscribe
 ```bash
-POST /subscribers/:id/unsubscribe
-Headers: x-apikey: your-api-key
-
-# Get API token:
-coho add-token --description "Drip campaign"
+curl -X POST https://your-project.api.codehooks.io/dev/subscribers/:id/unsubscribe \
+  -H "x-apikey: YOUR_API_KEY_HERE"
 ```
 
 ### Get Templates
 ```bash
-GET /templates
+curl https://your-project.api.codehooks.io/dev/templates \
+  -H "x-apikey: YOUR_API_KEY_HERE"
 ```
 
 Returns default templates for all configured steps.
 
 ### Create/Update Template
 ```bash
-POST /templates
-Content-Type: application/json
-
-{
-  "step": 1,
-  "subject": "Welcome! 🎉",
-  "heading": "Hi {{name}}, welcome!",
-  "body": "We're excited to have you...",
-  "buttonText": "Get Started",
-  "buttonUrl": "https://example.com",
-  "logoUrl": "https://example.com/logo.png"
-}
+curl -X POST https://your-project.api.codehooks.io/dev/templates \
+  -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY_HERE" \
+  -d '{
+    "step": 1,
+    "subject": "Welcome! 🎉",
+    "heading": "Hi {{name}}, welcome!",
+    "body": "We are excited to have you...",
+    "buttonText": "Get Started",
+    "buttonUrl": "https://example.com",
+    "logoUrl": "https://example.com/logo.png"
+  }'
 ```
 
 **Placeholders:** `{{name}}`, `{{email}}`
 
 ### Health Check
 ```bash
-GET /
+curl https://your-project.api.codehooks.io/dev/
 ```
 
 Shows current workflow configuration:
@@ -426,7 +434,8 @@ curl https://your-project.api.codehooks.io/dev/
 
 ### View Subscriber Progress
 ```bash
-curl https://your-project.api.codehooks.io/dev/subscribers
+curl https://your-project.api.codehooks.io/dev/subscribers \
+  -H "x-apikey: YOUR_API_KEY_HERE"
 ```
 
 Look at `emailsSent` array to see which steps completed.
@@ -501,6 +510,7 @@ Deploy and add a test subscriber:
 coho deploy
 curl -X POST https://your-project.api.codehooks.io/dev/subscribers \
   -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY_HERE" \
   -d '{"name":"Test User","email":"test@example.com"}'
 ```
 
