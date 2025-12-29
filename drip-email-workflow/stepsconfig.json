@@ -9,7 +9,7 @@
         "body": "This is test email #1, sent 5 minutes after signup.\n\nIf you're seeing this, your workflow is working!\n\nNext email arrives in 5 minutes (Step 2).\n\n---\nTest Configuration:\n• Step: 1\n• Delay: 0.083 hours (5 minutes)\n• Email: {{email}}\n• Name: {{name}}",
         "buttonText": "View Dashboard",
         "buttonUrl": "https://example.com/dashboard",
-        "logoUrl": "https://codehooks.io/img/logo-white.svg"
+        "logoUrl": ""
       }
     },
     {
