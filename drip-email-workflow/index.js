@@ -537,41 +537,32 @@ app.job('*/15 * * * *', async (req, res) => {
     const workflowSteps = getWorkflowSteps();
     const now = Date.now();
 
-    // Get all subscribed subscribers
-    const allSubscribers = await conn.getMany('subscribers', {
-      subscribed: true
-    }).toArray();
-
-    if (allSubscribers.length === 0) {
-      console.log('🔄 [Cron] No subscribers found');
-      return res.end();
-    }
-
-    console.log(`🔄 [Cron] Checking ${allSubscribers.length} subscribers against ${workflowSteps.length} steps`);
-
     let totalQueued = 0;
+    let subscriberCount = 0;
 
-    // For each workflow step, find subscribers who need that email
+    // For each workflow step, stream subscribers who need that email
     for (const stepConfig of workflowSteps) {
       const { step, hoursAfterSignup } = stepConfig;
       const cutoffTime = new Date(now - hoursAfterSignup * 60 * 60 * 1000).toISOString();
 
-      // Find subscribers ready for this step:
-      // 1. Haven't received this step yet
-      // 2. Signed up before the cutoff time for this step
-      const readySubscribers = allSubscribers.filter(sub => {
-        const hasNotReceivedStep = !sub.emailsSent || !sub.emailsSent.includes(step);
-        const signedUpBeforeCutoff = sub.createdAt <= cutoffTime;
+      let stepQueued = 0;
 
-        return hasNotReceivedStep && signedUpBeforeCutoff;
+      // Stream subscribers ready for this step:
+      // 1. Subscribed
+      // 2. Signed up before the cutoff time for this step
+      // 3. Haven't received this step yet (checked in update query for atomicity)
+      const cursor = conn.getMany('subscribers', {
+        subscribed: true,
+        createdAt: { $lte: cutoffTime }
       });
 
-      if (readySubscribers.length > 0) {
-        console.log(`📧 [Cron] Step ${step}: Found ${readySubscribers.length} subscribers ready (${hoursAfterSignup}h after signup)`);
+      await cursor.forEach(async (subscriber) => {
+        subscriberCount++;
 
-        // Queue each subscriber for this step
-        // Mark as sent immediately to prevent duplicate queueing
-        for (const subscriber of readySubscribers) {
+        // Check if subscriber hasn't received this step yet
+        const hasNotReceivedStep = !subscriber.emailsSent || !subscriber.emailsSent.includes(step);
+
+        if (hasNotReceivedStep) {
           // Atomically mark this step as sent before queueing
           // This prevents duplicate queue entries if the next cron runs before worker completes
           const updateResult = await conn.updateOne(
@@ -594,13 +585,18 @@ app.job('*/15 * * * *', async (req, res) => {
               name: subscriber.name,
               step: step
             });
+            stepQueued++;
             totalQueued++;
           }
         }
+      });
 
-        console.log(`✅ [Cron] Step ${step}: Queued ${readySubscribers.length} emails`);
+      if (stepQueued > 0) {
+        console.log(`✅ [Cron] Step ${step}: Queued ${stepQueued} emails (${hoursAfterSignup}h after signup)`);
       }
     }
+
+    console.log(`🔄 [Cron] Processed ${subscriberCount} subscriber checks across ${workflowSteps.length} steps`);
 
     if (totalQueued === 0) {
       console.log('🔄 [Cron] No emails to queue at this time');
