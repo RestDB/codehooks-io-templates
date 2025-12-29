@@ -279,7 +279,7 @@ app.job('*/15 * * * *', async (req, res) => {
 
 1. **Streaming architecture**: Uses `cursor.forEach()` instead of `toArray()` for memory efficiency:
    - Processes subscribers one at a time rather than loading all into memory
-   - Scales to millions of subscribers without memory issues
+   - Scales to high numbers of subscribers without memory issues
    - Based on [Codehooks streaming data pattern](https://codehooks.io/docs/nosql-database-api#streaming-data-code-example)
 
 2. **Time-based scheduling**: Each step is checked independently based on `createdAt` timestamp:
@@ -870,7 +870,7 @@ MIT
 ✅ **Flexible**: Unlimited steps via `stepsconfig.json`
 ✅ **Integrated**: Templates and timing in one place
 ✅ **Intelligent**: Automatic time-based scheduling
-✅ **Scalable**: Streaming architecture handles millions of subscribers with constant memory usage
+✅ **Scalable**: Streaming architecture handles high numbers of subscribers with constant memory usage
 ✅ **Reliable**: Queue retries, duplicate prevention
 ✅ **Maintainable**: Easy to understand and debug
 
