@@ -22,7 +22,7 @@ Easy to understand, easy to customize, infinitely scalable.
 
 Here's what your subscribers will receive:
 
-![Email Template Preview](./email-preview.png)
+<img src="./email-preview.png" alt="Email Template Preview" width="600">
 
 The template features a modern, responsive design with a purple gradient header, personalized content, and clear call-to-action buttons.
 
