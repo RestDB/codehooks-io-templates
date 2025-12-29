@@ -244,7 +244,7 @@ app.get('/', (req, res) => {
   res.json({
     status: 'ok',
     service: 'Drip Email Workflow System',
-    version: '4.0.0',
+    version: '4.1.0',
     features: [
       'Dynamic step configuration',
       'Single cron job for all steps',
@@ -253,7 +253,8 @@ app.get('/', (req, res) => {
       'Subscriber management with subscribe/unsubscribe',
       'Customizable email templates',
       'Prevents duplicate email sends',
-      'Scalable to any number of steps'
+      'Streaming architecture for scalability',
+      'Email audit log with dry-run tracking'
     ],
     configuration: {
       emailProvider: EMAIL_PROVIDER,
@@ -268,7 +269,9 @@ app.get('/', (req, res) => {
       health: '/',
       subscribers: '/subscribers',
       unsubscribe: '/subscribers/:id/unsubscribe (requires x-apikey)',
-      templates: '/templates'
+      templates: '/templates',
+      emailLog: '/email-log',
+      emailLogStats: '/email-log/stats'
     }
   });
 });
@@ -522,6 +525,92 @@ app.post('/templates', async (req, res) => {
   }
 });
 
+// ==================== EMAIL LOG API ====================
+
+/**
+ * Get email send logs
+ * GET /email-log?subscriberId=xxx&step=1&success=true&dryRun=false
+ */
+app.get('/email-log', async (req, res) => {
+  try {
+    const { subscriberId, step, success, dryRun, limit } = req.query;
+    const conn = await getDB();
+
+    // Build query
+    const query = {};
+    if (subscriberId) query.subscriberId = subscriberId;
+    if (step) query.step = parseInt(step);
+    if (success !== undefined) query.success = success === 'true';
+    if (dryRun !== undefined) query.dryRun = dryRun === 'true';
+
+    // Get logs with optional limit (default 100, max 1000)
+    const maxLimit = Math.min(parseInt(limit) || 100, 1000);
+
+    const cursor = conn.getMany('email_log', query)
+      .sort({ sentAt: -1 })
+      .limit(maxLimit);
+
+    const logs = await cursor.toArray();
+
+    res.json({
+      logs,
+      count: logs.length,
+      query
+    });
+  } catch (error) {
+    console.error('Error fetching email logs:', error);
+    res.status(500).json({ error: 'Failed to fetch email logs' });
+  }
+});
+
+/**
+ * Get email log statistics
+ * GET /email-log/stats
+ */
+app.get('/email-log/stats', async (_req, res) => {
+  try {
+    const conn = await getDB();
+
+    // Get all logs (for stats, we need to analyze them)
+    const allLogs = await conn.getMany('email_log', {}).toArray();
+
+    const stats = {
+      total: allLogs.length,
+      successful: allLogs.filter(log => log.success).length,
+      failed: allLogs.filter(log => !log.success).length,
+      dryRun: allLogs.filter(log => log.dryRun).length,
+      byStep: {},
+      byProvider: {},
+      recentErrors: allLogs
+        .filter(log => !log.success)
+        .slice(0, 10)
+        .map(log => ({
+          email: log.email,
+          step: log.step,
+          error: log.error,
+          sentAt: log.sentAt
+        }))
+    };
+
+    // Count by step
+    allLogs.forEach(log => {
+      stats.byStep[log.step] = (stats.byStep[log.step] || 0) + 1;
+    });
+
+    // Count by provider
+    allLogs.forEach(log => {
+      if (log.provider) {
+        stats.byProvider[log.provider] = (stats.byProvider[log.provider] || 0) + 1;
+      }
+    });
+
+    res.json(stats);
+  } catch (error) {
+    console.error('Error fetching email log stats:', error);
+    res.status(500).json({ error: 'Failed to fetch email log stats' });
+  }
+});
+
 // ==================== DYNAMIC CRON JOB (SINGLE JOB FOR ALL STEPS) ====================
 
 /**
@@ -538,7 +627,7 @@ app.job('*/15 * * * *', async (req, res) => {
     const now = Date.now();
 
     let totalQueued = 0;
-    let subscriberCount = 0;
+    let totalChecked = 0;
 
     // For each workflow step, stream subscribers who need that email
     for (const stepConfig of workflowSteps) {
@@ -546,6 +635,7 @@ app.job('*/15 * * * *', async (req, res) => {
       const cutoffTime = new Date(now - hoursAfterSignup * 60 * 60 * 1000).toISOString();
 
       let stepQueued = 0;
+      let stepChecked = 0;
 
       // Stream subscribers ready for this step:
       // 1. Subscribed
@@ -556,8 +646,11 @@ app.job('*/15 * * * *', async (req, res) => {
         createdAt: { $lte: cutoffTime }
       });
 
-      await cursor.forEach(async (subscriber) => {
-        subscriberCount++;
+      // Use for-await-of to properly serialize async operations and prevent race conditions
+      const subscribers = await cursor.toArray();
+
+      for (const subscriber of subscribers) {
+        stepChecked++;
 
         // Check if subscriber hasn't received this step yet
         const hasNotReceivedStep = !subscriber.emailsSent || !subscriber.emailsSent.includes(step);
@@ -565,38 +658,47 @@ app.job('*/15 * * * *', async (req, res) => {
         if (hasNotReceivedStep) {
           // Atomically mark this step as sent before queueing
           // This prevents duplicate queue entries if the next cron runs before worker completes
-          const updateResult = await conn.updateOne(
-            'subscribers',
-            {
-              _id: subscriber._id,
-              emailsSent: { $nin: [step] } // Only update if step not already in array
-            },
-            {
-              $push: { emailsSent: step },
-              $set: { updatedAt: new Date().toISOString() }
-            }
-          );
+          try {
+            const updateResult = await conn.updateOne(
+              'subscribers',
+              {
+                _id: subscriber._id,
+                emailsSent: { $nin: [step] } // Only update if step not already in array
+              },
+              {
+                $push: { emailsSent: step },
+                $set: { updatedAt: new Date().toISOString() }
+              }
+            );
 
-          // Only queue if we successfully updated (no other cron job beat us to it)
-          if (updateResult && updateResult.modified === 1) {
-            await conn.enqueue('send-email', {
-              subscriberId: subscriber._id,
-              email: subscriber.email,
-              name: subscriber.name,
-              step: step
-            });
-            stepQueued++;
-            totalQueued++;
+            // Only queue if we successfully updated (no other cron job beat us to it)
+            // updateOne returns the updated document if successful, null/undefined if no match
+            if (updateResult) {
+              await conn.enqueue('send-email', {
+                subscriberId: subscriber._id,
+                email: subscriber.email,
+                name: subscriber.name,
+                step: step
+              });
+              stepQueued++;
+              totalQueued++;
+            }
+          } catch (error) {
+            console.error(`⚠️ [Cron] Failed to update subscriber ${subscriber._id} for step ${step}:`, error);
           }
         }
-      });
+      }
+
+      totalChecked += stepChecked;
 
       if (stepQueued > 0) {
-        console.log(`✅ [Cron] Step ${step}: Queued ${stepQueued} emails (${hoursAfterSignup}h after signup)`);
+        console.log(`✅ [Cron] Step ${step}: Checked ${stepChecked} subscribers, queued ${stepQueued} emails (${hoursAfterSignup}h after signup)`);
+      } else if (stepChecked > 0) {
+        console.log(`🔄 [Cron] Step ${step}: Checked ${stepChecked} subscribers, already sent to all`);
       }
     }
 
-    console.log(`🔄 [Cron] Processed ${subscriberCount} subscriber checks across ${workflowSteps.length} steps`);
+    console.log(`🔄 [Cron] Total: ${totalChecked} subscriber-step combinations checked`);
 
     if (totalQueued === 0) {
       console.log('🔄 [Cron] No emails to queue at this time');
@@ -644,12 +746,44 @@ app.worker('send-email', async (req, res) => {
     const html = generateEmailHTML(template, { email, name });
 
     // Send email
-    await sendEmail(email, template.subject, html);
+    const emailSent = await sendEmail(email, template.subject, html);
+
+    // Log email send to audit collection
+    await conn.insertOne('email_log', {
+      subscriberId,
+      email,
+      name,
+      step,
+      subject: template.subject,
+      sentAt: new Date().toISOString(),
+      dryRun: DRY_RUN,
+      success: emailSent,
+      provider: EMAIL_PROVIDER
+    });
 
     console.log(`✅ [Worker] Step ${step} email sent to ${email}`);
     res.end();
   } catch (error) {
     console.error('❌ [Worker] Error sending email:', error);
+
+    // Log failed email attempt to audit collection
+    try {
+      const template = await getTemplate(step);
+      await conn.insertOne('email_log', {
+        subscriberId,
+        email,
+        name,
+        step,
+        subject: template.subject,
+        sentAt: new Date().toISOString(),
+        dryRun: DRY_RUN,
+        success: false,
+        provider: EMAIL_PROVIDER,
+        error: error.message
+      });
+    } catch (logError) {
+      console.error('❌ [Worker] Failed to log error:', logError);
+    }
 
     // If email send failed, remove the step from emailsSent so it can be retried
     try {

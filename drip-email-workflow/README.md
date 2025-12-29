@@ -15,6 +15,8 @@ Easy to understand, easy to customize, infinitely scalable.
 - ✅ **Prevents Duplicates** - Each subscriber receives each email only once
 - ✅ **Subscriber Management** - Full CRUD API
 - ✅ **Professional Design** - Beautiful, responsive emails
+- ✅ **Streaming Architecture** - Memory-efficient processing for large volumes of subscribers
+- ✅ **Email Audit Log** - Complete tracking of all sends, including dry-run mode
 
 ## Email Preview
 
@@ -249,16 +251,24 @@ app.job('*/15 * * * *', async (req, res) => {
     await cursor.forEach(async (subscriber) => {
       // Check if subscriber hasn't received this step yet
       if (!subscriber.emailsSent || !subscriber.emailsSent.includes(step)) {
-        // Atomically mark as sent and queue
-        await conn.updateOne(
-          'subscribers',
-          { _id: subscriber._id, emailsSent: { $nin: [step] } },
-          { $push: { emailsSent: step } }
-        );
-        await conn.enqueue('send-email', {
-          subscriberId: subscriber._id,
-          step: step
-        });
+        try {
+          // Atomically mark as sent and queue
+          const result = await conn.updateOne(
+            'subscribers',
+            { _id: subscriber._id, emailsSent: { $nin: [step] } },
+            { $push: { emailsSent: step } }
+          );
+
+          // Only queue if update succeeded (returns updated document)
+          if (result) {
+            await conn.enqueue('send-email', {
+              subscriberId: subscriber._id,
+              step: step
+            });
+          }
+        } catch (error) {
+          console.error('Failed to update subscriber:', error);
+        }
       }
     });
   }
@@ -279,7 +289,8 @@ app.job('*/15 * * * *', async (req, res) => {
 
 3. **Race condition prevention**: The cron job atomically marks steps as sent BEFORE queueing:
    - Uses `$nin` (not in) query to ensure step isn't already marked
-   - Only queues if the database update succeeds
+   - Only queues if the database update returns an updated document
+   - Returns null if another process already added the step (race condition)
    - Prevents duplicate queue entries even if cron runs overlap
 
 4. **Automatic retry on failure**: If email sending fails:
@@ -358,6 +369,66 @@ curl -X POST https://your-project.api.codehooks.io/dev/templates \
 
 **Placeholders:** `{{name}}`, `{{email}}`
 
+### Get Email Logs
+```bash
+# Get all email logs (latest 100)
+curl https://your-project.api.codehooks.io/dev/email-log \
+  -H "x-apikey: YOUR_API_KEY_HERE"
+
+# Filter by subscriber
+curl https://your-project.api.codehooks.io/dev/email-log?subscriberId=abc123 \
+  -H "x-apikey: YOUR_API_KEY_HERE"
+
+# Filter by step
+curl https://your-project.api.codehooks.io/dev/email-log?step=1 \
+  -H "x-apikey: YOUR_API_KEY_HERE"
+
+# Filter by success status
+curl https://your-project.api.codehooks.io/dev/email-log?success=false \
+  -H "x-apikey: YOUR_API_KEY_HERE"
+
+# Filter dry-run emails
+curl https://your-project.api.codehooks.io/dev/email-log?dryRun=true \
+  -H "x-apikey: YOUR_API_KEY_HERE"
+
+# Get more results (up to 1000)
+curl https://your-project.api.codehooks.io/dev/email-log?limit=500 \
+  -H "x-apikey: YOUR_API_KEY_HERE"
+```
+
+### Get Email Statistics
+```bash
+curl https://your-project.api.codehooks.io/dev/email-log/stats \
+  -H "x-apikey: YOUR_API_KEY_HERE"
+```
+
+Returns statistics about sent emails:
+```json
+{
+  "total": 150,
+  "successful": 145,
+  "failed": 5,
+  "dryRun": 20,
+  "byStep": {
+    "1": 50,
+    "2": 48,
+    "3": 47
+  },
+  "byProvider": {
+    "sendgrid": 130,
+    "mailgun": 20
+  },
+  "recentErrors": [
+    {
+      "email": "user@example.com",
+      "step": 2,
+      "error": "API key invalid",
+      "sentAt": "2025-01-15T10:00:00.000Z"
+    }
+  ]
+}
+```
+
 ### Health Check
 ```bash
 curl https://your-project.api.codehooks.io/dev/
@@ -367,13 +438,20 @@ Shows current workflow configuration:
 ```json
 {
   "status": "ok",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "configuration": {
     "workflowSteps": [
       { "step": 1, "hoursAfterSignup": 24 },
       { "step": 2, "hoursAfterSignup": 96 },
       { "step": 3, "hoursAfterSignup": 264 }
     ]
+  },
+  "endpoints": {
+    "health": "/",
+    "subscribers": "/subscribers",
+    "templates": "/templates",
+    "emailLog": "/email-log",
+    "emailLogStats": "/email-log/stats"
   }
 }
 ```
@@ -410,6 +488,30 @@ Shows current workflow configuration:
   updatedAt: "2025-01-15T10:00:00.000Z"
 }
 ```
+
+### Email Log Collection (Audit Trail)
+
+```javascript
+{
+  _id: "ghi789",
+  subscriberId: "abc123",
+  email: "john@example.com",
+  name: "John Doe",
+  step: 1,
+  subject: "Welcome! 🎉",
+  sentAt: "2025-01-15T10:00:00.000Z",
+  dryRun: false,              // true if sent in dry-run mode
+  success: true,              // false if send failed
+  provider: "sendgrid",       // or "mailgun"
+  error: "..."                // only present if success is false
+}
+```
+
+The email log provides a complete audit trail of all email sends, including:
+- Successful sends (real and dry-run)
+- Failed attempts with error messages
+- Which provider was used
+- Timestamp of each send attempt
 
 ## Template System
 
@@ -458,18 +560,36 @@ curl https://your-project.api.codehooks.io/dev/subscribers \
 
 Look at `emailsSent` array to see which steps completed.
 
+### View Email Audit Log
+```bash
+# Check recent email sends
+curl https://your-project.api.codehooks.io/dev/email-log \
+  -H "x-apikey: YOUR_API_KEY_HERE"
+
+# Check for failed sends
+curl https://your-project.api.codehooks.io/dev/email-log?success=false \
+  -H "x-apikey: YOUR_API_KEY_HERE"
+
+# View statistics
+curl https://your-project.api.codehooks.io/dev/email-log/stats \
+  -H "x-apikey: YOUR_API_KEY_HERE"
+```
+
+The email log tracks every send attempt (success and failure) and includes dry-run sends for testing.
+
 ### View Logs
 ```bash
 coho logs --follow
 ```
 
 **Common log messages:**
-- `🔄 [Cron] Checking 50 subscribers against 5 steps`
-- `📧 [Cron] Step 3: Found 5 subscribers ready (264h after signup)`
-- `✅ [Cron] Step 3: Queued 5 emails`
-- `✅ [Cron] Batch complete: Queued 15 total emails`
-- `📨 [Worker] Processing email for john@example.com, step 3`
-- `✅ [Worker] Step 3 email sent to john@example.com`
+- `🔄 [Cron] Starting drip email batch processing...`
+- `✅ [Cron] Step 1: Checked 10 subscribers, queued 3 emails (24h after signup)`
+- `🔄 [Cron] Step 2: Checked 5 subscribers, already sent to all`
+- `🔄 [Cron] Total: 15 subscriber-step combinations checked`
+- `✅ [Cron] Batch complete: Queued 3 total emails`
+- `📨 [Worker] Processing email for john@example.com, step 1`
+- `✅ [Worker] Step 1 email sent to john@example.com`
 
 ## Testing
 
