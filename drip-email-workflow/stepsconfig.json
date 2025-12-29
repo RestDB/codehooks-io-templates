@@ -2,38 +2,38 @@
   "workflowSteps": [
     {
       "step": 1,
-      "hoursAfterSignup": 24,
+      "hoursAfterSignup": 0.083,
       "template": {
-        "subject": "Welcome to Our Community! 🎉",
-        "heading": "Welcome, {{name}}!",
-        "body": "Thank you for joining our community!\n\nWe're excited to have you here. Over the next few weeks, we'll be sharing valuable insights and tips to help you get the most out of our service.\n\nStay tuned for more updates!",
-        "buttonText": "Get Started",
-        "buttonUrl": "https://example.com/get-started",
-        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+        "subject": "TEST: Step 1 - 5 minutes after signup ⏱️",
+        "heading": "Test Email #1, {{name}}",
+        "body": "This is test email #1, sent 5 minutes after signup.\n\nIf you're seeing this, your workflow is working!\n\nNext email arrives in 5 minutes (Step 2).\n\n---\nTest Configuration:\n• Step: 1\n• Delay: 0.083 hours (5 minutes)\n• Email: {{email}}\n• Name: {{name}}",
+        "buttonText": "View Dashboard",
+        "buttonUrl": "https://example.com/dashboard",
+        "logoUrl": "https://codehooks.io/img/logo-white.svg"
       }
     },
     {
       "step": 2,
-      "hoursAfterSignup": 96,
+      "hoursAfterSignup": 0.166,
       "template": {
-        "subject": "Quick Tips to Get You Started 💡",
-        "heading": "Here are some tips, {{name}}",
-        "body": "We hope you've had a chance to explore!\n\nHere are some quick tips to help you make the most of your experience:\n\n• Tip 1: Customize your profile\n• Tip 2: Connect with other members\n• Tip 3: Explore our resources\n\nIf you have any questions, feel free to reach out!",
-        "buttonText": "View Resources",
-        "buttonUrl": "https://example.com/resources",
-        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+        "subject": "TEST: Step 2 - 10 minutes after signup ⏱️",
+        "heading": "Test Email #2, {{name}}",
+        "body": "This is test email #2, sent 10 minutes after signup.\n\nGreat! Your workflow is processing correctly.\n\nNext email arrives in 5 more minutes (Step 3).\n\n---\nTest Configuration:\n• Step: 2\n• Delay: 0.166 hours (10 minutes)\n• Email: {{email}}\n• Name: {{name}}",
+        "buttonText": "View Dashboard",
+        "buttonUrl": "https://example.com/dashboard",
+        "logoUrl": ""
       }
     },
     {
       "step": 3,
-      "hoursAfterSignup": 264,
+      "hoursAfterSignup": 0.25,
       "template": {
-        "subject": "We'd Love to Hear From You! 💬",
-        "heading": "Your Feedback Matters, {{name}}",
-        "body": "It's been a pleasure having you in our community!\n\nWe'd love to hear about your experience so far. Your feedback helps us improve and serve you better.\n\nTake a moment to share your thoughts with us.",
-        "buttonText": "Share Feedback",
-        "buttonUrl": "https://example.com/feedback",
-        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+        "subject": "TEST: Step 3 - 15 minutes after signup ⏱️",
+        "heading": "Test Email #3 (Final), {{name}}",
+        "body": "This is test email #3, sent 15 minutes after signup.\n\nPerfect! All three test emails delivered successfully.\n\nYour drip email workflow is fully operational!\n\n✅ Step 1: Delivered\n✅ Step 2: Delivered\n✅ Step 3: Delivered\n\n---\nTest Configuration:\n• Step: 3\n• Delay: 0.25 hours (15 minutes)\n• Email: {{email}}\n• Name: {{name}}\n\n⚠️ IMPORTANT: Remember to replace stepsconfig.json with your production configuration before going live!",
+        "buttonText": "View Dashboard",
+        "buttonUrl": "https://example.com/dashboard",
+        "logoUrl": ""
       }
     }
   ]

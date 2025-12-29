@@ -1,0 +1,40 @@
+{
+  "workflowSteps": [
+    {
+      "step": 1,
+      "hoursAfterSignup": 24,
+      "template": {
+        "subject": "Welcome to Our Community! 🎉",
+        "heading": "Welcome, {{name}}!",
+        "body": "Thank you for joining our community!\n\nWe're excited to have you here. Over the next few weeks, we'll be sharing valuable insights and tips to help you get the most out of our service.\n\nStay tuned for more updates!",
+        "buttonText": "Get Started",
+        "buttonUrl": "https://example.com/get-started",
+        "logoUrl": ""
+      }
+    },
+    {
+      "step": 2,
+      "hoursAfterSignup": 96,
+      "template": {
+        "subject": "Quick Tips to Get You Started 💡",
+        "heading": "Here are some tips, {{name}}",
+        "body": "We hope you've had a chance to explore!\n\nHere are some quick tips to help you make the most of your experience:\n\n• Tip 1: Customize your profile\n• Tip 2: Connect with other members\n• Tip 3: Explore our resources\n\nIf you have any questions, feel free to reach out!",
+        "buttonText": "View Resources",
+        "buttonUrl": "https://example.com/resources",
+        "logoUrl": ""
+      }
+    },
+    {
+      "step": 3,
+      "hoursAfterSignup": 264,
+      "template": {
+        "subject": "We'd Love to Hear From You! 💬",
+        "heading": "Your Feedback Matters, {{name}}",
+        "body": "It's been a pleasure having you in our community!\n\nWe'd love to hear about your experience so far. Your feedback helps us improve and serve you better.\n\nTake a moment to share your thoughts with us.",
+        "buttonText": "Share Feedback",
+        "buttonUrl": "https://example.com/feedback",
+        "logoUrl": ""
+      }
+    }
+  ]
+}

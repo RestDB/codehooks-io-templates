@@ -44,10 +44,13 @@ coho set-env FROM_NAME "Your Company Name"
 ```bash
 coho set-env EMAIL_PROVIDER "mailgun"
 coho set-env MAILGUN_API_KEY "your-key-here"
-coho set-env MAILGUN_DOMAIN "mg.yourdomain.com"
-coho set-env FROM_EMAIL "noreply@yourdomain.com"
+coho set-env MAILGUN_DOMAIN "mg.yourdomain.com"  # Your Mailgun sending domain
+coho set-env MAILGUN_EU "true"  # Set to "true" if using EU Mailgun account
+coho set-env FROM_EMAIL "sender@yourdomain.com"  # Must be from a verified/authorized domain
 coho set-env FROM_NAME "Your Company Name"
 ```
+
+**Important:** `FROM_EMAIL` must be from an authorized sender address or verified domain in Mailgun. It doesn't need to match `MAILGUN_DOMAIN` exactly (e.g., you can have `MAILGUN_DOMAIN=mg.yourdomain.com` and `FROM_EMAIL=sender@yourdomain.com`).
 
 ## 3. Configure Workflow (Optional)
 

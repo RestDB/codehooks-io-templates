@@ -1,5 +1,7 @@
 import { app, Datastore } from 'codehooks-js';
 import https from 'https';
+import FormData from 'form-data';
+import fetch from 'node-fetch';
 import workflowConfig from './stepsconfig.json' assert { type: 'json' };
 import { generateEmailTemplate } from './email-template.js';
 
@@ -20,6 +22,7 @@ const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@example.com';
 const FROM_NAME = process.env.FROM_NAME || 'Drip Campaign';
 
 // Dry run mode - prevents actual email sending (for testing)
+// Explicitly check for 'true' to avoid string 'false' being truthy
 const DRY_RUN = process.env.DRY_RUN === 'true';
 if (DRY_RUN) {
   console.log('⚠️ DRY RUN MODE ENABLED - Emails will be logged but not sent');
@@ -93,49 +96,62 @@ async function sendEmailSendGrid(to, subject, html) {
  * @returns {Promise<boolean>} - Success status
  */
 async function sendEmailMailgun(to, subject, html) {
-  const formData = new URLSearchParams({
-    from: `${FROM_NAME} <${FROM_EMAIL}>`,
-    to: to,
-    subject: subject,
-    html: html
-  }).toString();
-
-  const auth = Buffer.from(`api:${MAILGUN_API_KEY}`).toString('base64');
-
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'api.mailgun.net',
-      port: 443,
-      path: `/v3/${MAILGUN_DOMAIN}/messages`,
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Content-Length': Buffer.byteLength(formData)
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Validate required configuration
+      if (!MAILGUN_API_KEY || MAILGUN_API_KEY.trim() === '') {
+        throw new Error('MAILGUN_API_KEY environment variable is not set');
       }
-    };
+      if (!MAILGUN_DOMAIN || MAILGUN_DOMAIN.trim() === '') {
+        throw new Error('MAILGUN_DOMAIN environment variable is not set');
+      }
 
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => data += chunk);
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          console.log(`✅ Mailgun email sent to ${to}`);
-          resolve(true);
-        } else {
-          console.error(`❌ Mailgun error: ${res.statusCode} - ${data}`);
-          reject(new Error(`Mailgun API error: ${res.statusCode}`));
-        }
+      console.log('📧 [Mailgun] Sending email to', to);
+
+      // Create form data for Mailgun
+      const form = new FormData();
+      form.append('from', `${FROM_NAME} <${FROM_EMAIL}>`);
+      form.append('to', to);
+      form.append('subject', subject);
+      form.append('html', html);
+
+      // Support EU region
+      const hostname = process.env.MAILGUN_EU === 'true' ? 'api.eu.mailgun.net' : 'api.mailgun.net';
+
+      // Mailgun URL with embedded API key
+      const url = `https://api:${MAILGUN_API_KEY}@${hostname}/v3/${MAILGUN_DOMAIN}/messages`;
+
+      // Basic auth credentials (base64 encoded)
+      const credentials = Buffer.from(`api:${MAILGUN_API_KEY}`).toString('base64');
+
+      console.log(`🔍 [Mailgun Debug] Domain: ${MAILGUN_DOMAIN}`);
+      console.log(`🔍 [Mailgun Debug] Hostname: ${hostname}`);
+      console.log(`🔍 [Mailgun Debug] From: ${FROM_NAME} <${FROM_EMAIL}>`);
+
+      // Send request using node-fetch
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${credentials}`
+        },
+        body: form
       });
-    });
 
-    req.on('error', (error) => {
-      console.error('Mailgun request error:', error);
+      // Handle response
+      if (resp.status <= 201) {
+        const output = await resp.json();
+        console.log(`✅ Mailgun email sent to ${to}`, output);
+        resolve(true);
+      } else {
+        const errorText = await resp.text();
+        console.error(`❌ Mailgun error: ${resp.status} ${resp.statusText}`);
+        console.error(`   Response: ${errorText}`);
+        reject(new Error(`Mailgun API error: ${resp.status} - ${errorText}`));
+      }
+    } catch (error) {
+      console.error('❌ Mailgun request error:', error);
       reject(error);
-    });
-
-    req.write(formData);
-    req.end();
+    }
   });
 }
 

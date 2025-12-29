@@ -125,10 +125,16 @@ coho set-env FROM_NAME "Your Company"
 ```bash
 coho set-env EMAIL_PROVIDER "mailgun"
 coho set-env MAILGUN_API_KEY "your-api-key"
-coho set-env MAILGUN_DOMAIN "yourdomain.com"
-coho set-env FROM_EMAIL "noreply@yourdomain.com"
+coho set-env MAILGUN_DOMAIN "mg.yourdomain.com"  # Your Mailgun sending domain
+coho set-env MAILGUN_EU "true"  # Set to "true" if using EU Mailgun account, "false" or omit for US
+coho set-env FROM_EMAIL "sender@yourdomain.com"  # Must be from a verified/authorized domain
 coho set-env FROM_NAME "Your Company"
 ```
+
+**Important Notes:**
+- `MAILGUN_DOMAIN`: The sending domain configured in your Mailgun account (e.g., `mg.yourdomain.com`)
+- `FROM_EMAIL`: Must be from a verified/authorized domain, but doesn't need to match `MAILGUN_DOMAIN` exactly (e.g., can be `sender@yourdomain.com` while `MAILGUN_DOMAIN` is `mg.yourdomain.com`)
+- `MAILGUN_EU`: Set to `"true"` if you're using an EU Mailgun account, otherwise omit or set to `"false"`
 
 ### 3. Customize Workflow Steps (Optional)
 
@@ -671,9 +677,18 @@ You should see emails queued within 15 minutes (next cron run).
 
 ### Mailgun
 1. Sign up at https://mailgun.com (free: 5,000 emails/month)
-2. Verify domain
-3. Get API key: Settings → API Security
-4. Configure: `coho set-env MAILGUN_API_KEY "your-key"`
+2. Verify your domain (e.g., `yourdomain.com`) and set up sending domain (e.g., `mg.yourdomain.com`)
+3. Authorize sender addresses in Settings → Sending → Authorized Recipients (or verify domain)
+4. Get API key: Settings → API Security
+5. Configure:
+   ```bash
+   coho set-env MAILGUN_API_KEY "your-key"
+   coho set-env MAILGUN_DOMAIN "mg.yourdomain.com"  # Your Mailgun sending domain
+   coho set-env FROM_EMAIL "sender@yourdomain.com"  # Must be authorized in Mailgun
+   coho set-env MAILGUN_EU "true"  # Only if using EU account
+   ```
+
+**Note:** `FROM_EMAIL` must be from an authorized sender address or verified domain. It doesn't need to match `MAILGUN_DOMAIN` exactly.
 
 ## Customization
 

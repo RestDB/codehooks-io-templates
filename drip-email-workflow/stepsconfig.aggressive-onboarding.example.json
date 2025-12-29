@@ -9,7 +9,7 @@
         "body": "Thank you for signing up!\n\nWe're thrilled to have you on board. Let's jump right in and get you set up for success.\n\nFirst things first:\n• Complete your profile\n• Set your preferences\n• Take the quick tour\n\nThis will only take 2 minutes!",
         "buttonText": "Complete Setup",
         "buttonUrl": "https://example.com/setup",
-        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+        "logoUrl": ""
       }
     },
     {
@@ -21,7 +21,7 @@
         "body": "Ready for your first achievement?\n\nHere's a quick task that will help you experience immediate value:\n\n→ Complete your first action\n→ See results in real-time\n→ Unlock your first badge\n\nIt takes less than 5 minutes and you'll see why our users love this feature!",
         "buttonText": "Get First Win",
         "buttonUrl": "https://example.com/first-win",
-        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+        "logoUrl": ""
       }
     },
     {
@@ -33,7 +33,7 @@
         "body": "Most users don't discover this feature until months later...\n\nBut you're getting insider access right now!\n\nThis one feature will save you hours:\n• Automate repetitive tasks\n• Get instant notifications\n• Integrate with your favorite tools\n\nTrust us, you'll want to enable this!",
         "buttonText": "Enable Power Feature",
         "buttonUrl": "https://example.com/power-feature",
-        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+        "logoUrl": ""
       }
     },
     {
@@ -45,7 +45,7 @@
         "body": "It's been 24 hours and you're already seeing results!\n\nNow let's take it to the next level:\n\n✓ Master the dashboard\n✓ Invite your team\n✓ Set up advanced workflows\n\nPlus: Check out what successful users do in their first week.",
         "buttonText": "Level Up",
         "buttonUrl": "https://example.com/level-up",
-        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+        "logoUrl": ""
       }
     },
     {
@@ -57,7 +57,7 @@
         "body": "We want to show you what's possible.\n\nCompany X used the exact same features you have access to and achieved:\n• 10x increase in productivity\n• 50% time savings\n• $50K+ in annual cost reduction\n\nHere's exactly how they did it (and how you can too):",
         "buttonText": "Read Case Study",
         "buttonUrl": "https://example.com/case-study",
-        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+        "logoUrl": ""
       }
     },
     {
@@ -69,7 +69,7 @@
         "body": "As a new member, you're invited to our exclusive onboarding webinar!\n\nWhat you'll learn:\n• Advanced strategies from our top users\n• Live Q&A with our team\n• Exclusive tips not in our documentation\n\nSpots are limited. Reserve yours now!",
         "buttonText": "Register for Webinar",
         "buttonUrl": "https://example.com/webinar",
-        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+        "logoUrl": ""
       }
     },
     {
@@ -81,7 +81,7 @@
         "body": "You've been with us for a week - that's amazing!\n\nTo celebrate, here's an exclusive offer just for you:\n\n🎁 20% off annual plans\n🎁 Priority support access\n🎁 Bonus features unlocked\n\nThis offer expires in 48 hours.\n\nPlus: We'd love your feedback! Quick 2-minute survey inside.",
         "buttonText": "Claim Your Offer",
         "buttonUrl": "https://example.com/special-offer",
-        "logoUrl": "https://via.placeholder.com/150x50?text=Your+Logo"
+        "logoUrl": ""
       }
     }
   ]
