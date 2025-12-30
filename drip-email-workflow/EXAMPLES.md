@@ -88,25 +88,9 @@ curl -X POST $API_URL/subscribers/SUBSCRIBER_ID/unsubscribe \
   -H "x-apikey: $API_KEY"
 ```
 
-## Workflow Management
-
-### Start Workflow for All Pending Subscribers
-
-```bash
-curl -X POST $API_URL/workflow/start \
-  -H "Content-Type: application/json"
-```
-
-Response:
-```json
-{
-  "message": "Workflow started",
-  "subscribersActivated": 5,
-  "note": "Subscribers will receive emails according to the scheduled workflow steps"
-}
-```
-
 ## Email Templates
+
+> **Note:** The workflow runs automatically via a cron job every 15 minutes. When you add subscribers, they are automatically processed based on their signup time and the `hoursAfterSignup` configuration in `stepsconfig.json`. No manual workflow trigger is needed.
 
 ### View All Templates
 
@@ -209,23 +193,17 @@ echo ""
 echo "2. Listing all subscribers..."
 curl $API_URL/subscribers
 
-# 3. Start workflow
+# 3. Check templates
 echo ""
 echo ""
-echo "3. Starting workflow..."
-curl -X POST $API_URL/workflow/start \
-  -H "Content-Type: application/json"
-
-# 4. Check templates
-echo ""
-echo ""
-echo "4. Checking email templates..."
+echo "3. Checking email templates..."
 curl $API_URL/templates
 
 echo ""
 echo ""
 echo "========================================="
 echo "Setup complete!"
+echo "The workflow runs automatically every 15 minutes"
 echo "Check logs with: coho logs --follow"
 echo "========================================="
 ```
@@ -259,27 +237,7 @@ addSubscriber('John Doe', 'john@example.com')
   .catch(error => console.error('Error:', error));
 ```
 
-### Start Workflow from Your Application
-
-```javascript
-async function startWorkflow() {
-  const response = await fetch('https://YOUR_PROJECT.api.codehooks.io/dev/workflow/start', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  });
-
-  const data = await response.json();
-  console.log('Workflow started:', data);
-  return data;
-}
-
-// Usage
-startWorkflow()
-  .then(result => console.log('Success:', result))
-  .catch(error => console.error('Error:', error));
-```
+> **Note:** Once a subscriber is added, the cron job will automatically process them every 15 minutes based on their signup time and the workflow configuration.
 
 ### Unsubscribe User
 
@@ -329,22 +287,7 @@ result = add_subscriber("Jane Doe", "jane@example.com")
 print("Subscriber added:", result)
 ```
 
-### Start Workflow
-
-```python
-import requests
-
-API_URL = "https://YOUR_PROJECT.api.codehooks.io/dev"
-
-def start_workflow():
-    response = requests.post(f"{API_URL}/workflow/start")
-    response.raise_for_status()
-    return response.json()
-
-# Usage
-result = start_workflow()
-print("Workflow started:", result)
-```
+> **Note:** Once a subscriber is added, the cron job will automatically process them every 15 minutes based on their signup time and the workflow configuration.
 
 ### Unsubscribe User
 
@@ -388,26 +331,42 @@ coho logs --tail 50
 coho logs --follow
 ```
 
-### Test Email Delivery Immediately
+### Test Email Delivery Quickly
 
-Set all delays to 0 for immediate testing:
+For quick testing, use the fast testing configuration:
 
 ```bash
-coho set-env STEP_1_DELAY_HOURS "0"
-coho set-env STEP_2_DELAY_HOURS "0"
-coho set-env STEP_3_DELAY_HOURS "0"
+# Backup your current config
+cp stepsconfig.json stepsconfig.backup.json
+
+# Use fast testing config (5min, 10min, 15min intervals)
+cp stepsconfig.testing.example.json stepsconfig.json
+
+# Deploy
+coho deploy
+
+# Add test subscriber
+curl -X POST $API_URL/subscribers \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test User","email":"test@example.com"}'
+
+# Watch logs - emails will be queued within 15 minutes
+coho logs --follow
+```
+
+**Remember to restore your production config after testing:**
+
+```bash
+cp stepsconfig.backup.json stepsconfig.json
 coho deploy
 ```
 
-Then add subscribers and start workflow. Emails will be sent on next cron run.
-
-**Remember to reset delays after testing!**
+Or use dry run mode to test without sending emails:
 
 ```bash
-coho set-env STEP_1_DELAY_HOURS "24"
-coho set-env STEP_2_DELAY_HOURS "72"
-coho set-env STEP_3_DELAY_HOURS "168"
-coho deploy
+coho set-env DRY_RUN "true"
+# Test your workflow, then disable:
+coho set-env DRY_RUN "false"
 ```
 
 ## Bulk Import from CSV
@@ -471,16 +430,11 @@ Create a webhook endpoint in your app that calls the subscriber API:
 app.post('/signup', async (req, res) => {
   const { name, email } = req.body;
 
-  // Add to drip campaign
+  // Add to drip campaign - workflow runs automatically via cron
   await fetch('https://YOUR_PROJECT.api.codehooks.io/dev/subscribers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, email })
-  });
-
-  // Start workflow automatically
-  await fetch('https://YOUR_PROJECT.api.codehooks.io/dev/workflow/start', {
-    method: 'POST'
   });
 
   res.json({ success: true });

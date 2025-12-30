@@ -1,8 +1,30 @@
 # Drip Email Workflow - Codehooks.io Template
 
-A simple, production-ready drip email campaign system with **dynamic step configuration**. Add as many email steps as you want - configure everything in one `stepsconfig.json` file.
+**Own your email automation. Deploy in 5 minutes.**
 
-Easy to understand, easy to customize, infinitely scalable.
+A production-ready drip email system that scales from 10 to 100,000 subscribers. Configure unlimited workflow steps in a single JSON file. No vendor lock-in, complete flexibility.
+
+## Why This Matters
+
+**Flexibility.** Add steps, modify templates, integrate with any system - you own the code. Skip weekends, A/B test subjects, or trigger from webhooks. Your workflow, your rules.
+
+**Scalability.** Streaming architecture processes subscribers one at a time, maintaining constant memory usage regardless of list size. Handles 100k+ subscribers as easily as 100.
+
+**Simplicity.** One config file defines your entire workflow. One cron job processes all steps. One database tracks everything. Deploy and forget.
+
+**Control.** Your infrastructure, your data, your email provider. Switch from SendGrid to Mailgun to Postmark with a single env var. Migrate anytime.
+
+## Why Codehooks?
+
+Drip campaigns need serverless functions, database, cron scheduling, and queue workers. Codehooks provides all of this in one platform with no DevOps complexity:
+
+`coho create` → `coho deploy` → Done
+
+No servers to manage, no infrastructure to configure. Just edit `stepsconfig.json` and redeploy.
+
+---
+
+Configure unlimited steps via `stepsconfig.json`. Add 3 steps or 30 - same architecture, same simplicity.
 
 ## Features
 
