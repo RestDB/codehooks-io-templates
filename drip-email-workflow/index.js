@@ -715,10 +715,9 @@ app.job('*/15 * * * *', async (req, res) => {
         createdAt: { $lte: cutoffTime }
       });
 
-      // Use for-await-of to properly serialize async operations and prevent race conditions
-      const subscribers = await cursor.toArray();
-
-      for (const subscriber of subscribers) {
+      // Use streaming architecture to process subscribers one at a time
+      // This maintains constant memory usage regardless of subscriber count
+      await cursor.forEach(async (subscriber) => {
         stepChecked++;
 
         // Check if subscriber hasn't received this step yet
@@ -756,7 +755,7 @@ app.job('*/15 * * * *', async (req, res) => {
             console.error(`⚠️ [Cron] Failed to update subscriber ${subscriber._id} for step ${step}:`, error);
           }
         }
-      }
+      });
 
       totalChecked += stepChecked;
 

@@ -2,21 +2,9 @@
 
 **Own your email automation. Deploy in 5 minutes.**
 
-A production-ready drip email system that scales from 10 to 100,000 subscribers. Configure unlimited workflow steps in a single JSON file. No vendor lock-in, complete flexibility.
+A production-ready drip email system that scales from 10 to thousands of subscribers. Configure unlimited workflow steps in a single JSON file. No vendor lock-in, complete flexibility.
 
-## Why This Matters
-
-**Flexibility.** Add steps, modify templates, integrate with any system - you own the code. Skip weekends, A/B test subjects, or trigger from webhooks. Your workflow, your rules.
-
-**Scalability.** Streaming architecture processes subscribers one at a time, maintaining constant memory usage regardless of list size. Handles 100k+ subscribers as easily as 100.
-
-**Simplicity.** One config file defines your entire workflow. One cron job processes all steps. One database tracks everything. Deploy and forget.
-
-**Control.** Your infrastructure, your data, your email provider. Switch from SendGrid to Mailgun to Postmark with a single env var. Migrate anytime.
-
-## Why Codehooks?
-
-Drip campaigns need serverless functions, database, cron scheduling, and queue workers. Codehooks provides all of this in one platform with no DevOps complexity:
+You own the code—add steps, modify templates, integrate with any system, and switch email providers anytime. The streaming architecture handles high numbers of subscribers with constant memory usage, while one config file and one cron job manages everything. Codehooks provides serverless functions, database, scheduling, and queues in one platform with zero DevOps:
 
 `coho create` → `coho deploy` → Done
 
