@@ -52,6 +52,23 @@ coho set-env FROM_NAME "Your Company Name"
 
 **Important:** `FROM_EMAIL` must be from an authorized sender address or verified domain in Mailgun. It doesn't need to match `MAILGUN_DOMAIN` exactly (e.g., you can have `MAILGUN_DOMAIN=mg.yourdomain.com` and `FROM_EMAIL=sender@yourdomain.com`).
 
+### Option C: Postmark
+
+1. Sign up at https://postmarkapp.com (free tier: 100 emails/month)
+2. Create a Server or use the default one
+3. Add a Sender Signature: Sender Signatures → Add Sender Signature
+4. Get Server Token: Select your server → API Tokens
+5. Configure:
+
+```bash
+coho set-env EMAIL_PROVIDER "postmark"
+coho set-env POSTMARK_API_KEY "your-server-token"
+coho set-env FROM_EMAIL "sender@yourdomain.com"  # Must have verified sender signature
+coho set-env FROM_NAME "Your Company Name"
+```
+
+**Important:** Postmark requires you to verify your sender email address or domain before sending. It automatically generates a plain text version from your HTML.
+
 ## 3. Configure Workflow (Optional)
 
 The default `stepsconfig.json` has 3 steps: 1 day, 4 days, and 11 days after signup.

@@ -11,7 +11,7 @@ Easy to understand, easy to customize, infinitely scalable.
 - ✅ **Single Cron Job** - One intelligent batch processor for all steps
 - ✅ **Time-Based Scheduling** - Each step runs X hours after signup
 - ✅ **Queue-Based Delivery** - Reliable background processing with `conn.enqueue()`
-- ✅ **Dual Email Providers** - SendGrid and Mailgun REST API integration
+- ✅ **Multiple Email Providers** - SendGrid, Mailgun, and Postmark REST API integration
 - ✅ **Prevents Duplicates** - Each subscriber receives each email only once
 - ✅ **Subscriber Management** - Full CRUD API
 - ✅ **Professional Design** - Beautiful, responsive emails
@@ -135,6 +135,19 @@ coho set-env FROM_NAME "Your Company"
 - `MAILGUN_DOMAIN`: The sending domain configured in your Mailgun account (e.g., `mg.yourdomain.com`)
 - `FROM_EMAIL`: Must be from a verified/authorized domain, but doesn't need to match `MAILGUN_DOMAIN` exactly (e.g., can be `sender@yourdomain.com` while `MAILGUN_DOMAIN` is `mg.yourdomain.com`)
 - `MAILGUN_EU`: Set to `"true"` if you're using an EU Mailgun account, otherwise omit or set to `"false"`
+
+**Postmark:**
+```bash
+coho set-env EMAIL_PROVIDER "postmark"
+coho set-env POSTMARK_API_KEY "your-server-token"
+coho set-env FROM_EMAIL "sender@yourdomain.com"  # Must have a verified sender signature
+coho set-env FROM_NAME "Your Company"
+```
+
+**Important Notes:**
+- Get your Server Token from: https://account.postmarkapp.com/servers
+- Verify your sender signature (single email) or domain before sending
+- Postmark automatically generates a plain text version from your HTML
 
 ### 3. Customize Workflow Steps (Optional)
 
@@ -689,6 +702,19 @@ You should see emails queued within 15 minutes (next cron run).
    ```
 
 **Note:** `FROM_EMAIL` must be from an authorized sender address or verified domain. It doesn't need to match `MAILGUN_DOMAIN` exactly.
+
+### Postmark
+1. Sign up at https://postmarkapp.com (free: 100 emails/month)
+2. Create a Server (or use the default one)
+3. Add a Sender Signature (single email) or verify your domain
+4. Get Server Token: Select your server → API Tokens
+5. Configure:
+   ```bash
+   coho set-env POSTMARK_API_KEY "your-server-token"
+   coho set-env FROM_EMAIL "sender@yourdomain.com"  # Must have verified sender signature
+   ```
+
+**Note:** Postmark requires sender signature verification for single email addresses, or domain verification for all emails from a domain. It automatically generates a plain text version from your HTML email.
 
 ## Customization
 

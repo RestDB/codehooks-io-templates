@@ -14,10 +14,11 @@ const getDB = async () => {
 };
 
 // Email provider configuration
-const EMAIL_PROVIDER = process.env.EMAIL_PROVIDER || 'sendgrid'; // 'sendgrid' or 'mailgun'
+const EMAIL_PROVIDER = process.env.EMAIL_PROVIDER || 'sendgrid'; // 'sendgrid', 'mailgun', or 'postmark'
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
 const MAILGUN_API_KEY = process.env.MAILGUN_API_KEY;
 const MAILGUN_DOMAIN = process.env.MAILGUN_DOMAIN;
+const POSTMARK_API_KEY = process.env.POSTMARK_API_KEY;
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@example.com';
 const FROM_NAME = process.env.FROM_NAME || 'Drip Campaign';
 
@@ -156,6 +157,56 @@ async function sendEmailMailgun(to, subject, html) {
 }
 
 /**
+ * Send email via Postmark REST API
+ * @param {string} to - Recipient email address
+ * @param {string} subject - Email subject
+ * @param {string} html - HTML email content
+ * @returns {Promise<boolean>} - Success status
+ */
+async function sendEmailPostmark(to, subject, html) {
+  try {
+    // Validate required configuration
+    if (!POSTMARK_API_KEY || POSTMARK_API_KEY.trim() === '') {
+      throw new Error('POSTMARK_API_KEY environment variable is not set');
+    }
+
+    console.log('📧 [Postmark] Sending email to', to);
+
+    // Generate plain text version from HTML
+    const text = html.replace(/<[^>]*>/g, '').replace(/\n\n+/g, '\n\n').trim();
+
+    const response = await fetch('https://api.postmarkapp.com/email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Postmark-Server-Token': POSTMARK_API_KEY
+      },
+      body: JSON.stringify({
+        From: `${FROM_NAME} <${FROM_EMAIL}>`,
+        To: to,
+        Subject: subject,
+        TextBody: text,
+        HtmlBody: html
+      })
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log(`✅ Postmark email sent to ${to}`, result);
+      return true;
+    } else {
+      const error = await response.json();
+      console.error(`❌ Postmark error: ${response.status} ${response.statusText}`);
+      console.error(`   Response:`, error);
+      throw new Error(`Postmark API error: ${response.status} - ${JSON.stringify(error)}`);
+    }
+  } catch (error) {
+    console.error('❌ Postmark request error:', error);
+    throw error;
+  }
+}
+
+/**
  * Send email using configured provider
  * @param {string} to - Recipient email address
  * @param {string} subject - Email subject
@@ -177,6 +228,8 @@ async function sendEmail(to, subject, html) {
   // Normal mode - actually send email
   if (EMAIL_PROVIDER === 'mailgun') {
     return await sendEmailMailgun(to, subject, html);
+  } else if (EMAIL_PROVIDER === 'postmark') {
+    return await sendEmailPostmark(to, subject, html);
   } else {
     return await sendEmailSendGrid(to, subject, html);
   }
@@ -265,7 +318,7 @@ app.get('/', (req, res) => {
       'Dynamic step configuration',
       'Single cron job for all steps',
       'Queue-based email delivery',
-      'SendGrid and Mailgun integration',
+      'SendGrid, Mailgun, and Postmark integration',
       'Subscriber management with subscribe/unsubscribe',
       'Customizable email templates',
       'Prevents duplicate email sends',
