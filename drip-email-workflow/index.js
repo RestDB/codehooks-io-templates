@@ -22,12 +22,7 @@ const POSTMARK_API_KEY = process.env.POSTMARK_API_KEY;
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@example.com';
 const FROM_NAME = process.env.FROM_NAME || 'Drip Campaign';
 
-// Dry run mode - prevents actual email sending (for testing)
-// Explicitly check for 'true' to avoid string 'false' being truthy
-const DRY_RUN = process.env.DRY_RUN === 'true';
-if (DRY_RUN) {
-  console.log('⚠️ DRY RUN MODE ENABLED - Emails will be logged but not sent');
-}
+// Dry run mode - checked at runtime, can be toggled without redeploying
 
 /**
  * Get workflow steps from stepsconfig.json
@@ -214,8 +209,10 @@ async function sendEmailPostmark(to, subject, html) {
  * @returns {Promise<boolean>} - Success status
  */
 async function sendEmail(to, subject, html) {
-  // Dry run mode - log instead of sending
-  if (DRY_RUN) {
+  // Dry run mode - check at runtime for flexibility
+  const isDryRun = process.env.DRY_RUN === 'true';
+
+  if (isDryRun) {
     console.log('📧 [DRY RUN] Would send email:');
     console.log(`   To: ${to}`);
     console.log(`   Subject: ${subject}`);
@@ -327,7 +324,7 @@ app.get('/', (req, res) => {
     ],
     configuration: {
       emailProvider: EMAIL_PROVIDER,
-      dryRun: DRY_RUN,
+      dryRun: process.env.DRY_RUN === 'true',
       workflowSteps: steps.map(s => ({
         step: s.step,
         hoursAfterSignup: s.hoursAfterSignup,
@@ -824,7 +821,7 @@ app.worker('send-email', async (req, res) => {
       step,
       subject: template.subject,
       sentAt: new Date().toISOString(),
-      dryRun: DRY_RUN,
+      dryRun: process.env.DRY_RUN === 'true',
       success: emailSent,
       provider: EMAIL_PROVIDER
     });
@@ -844,7 +841,7 @@ app.worker('send-email', async (req, res) => {
         step,
         subject: template.subject,
         sentAt: new Date().toISOString(),
-        dryRun: DRY_RUN,
+        dryRun: process.env.DRY_RUN === 'true',
         success: false,
         provider: EMAIL_PROVIDER,
         error: error.message

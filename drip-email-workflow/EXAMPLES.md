@@ -23,6 +23,7 @@ export API_KEY="your-api-key-here"
 ```bash
 curl -X POST $API_URL/subscribers \
   -H "Content-Type: application/json" \
+  -H "x-apikey: $API_KEY" \
   -d '{
     "name": "Alice Johnson",
     "email": "alice@example.com"
@@ -45,6 +46,7 @@ Response:
 ```bash
 #!/bin/bash
 API_URL="https://YOUR_PROJECT.api.codehooks.io/dev"
+API_KEY="your-api-key-here"
 
 subscribers=(
   '{"name":"Alice Johnson","email":"alice@example.com"}'
@@ -56,6 +58,7 @@ for subscriber in "${subscribers[@]}"; do
   echo "Adding subscriber: $subscriber"
   curl -X POST $API_URL/subscribers \
     -H "Content-Type: application/json" \
+    -H "x-apikey: $API_KEY" \
     -d "$subscriber"
   echo ""
 done
@@ -64,20 +67,23 @@ done
 ### List All Subscribers
 
 ```bash
-curl $API_URL/subscribers
+curl $API_URL/subscribers \
+  -H "x-apikey: $API_KEY"
 ```
 
 ### List Only Subscribed Users
 
 ```bash
-curl "$API_URL/subscribers?subscribed=true"
+curl "$API_URL/subscribers?subscribed=true" \
+  -H "x-apikey: $API_KEY"
 ```
 
 ### Get Specific Subscriber
 
 ```bash
 # Replace SUBSCRIBER_ID with actual ID
-curl $API_URL/subscribers/SUBSCRIBER_ID
+curl $API_URL/subscribers/SUBSCRIBER_ID \
+  -H "x-apikey: $API_KEY"
 ```
 
 ### Unsubscribe a User
@@ -95,7 +101,8 @@ curl -X POST $API_URL/subscribers/SUBSCRIBER_ID/unsubscribe \
 ### View All Templates
 
 ```bash
-curl $API_URL/templates
+curl $API_URL/templates \
+  -H "x-apikey: $API_KEY"
 ```
 
 ### Create/Update Step 1 Template
@@ -103,6 +110,7 @@ curl $API_URL/templates
 ```bash
 curl -X POST $API_URL/templates \
   -H "Content-Type: application/json" \
+  -H "x-apikey: $API_KEY" \
   -d '{
     "step": 1,
     "subject": "🎉 Welcome to Our Community!",
@@ -119,6 +127,7 @@ curl -X POST $API_URL/templates \
 ```bash
 curl -X POST $API_URL/templates \
   -H "Content-Type: application/json" \
+  -H "x-apikey: $API_KEY" \
   -d '{
     "step": 2,
     "subject": "💡 Quick Tips to Get You Started",
@@ -135,6 +144,7 @@ curl -X POST $API_URL/templates \
 ```bash
 curl -X POST $API_URL/templates \
   -H "Content-Type: application/json" \
+  -H "x-apikey: $API_KEY" \
   -d '{
     "step": 3,
     "subject": "💬 We would Love to Hear From You!",
@@ -151,6 +161,7 @@ curl -X POST $API_URL/templates \
 ```bash
 curl -X POST $API_URL/templates \
   -H "Content-Type: application/json" \
+  -H "x-apikey: $API_KEY" \
   -d '{
     "step": 1,
     "subject": "🎉 Welcome to Our Community!",
@@ -171,6 +182,7 @@ Here's a complete script to set up and test the workflow:
 
 # Configuration
 API_URL="https://YOUR_PROJECT.api.codehooks.io/dev"
+API_KEY="your-api-key-here"
 
 echo "========================================="
 echo "Drip Email Workflow - Complete Example"
@@ -181,23 +193,27 @@ echo ""
 echo "1. Adding test subscribers..."
 curl -X POST $API_URL/subscribers \
   -H "Content-Type: application/json" \
+  -H "x-apikey: $API_KEY" \
   -d '{"name":"Test User 1","email":"test1@example.com"}'
 
 curl -X POST $API_URL/subscribers \
   -H "Content-Type: application/json" \
+  -H "x-apikey: $API_KEY" \
   -d '{"name":"Test User 2","email":"test2@example.com"}'
 
 # 2. List all subscribers
 echo ""
 echo ""
 echo "2. Listing all subscribers..."
-curl $API_URL/subscribers
+curl $API_URL/subscribers \
+  -H "x-apikey: $API_KEY"
 
 # 3. Check templates
 echo ""
 echo ""
 echo "3. Checking email templates..."
-curl $API_URL/templates
+curl $API_URL/templates \
+  -H "x-apikey: $API_KEY"
 
 echo ""
 echo ""
@@ -213,11 +229,14 @@ echo "========================================="
 ### Add Subscriber from Your Application
 
 ```javascript
+const API_KEY = 'your-api-key-here';
+
 async function addSubscriber(name, email) {
   const response = await fetch('https://YOUR_PROJECT.api.codehooks.io/dev/subscribers', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'x-apikey': API_KEY
     },
     body: JSON.stringify({ name, email })
   });
@@ -273,10 +292,12 @@ unsubscribeUser('65a1b2c3d4e5f6a7b8c9d0e1', API_KEY)
 import requests
 
 API_URL = "https://YOUR_PROJECT.api.codehooks.io/dev"
+API_KEY = "your-api-key-here"
 
 def add_subscriber(name, email):
     response = requests.post(
         f"{API_URL}/subscribers",
+        headers={"x-apikey": API_KEY},
         json={"name": name, "email": email}
     )
     response.raise_for_status()
@@ -315,14 +336,15 @@ print("Unsubscribed:", result)
 ### Check System Health
 
 ```bash
-curl $API_URL/
+curl $API_URL/ \
+  -H "x-apikey: $API_KEY"
 ```
 
 ### Monitor Workflow Progress
 
 ```bash
 # Check subscriber status
-curl $API_URL/subscribers | jq '.subscribers[] | {email, workflowStatus, emailsSent}'
+curl $API_URL/subscribers -H "x-apikey: $API_KEY" | jq '.subscribers[] | {email, workflowStatus, emailsSent}'
 
 # View logs
 coho logs --tail 50
@@ -348,6 +370,7 @@ coho deploy
 # Add test subscriber
 curl -X POST $API_URL/subscribers \
   -H "Content-Type: application/json" \
+  -H "x-apikey: $API_KEY" \
   -d '{"name":"Test User","email":"test@example.com"}'
 
 # Watch logs - emails will be queued within 15 minutes
@@ -387,11 +410,13 @@ Carol Williams,carol@example.com
 ```bash
 #!/bin/bash
 API_URL="https://YOUR_PROJECT.api.codehooks.io/dev"
+API_KEY="your-api-key-here"
 
 tail -n +2 subscribers.csv | while IFS=, read -r name email; do
   echo "Adding: $name ($email)"
   curl -X POST $API_URL/subscribers \
     -H "Content-Type: application/json" \
+    -H "x-apikey: $API_KEY" \
     -d "{\"name\":\"$name\",\"email\":\"$email\"}"
   echo ""
 done
@@ -404,6 +429,7 @@ import csv
 import requests
 
 API_URL = "https://YOUR_PROJECT.api.codehooks.io/dev"
+API_KEY = "your-api-key-here"
 
 with open('subscribers.csv', 'r') as file:
     reader = csv.DictReader(file)
@@ -411,6 +437,7 @@ with open('subscribers.csv', 'r') as file:
         print(f"Adding: {row['name']} ({row['email']})")
         response = requests.post(
             f"{API_URL}/subscribers",
+            headers={"x-apikey": API_KEY},
             json={"name": row['name'], "email": row['email']}
         )
         if response.ok:
@@ -427,13 +454,18 @@ Create a webhook endpoint in your app that calls the subscriber API:
 
 ```javascript
 // Express.js example
+const API_KEY = 'your-api-key-here';
+
 app.post('/signup', async (req, res) => {
   const { name, email } = req.body;
 
   // Add to drip campaign - workflow runs automatically via cron
   await fetch('https://YOUR_PROJECT.api.codehooks.io/dev/subscribers', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      'x-apikey': API_KEY
+    },
     body: JSON.stringify({ name, email })
   });
 
@@ -456,24 +488,24 @@ This allows you to automatically add subscribers from forms, Typeform, Google Sh
 ### Check if subscriber exists
 
 ```bash
-curl $API_URL/subscribers | jq '.subscribers[] | select(.email=="alice@example.com")'
+curl $API_URL/subscribers -H "x-apikey: $API_KEY" | jq '.subscribers[] | select(.email=="alice@example.com")'
 ```
 
 ### Find subscribers by workflow status
 
 ```bash
 # Pending
-curl $API_URL/subscribers | jq '.subscribers[] | select(.workflowStatus=="pending")'
+curl $API_URL/subscribers -H "x-apikey: $API_KEY" | jq '.subscribers[] | select(.workflowStatus=="pending")'
 
 # Active
-curl $API_URL/subscribers | jq '.subscribers[] | select(.workflowStatus=="active")'
+curl $API_URL/subscribers -H "x-apikey: $API_KEY" | jq '.subscribers[] | select(.workflowStatus=="active")'
 
 # Completed
-curl $API_URL/subscribers | jq '.subscribers[] | select(.workflowStatus=="completed")'
+curl $API_URL/subscribers -H "x-apikey: $API_KEY" | jq '.subscribers[] | select(.workflowStatus=="completed")'
 ```
 
 ### Check which emails have been sent
 
 ```bash
-curl $API_URL/subscribers | jq '.subscribers[] | {email, emailsSent}'
+curl $API_URL/subscribers -H "x-apikey: $API_KEY" | jq '.subscribers[] | {email, emailsSent}'
 ```
