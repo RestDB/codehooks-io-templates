@@ -121,7 +121,7 @@ export function generateEmailTemplate({
     <div class="content">
       <h2>${heading}</h2>
       ${body.split('\n').map(p => p.trim() ? `<p>${p}</p>` : '').join('')}
-      ${buttonText && buttonUrl ? `<a href="${buttonUrl}" class="button">${buttonText}</a>` : ''}
+      ${buttonText && buttonUrl ? `<a href="${buttonUrl}" class="button" style="display: inline-block; padding: 14px 32px; margin: 24px 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff !important; text-decoration: none; border-radius: 6px; font-weight: 600; text-align: center;"><span style="color: #ffffff !important;">${buttonText}</span></a>` : ''}
     </div>
     <div class="footer">
       <p>You're receiving this email because you subscribed to our updates.</p>
