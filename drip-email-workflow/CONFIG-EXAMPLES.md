@@ -198,7 +198,8 @@ curl https://your-project.api.codehooks.io/dev/
 
 View all templates:
 ```bash
-curl https://your-project.api.codehooks.io/dev/templates
+curl https://your-project.api.codehooks.io/dev/templates \
+  -H "x-apikey: YOUR_API_KEY_HERE"
 ```
 
 ## Troubleshooting

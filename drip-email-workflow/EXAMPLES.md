@@ -353,6 +353,35 @@ coho logs --tail 50
 coho logs --follow
 ```
 
+### Check Rate Limit Status
+
+Monitor your current email sending rate:
+
+```bash
+curl $API_URL/rate-limit-status \
+  -H "x-apikey: $API_KEY"
+```
+
+Response:
+```json
+{
+  "provider": "sendgrid",
+  "rateLimit": 100,
+  "currentHour": "2025-01-15T14:00:00.000Z",
+  "sentThisHour": 47,
+  "remaining": 53,
+  "percentUsed": 47,
+  "status": "ok"
+}
+```
+
+**Using jq to monitor:**
+
+```bash
+# Watch rate limit status every 30 seconds
+watch -n 30 "curl -s $API_URL/rate-limit-status -H 'x-apikey: $API_KEY' | jq '{provider, sentThisHour, remaining, status}'"
+```
+
 ### Test Email Delivery Quickly
 
 For quick testing, use the fast testing configuration:
@@ -390,6 +419,46 @@ Or use dry run mode to test without sending emails:
 coho set-env DRY_RUN "true"
 # Test your workflow, then disable:
 coho set-env DRY_RUN "false"
+```
+
+### Test Rate Limiting
+
+Test the rate limiting behavior with reduced limits:
+
+```bash
+# Set very low rate limits for testing
+coho set-env SENDGRID_RATE_LIMIT "10"
+coho set-env MAX_EMAILS_PER_CRON_RUN "3"
+
+# Add multiple test subscribers
+for i in {1..15}; do
+  curl -X POST $API_URL/subscribers \
+    -H "Content-Type: application/json" \
+    -H "x-apikey: $API_KEY" \
+    -d "{\"name\":\"Test User $i\",\"email\":\"test$i@example.com\"}"
+done
+
+# Watch logs - you'll see batched sending
+coho logs --follow
+```
+
+**Expected behavior:**
+- Cron run 1: Queues 3 emails (3/10 sent this hour)
+- Cron run 2: Queues 3 emails (6/10 sent this hour)
+- Cron run 3: Queues 3 emails (9/10 sent this hour)
+- Cron run 4: Queues 1 email (10/10 sent this hour - limit reached)
+- Cron run 5: Skips queueing (rate limit reached)
+- Next hour: Resets and continues
+
+**Check status:**
+```bash
+curl $API_URL/rate-limit-status -H "x-apikey: $API_KEY" | jq
+```
+
+**Reset to production limits:**
+```bash
+coho set-env SENDGRID_RATE_LIMIT "100"
+coho set-env MAX_EMAILS_PER_CRON_RUN "25"
 ```
 
 ## Bulk Import from CSV

@@ -133,7 +133,8 @@ That's it! The cron job runs every 15 minutes and will automatically process sub
 Check subscriber status:
 
 ```bash
-curl https://YOUR_PROJECT.api.codehooks.io/dev/subscribers
+curl https://YOUR_PROJECT.api.codehooks.io/dev/subscribers \
+  -H "x-apikey: YOUR_API_KEY_HERE"
 ```
 
 Monitor logs:
@@ -144,10 +145,37 @@ coho logs --follow
 
 Look for these messages every 15 minutes:
 - `🔄 [Cron] Starting drip email batch processing...`
-- `📧 [Cron] Step 1: Found X subscribers ready`
-- `✅ [Cron] Step 1: Queued X emails`
+- `📊 [Cron] Rate limit: 0/100 sent this hour, queueing up to 25 emails`
+- `✅ [Cron] Step 1: Checked 1 subscribers, queued 1 emails`
 - `📨 [Worker] Processing email for your-email@example.com, step 1`
 - `✅ [Worker] Step 1 email sent to your-email@example.com`
+
+**Check rate limit status:**
+
+```bash
+curl https://YOUR_PROJECT.api.codehooks.io/dev/rate-limit-status \
+  -H "x-apikey: YOUR_API_KEY_HERE"
+```
+
+## Rate Limiting (Optional Configuration)
+
+The template includes intelligent rate limiting to prevent hitting email provider API limits. Default configuration:
+- 100 emails per hour
+- 25 emails per cron run (15 minutes)
+
+If you have a different provider plan, adjust the limits:
+
+```bash
+# Example: Higher volume plan (1000 emails/hour)
+coho set-env SENDGRID_RATE_LIMIT "1000"
+coho set-env MAX_EMAILS_PER_CRON_RUN "250"
+
+# Example: Lower volume plan (50 emails/hour)
+coho set-env SENDGRID_RATE_LIMIT "50"
+coho set-env MAX_EMAILS_PER_CRON_RUN "12"
+```
+
+See [RATE_LIMITING.md](./RATE_LIMITING.md) for complete details.
 
 ## Quick Testing
 
@@ -162,6 +190,7 @@ coho set-env DRY_RUN "true"
 # Add a test subscriber
 curl -X POST https://YOUR_PROJECT.api.codehooks.io/dev/subscribers \
   -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY_HERE" \
   -d '{"name":"Test User","email":"test@example.com"}'
 
 # Watch logs - you'll see emails logged but not sent
@@ -198,6 +227,7 @@ coho deploy
 # Add a test subscriber
 curl -X POST https://YOUR_PROJECT.api.codehooks.io/dev/subscribers \
   -H "Content-Type: application/json" \
+  -H "x-apikey: YOUR_API_KEY_HERE" \
   -d '{"name":"Test User","email":"test@example.com"}'
 
 # Watch logs
@@ -249,7 +279,8 @@ coho deploy       # Deploy changes
 
 View current templates:
 ```bash
-curl https://YOUR_PROJECT.api.codehooks.io/dev/templates -H "x-apikey: YOUR_API_KEY_HERE"
+curl https://YOUR_PROJECT.api.codehooks.io/dev/templates \
+  -H "x-apikey: YOUR_API_KEY_HERE"
 ```
 
 Create a custom template override:

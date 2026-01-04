@@ -33,6 +33,48 @@ function getWorkflowSteps() {
 }
 
 /**
+ * Get rate limit for current email provider
+ */
+function getRateLimit() {
+  const provider = process.env.EMAIL_PROVIDER || 'sendgrid';
+  const limits = {
+    sendgrid: parseInt(process.env.SENDGRID_RATE_LIMIT || '100'),
+    mailgun: parseInt(process.env.MAILGUN_RATE_LIMIT || '100'),
+    postmark: parseInt(process.env.POSTMARK_RATE_LIMIT || '100')
+  };
+  return limits[provider] || parseInt(process.env.EMAIL_RATE_LIMIT || '100');
+}
+
+/**
+ * Get max emails to queue per cron run
+ */
+function getMaxEmailsPerRun() {
+  return parseInt(process.env.MAX_EMAILS_PER_CRON_RUN || '25');
+}
+
+/**
+ * Increment rate tracker for current hour
+ */
+async function incrementRateTracker(conn) {
+  const now = new Date();
+  const currentHour = now.toISOString().substring(0, 13) + ":00:00.000Z";
+  const hourKey = `rate_tracker_${currentHour.replace(/[:-]/g, '_').substring(0, 19)}`;
+
+  await conn.updateOne(
+    'email_rate_tracking',
+    { _id: hourKey },
+    {
+      $inc: { sentCount: 1 },
+      $set: {
+        updatedAt: new Date().toISOString(),
+        provider: EMAIL_PROVIDER
+      }
+    },
+    { upsert: true }
+  );
+}
+
+/**
  * Send email via SendGrid REST API
  * @param {string} to - Recipient email address
  * @param {string} subject - Email subject
@@ -64,12 +106,15 @@ async function sendEmailSendGrid(to, subject, html) {
       let data = '';
       res.on('data', (chunk) => data += chunk);
       res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
+        if (res.statusCode === 429) {
+          console.error(`❌ SendGrid rate limit: ${res.statusCode} - ${data}`);
+          reject(new Error(`429 - Rate limit exceeded: ${data}`));
+        } else if (res.statusCode >= 200 && res.statusCode < 300) {
           console.log(`✅ SendGrid email sent to ${to}`);
           resolve(true);
         } else {
           console.error(`❌ SendGrid error: ${res.statusCode} - ${data}`);
-          reject(new Error(`SendGrid API error: ${res.statusCode}`));
+          reject(new Error(`SendGrid API error: ${res.statusCode} - ${data}`));
         }
       });
     });
@@ -134,7 +179,11 @@ async function sendEmailMailgun(to, subject, html) {
       });
 
       // Handle response
-      if (resp.status <= 201) {
+      if (resp.status === 429) {
+        const errorText = await resp.text();
+        console.error(`❌ Mailgun rate limit: ${resp.status} - ${errorText}`);
+        reject(new Error(`429 - Rate limit exceeded: ${errorText}`));
+      } else if (resp.status <= 201) {
         const output = await resp.json();
         console.log(`✅ Mailgun email sent to ${to}`, output);
         resolve(true);
@@ -185,7 +234,11 @@ async function sendEmailPostmark(to, subject, html) {
       })
     });
 
-    if (response.ok) {
+    if (response.status === 429) {
+      const error = await response.json();
+      console.error(`❌ Postmark rate limit: ${response.status} - ${JSON.stringify(error)}`);
+      throw new Error(`429 - Rate limit exceeded: ${JSON.stringify(error)}`);
+    } else if (response.ok) {
       const result = await response.json();
       console.log(`✅ Postmark email sent to ${to}`, result);
       return true;
@@ -337,7 +390,13 @@ app.get('/', (req, res) => {
       unsubscribe: '/subscribers/:id/unsubscribe (requires x-apikey)',
       templates: '/templates',
       emailLog: '/email-log',
-      emailLogStats: '/email-log/stats'
+      emailLogStats: '/email-log/stats',
+      rateLimitStatus: '/rate-limit-status'
+    },
+    rateLimiting: {
+      enabled: true,
+      rateLimit: getRateLimit(),
+      maxPerCronRun: getMaxEmailsPerRun()
     }
   });
 });
@@ -692,29 +751,69 @@ app.job('*/15 * * * *', async (req, res) => {
     const workflowSteps = getWorkflowSteps();
     const now = Date.now();
 
+    // Get rate limit configuration
+    const rateLimit = getRateLimit();
+    const maxPerRun = getMaxEmailsPerRun();
+
+    // Check current hour's send count
+    const currentHour = new Date(now).toISOString().substring(0, 13) + ":00:00.000Z";
+    const hourKey = `rate_tracker_${currentHour.replace(/[:-]/g, '_').substring(0, 19)}`;
+
+    let rateTracker;
+    try {
+      rateTracker = await conn.getOne('email_rate_tracking', { _id: hourKey });
+    } catch (err) {
+      rateTracker = null;
+    }
+
+    if (!rateTracker) {
+      rateTracker = {
+        _id: hourKey,
+        provider: EMAIL_PROVIDER,
+        hour: currentHour,
+        sentCount: 0,
+        createdAt: new Date().toISOString()
+      };
+      await conn.insertOne('email_rate_tracking', rateTracker);
+    }
+
+    // Calculate remaining capacity
+    const remainingInHour = rateLimit - rateTracker.sentCount;
+    const maxToQueue = Math.min(maxPerRun, remainingInHour);
+
+    if (maxToQueue <= 0) {
+      console.log(`⚠️ [Cron] Rate limit reached: ${rateTracker.sentCount}/${rateLimit} sent this hour. Skipping queue.`);
+      return res.end();
+    }
+
+    console.log(`📊 [Cron] Rate limit: ${rateTracker.sentCount}/${rateLimit} sent this hour, queueing up to ${maxToQueue} emails`);
+
     let totalQueued = 0;
     let totalChecked = 0;
 
     // For each workflow step, stream subscribers who need that email
     for (const stepConfig of workflowSteps) {
+      if (totalQueued >= maxToQueue) {
+        console.log(`⚠️ [Cron] Reached max queue limit (${maxToQueue}), stopping`);
+        break;
+      }
+
       const { step, hoursAfterSignup } = stepConfig;
       const cutoffTime = new Date(now - hoursAfterSignup * 60 * 60 * 1000).toISOString();
 
       let stepQueued = 0;
       let stepChecked = 0;
 
-      // Stream subscribers ready for this step:
-      // 1. Subscribed
-      // 2. Signed up before the cutoff time for this step
-      // 3. Haven't received this step yet (checked in update query for atomicity)
+      // Stream subscribers ready for this step
       const cursor = conn.getMany('subscribers', {
         subscribed: true,
         createdAt: { $lte: cutoffTime }
       });
 
       // Use streaming architecture to process subscribers one at a time
-      // This maintains constant memory usage regardless of subscriber count
       await cursor.forEach(async (subscriber) => {
+        if (totalQueued >= maxToQueue) return;
+
         stepChecked++;
 
         // Check if subscriber hasn't received this step yet
@@ -722,13 +821,12 @@ app.job('*/15 * * * *', async (req, res) => {
 
         if (hasNotReceivedStep) {
           // Atomically mark this step as sent before queueing
-          // This prevents duplicate queue entries if the next cron runs before worker completes
           try {
             const updateResult = await conn.updateOne(
               'subscribers',
               {
                 _id: subscriber._id,
-                emailsSent: { $nin: [step] } // Only update if step not already in array
+                emailsSent: { $nin: [step] }
               },
               {
                 $push: { emailsSent: step },
@@ -736,8 +834,7 @@ app.job('*/15 * * * *', async (req, res) => {
               }
             );
 
-            // Only queue if we successfully updated (no other cron job beat us to it)
-            // updateOne returns the updated document if successful, null/undefined if no match
+            // Only queue if we successfully updated
             if (updateResult) {
               await conn.enqueue('send-email', {
                 subscriberId: subscriber._id,
@@ -768,7 +865,7 @@ app.job('*/15 * * * *', async (req, res) => {
     if (totalQueued === 0) {
       console.log('🔄 [Cron] No emails to queue at this time');
     } else {
-      console.log(`✅ [Cron] Batch complete: Queued ${totalQueued} total emails`);
+      console.log(`✅ [Cron] Batch complete: Queued ${totalQueued}/${maxToQueue} emails`);
     }
 
     res.end();
@@ -787,10 +884,13 @@ app.job('*/15 * * * *', async (req, res) => {
 app.worker('send-email', async (req, res) => {
   const conn = await getDB();
   const { payload } = req.body;
-  const { subscriberId, email, name, step } = payload;
+  const { subscriberId, email, name, step, retryCount = 0 } = payload;
+
+  const MAX_RETRIES = 3;
+  const RETRY_DELAYS = [5 * 60 * 1000, 15 * 60 * 1000, 30 * 60 * 1000]; // 5min, 15min, 30min
 
   try {
-    console.log(`📨 [Worker] Processing email for ${email}, step ${step}`);
+    console.log(`📨 [Worker] Processing email for ${email}, step ${step}${retryCount > 0 ? ` (retry ${retryCount}/${MAX_RETRIES})` : ''}`);
 
     // Check subscriber is still subscribed
     const subscriber = await conn.getOne('subscribers', { _id: subscriberId });
@@ -813,6 +913,9 @@ app.worker('send-email', async (req, res) => {
     // Send email
     const emailSent = await sendEmail(email, template.subject, html);
 
+    // Increment rate tracker on success
+    await incrementRateTracker(conn);
+
     // Log email send to audit collection
     await conn.insertOne('email_log', {
       subscriberId,
@@ -822,8 +925,9 @@ app.worker('send-email', async (req, res) => {
       subject: template.subject,
       sentAt: new Date().toISOString(),
       dryRun: process.env.DRY_RUN === 'true',
-      success: emailSent,
-      provider: EMAIL_PROVIDER
+      success: true,
+      provider: EMAIL_PROVIDER,
+      retryCount
     });
 
     console.log(`✅ [Worker] Step ${step} email sent to ${email}`);
@@ -831,26 +935,58 @@ app.worker('send-email', async (req, res) => {
   } catch (error) {
     console.error('❌ [Worker] Error sending email:', error);
 
-    // Log failed email attempt to audit collection
-    try {
-      const template = await getTemplate(step);
-      await conn.insertOne('email_log', {
-        subscriberId,
-        email,
-        name,
-        step,
-        subject: template.subject,
-        sentAt: new Date().toISOString(),
-        dryRun: process.env.DRY_RUN === 'true',
-        success: false,
-        provider: EMAIL_PROVIDER,
-        error: error.message
-      });
-    } catch (logError) {
-      console.error('❌ [Worker] Failed to log error:', logError);
+    // Check if it's a rate limit error (429)
+    const isRateLimitError = error.message?.includes('429') ||
+                            error.message?.includes('rate limit') ||
+                            error.message?.includes('Rate limit') ||
+                            error.message?.includes('Too Many Requests');
+
+    if (isRateLimitError && retryCount < MAX_RETRIES) {
+      // Don't remove from emailsSent - keep it marked
+      const retryDelay = RETRY_DELAYS[retryCount];
+
+      console.log(`⏰ [Worker] Rate limit hit, retrying ${email} in ${retryDelay/1000/60} minutes (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+
+      // Re-queue with delay
+      setTimeout(async () => {
+        try {
+          await conn.enqueue('send-email', {
+            subscriberId,
+            email,
+            name,
+            step,
+            retryCount: retryCount + 1
+          });
+        } catch (enqueueError) {
+          console.error('❌ [Worker] Failed to re-queue email:', enqueueError);
+        }
+      }, retryDelay);
+
+      // Log retry attempt
+      try {
+        const template = await getTemplate(step);
+        await conn.insertOne('email_log', {
+          subscriberId,
+          email,
+          name,
+          step,
+          subject: template?.subject || `Step ${step}`,
+          sentAt: new Date().toISOString(),
+          dryRun: process.env.DRY_RUN === 'true',
+          success: false,
+          provider: EMAIL_PROVIDER,
+          error: `Rate limit - will retry in ${retryDelay/1000/60} min`,
+          retryCount,
+          willRetry: true
+        });
+      } catch (logError) {
+        console.error('❌ [Worker] Failed to log retry:', logError);
+      }
+
+      return res.end();
     }
 
-    // If email send failed, remove the step from emailsSent so it can be retried
+    // For non-rate-limit errors or max retries exceeded, remove from emailsSent
     try {
       await conn.updateOne(
         'subscribers',
@@ -860,13 +996,95 @@ app.worker('send-email', async (req, res) => {
           $set: { updatedAt: new Date().toISOString() }
         }
       );
-      console.log(`🔄 [Worker] Removed step ${step} from ${email} for retry`);
+      console.log(`🔄 [Worker] Removed step ${step} from ${email} for retry by cron`);
     } catch (updateError) {
       console.error('❌ [Worker] Failed to reset subscriber state:', updateError);
     }
 
+    // Log failure
+    try {
+      const template = await getTemplate(step);
+      await conn.insertOne('email_log', {
+        subscriberId,
+        email,
+        name,
+        step,
+        subject: template?.subject || `Step ${step}`,
+        sentAt: new Date().toISOString(),
+        dryRun: process.env.DRY_RUN === 'true',
+        success: false,
+        provider: EMAIL_PROVIDER,
+        error: error.message,
+        retryCount,
+        willRetry: false
+      });
+    } catch (logError) {
+      console.error('❌ [Worker] Failed to log error:', logError);
+    }
+
     // Workers always return with res.end()
     res.end();
+  }
+});
+
+// ==================== RATE LIMITING MONITORING ====================
+
+/**
+ * Get current rate limit status
+ * GET /rate-limit-status
+ */
+app.get('/rate-limit-status', async (req, res) => {
+  try {
+    const conn = await getDB();
+    const now = new Date();
+    const currentHour = now.toISOString().substring(0, 13) + ":00:00.000Z";
+    const hourKey = `rate_tracker_${currentHour.replace(/[:-]/g, '_').substring(0, 19)}`;
+
+    let rateTracker;
+    try {
+      rateTracker = await conn.getOne('email_rate_tracking', { _id: hourKey });
+    } catch (err) {
+      rateTracker = null;
+    }
+
+    const rateLimit = getRateLimit();
+    const sentThisHour = rateTracker?.sentCount || 0;
+
+    res.json({
+      provider: EMAIL_PROVIDER,
+      rateLimit,
+      currentHour,
+      sentThisHour,
+      remaining: Math.max(0, rateLimit - sentThisHour),
+      percentUsed: Math.round((sentThisHour / rateLimit) * 100),
+      status: sentThisHour >= rateLimit ? 'rate_limit_reached' : 'ok'
+    });
+  } catch (error) {
+    console.error('Error fetching rate limit status:', error);
+    res.status(500).json({ error: 'Failed to fetch rate limit status' });
+  }
+});
+
+// ==================== CLEANUP JOB ====================
+
+/**
+ * Daily cleanup job: Remove old rate tracking records
+ * Runs daily at 2 AM
+ */
+app.job('0 2 * * *', async (req, res) => {
+  try {
+    const conn = await getDB();
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+
+    const result = await conn.removeMany('email_rate_tracking', {
+      createdAt: { $lt: twoDaysAgo }
+    });
+
+    console.log(`🧹 [Cleanup] Removed ${result?.deletedCount || 0} old rate tracking records`);
+    res.end();
+  } catch (error) {
+    console.error('❌ [Cleanup] Error:', error);
+    res.status(500).end();
   }
 });
 

@@ -22,6 +22,7 @@ Configure unlimited steps via `stepsconfig.json`. Add 3 steps or 30 - same archi
 - ✅ **Time-Based Scheduling** - Each step runs X hours after signup
 - ✅ **Queue-Based Delivery** - Reliable background processing with `conn.enqueue()`
 - ✅ **Multiple Email Providers** - SendGrid, Mailgun, and Postmark REST API integration
+- ✅ **Intelligent Rate Limiting** - Prevents hitting provider API limits with automatic retry
 - ✅ **Prevents Duplicates** - Each subscriber receives each email only once
 - ✅ **Subscriber Management** - Full CRUD API
 - ✅ **Professional Design** - Beautiful, responsive emails
@@ -327,6 +328,52 @@ app.job('*/15 * * * *', async (req, res) => {
    - Next cron run will detect and re-queue the subscriber
    - Ensures no emails are lost due to temporary failures
 
+5. **Intelligent rate limiting**: Prevents overwhelming email provider APIs:
+   - Tracks sends per hour in database
+   - Cron job respects configurable rate limits (default: 100 emails/hour)
+   - Workers detect 429 errors and retry with exponential backoff (5min → 15min → 30min)
+   - Emails delayed, never lost
+
+## Rate Limiting
+
+The template includes intelligent rate limiting to prevent hitting email provider API limits:
+
+**How it works:**
+- **Cron job**: Only queues up to 25 emails per 15-minute run (100/hour max)
+- **Database tracking**: Records actual sends per hour to prevent over-queueing
+- **Worker retry**: Detects 429 (rate limit) errors and retries with delays
+
+**Configuration:**
+
+```bash
+# Set rate limits based on your provider plan
+coho set-env SENDGRID_RATE_LIMIT "100"  # emails per hour
+coho set-env MAILGUN_RATE_LIMIT "100"
+coho set-env POSTMARK_RATE_LIMIT "100"
+coho set-env MAX_EMAILS_PER_CRON_RUN "25"  # per 15-minute run
+```
+
+**Monitor rate limit status:**
+
+```bash
+curl https://your-project.api.codehooks.io/dev/rate-limit-status \
+  -H "x-apikey: YOUR_API_KEY_HERE"
+```
+
+Response:
+```json
+{
+  "provider": "sendgrid",
+  "rateLimit": 100,
+  "sentThisHour": 47,
+  "remaining": 53,
+  "percentUsed": 47,
+  "status": "ok"
+}
+```
+
+See [RATE_LIMITING.md](./RATE_LIMITING.md) for complete details.
+
 ## API Reference
 
 ### Create Subscriber
@@ -458,6 +505,25 @@ Returns statistics about sent emails:
 }
 ```
 
+### Get Rate Limit Status
+```bash
+curl https://your-project.api.codehooks.io/dev/rate-limit-status \
+  -H "x-apikey: YOUR_API_KEY_HERE"
+```
+
+Returns current rate limit usage:
+```json
+{
+  "provider": "sendgrid",
+  "rateLimit": 100,
+  "currentHour": "2025-01-15T14:00:00.000Z",
+  "sentThisHour": 47,
+  "remaining": 53,
+  "percentUsed": 47,
+  "status": "ok"
+}
+```
+
 ### Health Check
 ```bash
 curl https://your-project.api.codehooks.io/dev/
@@ -480,7 +546,13 @@ Shows current workflow configuration:
     "subscribers": "/subscribers",
     "templates": "/templates",
     "emailLog": "/email-log",
-    "emailLogStats": "/email-log/stats"
+    "emailLogStats": "/email-log/stats",
+    "rateLimitStatus": "/rate-limit-status"
+  },
+  "rateLimiting": {
+    "enabled": true,
+    "rateLimit": 100,
+    "maxPerCronRun": 25
   }
 }
 ```
