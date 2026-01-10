@@ -53,6 +53,10 @@
         "description": "Minimal Twilio webhook handler for SMS and voice calls"
       },
       {
+        "name": "webhook-paypal-minimal",
+        "description": "Minimal PayPal webhook handler for payment events"
+      },
+      {
         "name": "drip-email-workflow",
         "description": "3-step drip email campaign with SendGrid/Mailgun, subscriber management, and scheduled delivery"
       }
