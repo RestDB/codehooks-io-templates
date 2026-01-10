@@ -344,7 +344,12 @@ app.get('/webhooks', async (req, res) => {
 app.get('/webhooks/:id', async (req, res) => {
   try {
     const conn = await getDB();
-    const webhook = await conn.getOne('webhooks', { _id: req.params.id });
+    let webhook = null;
+    try {
+      webhook = await conn.getOne('webhooks', { _id: req.params.id });
+    } catch (err) {
+      webhook = null;
+    }
 
     if (!webhook) {
       return res.status(404).json({ error: 'Webhook not found' });
@@ -363,7 +368,12 @@ app.patch('/webhooks/:id', async (req, res) => {
     const { url, events, status, metadata } = req.body;
     const conn = await getDB();
 
-    const webhook = await conn.getOne('webhooks', { _id: req.params.id });
+    let webhook = null;
+    try {
+      webhook = await conn.getOne('webhooks', { _id: req.params.id });
+    } catch (err) {
+      webhook = null;
+    }
     if (!webhook) {
       return res.status(404).json({ error: 'Webhook not found' });
     }
@@ -432,7 +442,12 @@ app.patch('/webhooks/:id', async (req, res) => {
 app.delete('/webhooks/:id', async (req, res) => {
   try {
     const conn = await getDB();
-    const webhook = await conn.getOne('webhooks', { _id: req.params.id });
+    let webhook = null;
+    try {
+      webhook = await conn.getOne('webhooks', { _id: req.params.id });
+    } catch (err) {
+      webhook = null;
+    }
 
     if (!webhook) {
       return res.status(404).json({ error: 'Webhook not found' });
@@ -450,7 +465,12 @@ app.delete('/webhooks/:id', async (req, res) => {
 app.post('/webhooks/:id/retry', async (req, res) => {
   try {
     const conn = await getDB();
-    const webhook = await conn.getOne('webhooks', { _id: req.params.id });
+    let webhook = null;
+    try {
+      webhook = await conn.getOne('webhooks', { _id: req.params.id });
+    } catch (err) {
+      webhook = null;
+    }
 
     if (!webhook) {
       return res.status(404).json({ error: 'Webhook not found' });
@@ -480,7 +500,12 @@ app.post('/webhooks/:id/retry', async (req, res) => {
 app.get('/webhooks/:id/stats', async (req, res) => {
   try {
     const conn = await getDB();
-    const webhook = await conn.getOne('webhooks', { _id: req.params.id });
+    let webhook = null;
+    try {
+      webhook = await conn.getOne('webhooks', { _id: req.params.id });
+    } catch (err) {
+      webhook = null;
+    }
 
     if (!webhook) {
       return res.status(404).json({ error: 'Webhook not found' });
@@ -616,7 +641,12 @@ async function webhookDeliveryWorker(req, res) {
 
     // Look up the event data from the events collection
     const conn = await getDB();
-    const eventDoc = await conn.getOne('events', { id: webhook.pendingEventId });
+    let eventDoc = null;
+    try {
+      eventDoc = await conn.getOne('events', { id: webhook.pendingEventId });
+    } catch (err) {
+      eventDoc = null;
+    }
 
     if (!eventDoc) {
       console.error(`Event ${webhook.pendingEventId} not found for webhook ${webhook._id}`);
