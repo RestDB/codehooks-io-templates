@@ -5,9 +5,11 @@ A minimal PayPal webhook handler for Codehooks.io that receives and processes Pa
 ## Features
 
 - Secure signature verification via PayPal API
+- Validates all required PayPal headers
+- Access token caching for efficiency
 - Handles common payment and subscription events
 - Supports sandbox and live modes
-- Minimal code (~110 lines)
+- Minimal code (~180 lines)
 - Production-ready
 
 ## Setup
@@ -122,9 +124,35 @@ coho set-env PAYPAL_WEBHOOK_ID your-live-webhook-id
 ## Security
 
 - Webhook signatures are verified via PayPal's API
+- All required PayPal headers are validated before processing
 - Never expose your `PAYPAL_CLIENT_SECRET`
 - Use sandbox credentials during development
 - The `PAYPAL_WEBHOOK_ID` must match the webhook configured in PayPal
+
+## Production Considerations
+
+For high-traffic production use, consider these enhancements:
+
+**Idempotency** - PayPal may retry webhooks. Store processed `event.id` values to avoid duplicate processing:
+
+```javascript
+const conn = await Datastore.open();
+const existing = await conn.getOne('processed_events', { event_id: eventId });
+if (existing) {
+  return res.status(200).json({ received: true, duplicate: true });
+}
+await conn.insertOne('processed_events', { event_id: eventId, processed_at: new Date() });
+```
+
+**Quick Response** - The handler responds immediately after verification. For slow processing, use a queue:
+
+```javascript
+// Acknowledge immediately, process async
+res.status(200).json({ received: true });
+await conn.insertOne('webhook_queue', { event: body, received_at: new Date() });
+```
+
+**Event Types** - This template handles REST API v2 events (`PAYMENT.CAPTURE.*`, `CHECKOUT.ORDER.*`) and legacy Classic API events (`PAYMENT.SALE.*`). The resource shapes differ between these APIs.
 
 ## Resources
 
