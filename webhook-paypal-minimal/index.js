@@ -75,8 +75,11 @@ async function getAccessToken() {
 }
 
 // Verify webhook signature via PayPal API
-async function verifyWebhookSignature(headers, body) {
+async function verifyWebhookSignature(headers, rawBody) {
   const accessToken = await getAccessToken();
+
+  // Parse rawBody to object for webhook_event - PayPal expects the event as an object
+  const webhookEvent = typeof rawBody === 'string' ? JSON.parse(rawBody) : JSON.parse(rawBody.toString('utf8'));
 
   const verifyPayload = {
     auth_algo: getHeader(headers, 'paypal-auth-algo'),
@@ -85,7 +88,7 @@ async function verifyWebhookSignature(headers, body) {
     transmission_sig: getHeader(headers, 'paypal-transmission-sig'),
     transmission_time: getHeader(headers, 'paypal-transmission-time'),
     webhook_id: PAYPAL_WEBHOOK_ID,
-    webhook_event: body
+    webhook_event: webhookEvent
   };
 
   const response = await fetch(`${PAYPAL_API_BASE}/v1/notifications/verify-webhook-signature`, {
@@ -126,6 +129,13 @@ app.post('/webhook', async (req, res) => {
     return res.status(400).send(`Missing headers: ${missingHeaders.join(', ')}`);
   }
 
+  // Use rawBody for signature verification to ensure exact byte match
+  const rawBody = req.rawBody;
+  if (!rawBody) {
+    console.error('Missing rawBody - required for signature verification');
+    return res.status(400).send('Missing request body');
+  }
+
   let body;
   try {
     body = parseBody(req);
@@ -135,7 +145,7 @@ app.post('/webhook', async (req, res) => {
   }
 
   try {
-    const isValid = await verifyWebhookSignature(req.headers, body);
+    const isValid = await verifyWebhookSignature(req.headers, rawBody);
 
     if (!isValid) {
       console.error('Webhook signature verification failed');
