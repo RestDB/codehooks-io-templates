@@ -1,0 +1,13 @@
+{
+  "name": "webhook-paypal-minimal",
+  "version": "1.0.0",
+  "description": "Minimal PayPal webhook handler for Codehooks.io",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "deploy": "coho deploy"
+  },
+  "dependencies": {
+    "codehooks-js": "latest"
+  }
+}
