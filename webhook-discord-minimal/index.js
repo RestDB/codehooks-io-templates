@@ -3,6 +3,9 @@ import crypto from 'crypto';
 
 const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY || '';
 
+// Ed25519 OID prefix for DER encoding
+const ED25519_OID_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
+
 // Allow interactions endpoint without API key (Discord uses Ed25519 signature auth)
 app.auth('/interactions', (req, res, next) => {
   next();
@@ -13,25 +16,27 @@ app.auth('/', (req, res, next) => {
   next();
 });
 
-// Verify Discord interaction signature
+// Verify Discord interaction signature (Ed25519)
 function verifyDiscordSignature(body, signature, timestamp) {
   if (!PUBLIC_KEY) {
-    console.warn('DISCORD_PUBLIC_KEY not set - skipping verification');
-    return true;
+    console.error('DISCORD_PUBLIC_KEY not configured');
+    return false;
   }
 
   try {
-    const message = timestamp + body;
-    const isValid = crypto.verify(
-      'sha512',
-      Buffer.from(message),
-      {
-        key: Buffer.from(PUBLIC_KEY, 'hex'),
-        padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
-      },
-      Buffer.from(signature, 'hex')
-    );
-    return isValid;
+    // Create Ed25519 public key from hex string
+    const publicKey = crypto.createPublicKey({
+      key: Buffer.concat([ED25519_OID_PREFIX, Buffer.from(PUBLIC_KEY, 'hex')]),
+      format: 'der',
+      type: 'spki'
+    });
+
+    // Discord signature is over: timestamp + body
+    const message = Buffer.from(timestamp + body);
+    const sig = Buffer.from(signature, 'hex');
+
+    // Ed25519 uses null algorithm (signature includes hash)
+    return crypto.verify(null, message, publicKey, sig);
   } catch (err) {
     console.error('Signature verification error:', err.message);
     return false;
@@ -53,12 +58,12 @@ app.post('/interactions', async (req, res) => {
 
   const interaction = req.body;
 
-  // Handle Discord PING
+  // Handle Discord PING (required for endpoint verification)
   if (interaction.type === 1) {
     return res.json({ type: 1 });
   }
 
-  // Handle application commands
+  // Handle application commands (slash commands)
   if (interaction.type === 2) {
     console.log('Command received:', interaction.data.name);
 
@@ -70,7 +75,7 @@ app.post('/interactions', async (req, res) => {
     });
   }
 
-  // Handle message components (buttons, etc.)
+  // Handle message components (buttons, select menus)
   if (interaction.type === 3) {
     console.log('Component interaction:', interaction.data.custom_id);
 
@@ -90,7 +95,8 @@ app.get('/', (req, res) => {
   res.json({
     status: 'ok',
     message: 'Discord webhook handler',
-    interactions_endpoint: '/interactions'
+    interactions_endpoint: '/interactions',
+    configured: !!PUBLIC_KEY
   });
 });
 
