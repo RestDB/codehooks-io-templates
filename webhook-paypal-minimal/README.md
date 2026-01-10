@@ -6,7 +6,7 @@ A minimal PayPal webhook handler for Codehooks.io that receives and processes Pa
 
 - Secure signature verification via PayPal API
 - Validates all required PayPal headers
-- Access token caching for efficiency
+- Access token caching via Codehooks KV store (8-hour TTL)
 - Handles common payment and subscription events
 - Supports sandbox and live modes
 - Minimal code (~180 lines)

@@ -1,4 +1,4 @@
-import { app } from 'codehooks-js';
+import { app, Datastore } from 'codehooks-js';
 
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || '';
 const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || '';
@@ -9,6 +9,10 @@ const PAYPAL_API_BASE = PAYPAL_MODE === 'live'
   ? 'https://api-m.paypal.com'
   : 'https://api-m.sandbox.paypal.com';
 
+// Token cache key and TTL (8 hours - PayPal tokens last ~9 hours)
+const TOKEN_CACHE_KEY = 'paypal_access_token';
+const TOKEN_TTL = 8 * 60 * 60 * 1000;
+
 // Required PayPal webhook headers
 const REQUIRED_HEADERS = [
   'paypal-auth-algo',
@@ -17,10 +21,6 @@ const REQUIRED_HEADERS = [
   'paypal-transmission-sig',
   'paypal-transmission-time'
 ];
-
-// Token cache
-let cachedToken = null;
-let tokenExpiry = 0;
 
 // Helper to get header value (handles arrays)
 function getHeader(headers, name) {
@@ -39,13 +39,17 @@ function parseBody(req) {
   return req.body;
 }
 
-// Get PayPal access token with caching
+// Get PayPal access token (cached in KV store)
 async function getAccessToken() {
-  const now = Date.now();
-  if (cachedToken && now < tokenExpiry) {
+  const conn = await Datastore.open();
+
+  // Check cache first
+  const cachedToken = await conn.get(TOKEN_CACHE_KEY, { keyspace: 'paypal' });
+  if (cachedToken) {
     return cachedToken;
   }
 
+  // Fetch new token from PayPal
   const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64');
   const response = await fetch(`${PAYPAL_API_BASE}/v1/oauth2/token`, {
     method: 'POST',
@@ -62,10 +66,12 @@ async function getAccessToken() {
   }
 
   const data = await response.json();
-  cachedToken = data.access_token;
-  // Cache token with 60s buffer before expiry
-  tokenExpiry = now + (data.expires_in - 60) * 1000;
-  return cachedToken;
+  const token = data.access_token;
+
+  // Cache token with TTL
+  await conn.set(TOKEN_CACHE_KEY, token, { ttl: TOKEN_TTL, keyspace: 'paypal' });
+
+  return token;
 }
 
 // Verify webhook signature via PayPal API
@@ -93,7 +99,7 @@ async function verifyWebhookSignature(headers, body) {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`PayPal verification request failed (${response.status}): ${errorText}`);
+    throw new Error(`PayPal verification failed (${response.status}): ${errorText}`);
   }
 
   const result = await response.json();
