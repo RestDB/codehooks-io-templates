@@ -972,7 +972,7 @@ SLACK_WEBHOOK_URL=your_webhook
 coho set-env DRY_RUN true
 
 # View all environment variables
-coho env
+coho info
 
 # Remove environment variable
 coho unset-env DRY_RUN
