@@ -1,0 +1,22 @@
+{
+  "_comment": "Configuration is file-based only. To update: edit this file and run 'coho deploy'. No API updates available.",
+  "periods": ["hourly", "daily", "weekly", "monthly"],
+  "events": {
+    "api.calls": {
+      "op": "sum"
+    },
+    "storage.bytes": {
+      "op": "max"
+    },
+    "response.time.ms": {
+      "op": "avg"
+    }
+  },
+  "webhooks": [
+    {
+      "url": "https://example.com",
+      "secret": "whsec_your_webhook_secret",
+      "enabled": true
+    }
+  ]
+}

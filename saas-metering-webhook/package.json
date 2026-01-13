@@ -1,0 +1,24 @@
+{
+  "name": "saas-metering-webhook",
+  "version": "1.0.0",
+  "description": "SaaS usage metering with time-based aggregation and webhook delivery",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "deploy": "coho deploy"
+  },
+  "keywords": [
+    "saas",
+    "metering",
+    "usage",
+    "billing",
+    "aggregation",
+    "webhook",
+    "codehooks"
+  ],
+  "author": "Codehooks.io",
+  "license": "ISC",
+  "dependencies": {
+    "codehooks-js": "latest"
+  }
+}

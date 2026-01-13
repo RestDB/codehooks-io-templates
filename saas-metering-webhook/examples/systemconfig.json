@@ -1,0 +1,84 @@
+{
+  "_comment": "Configuration is file-based only. To update: edit this file and run 'coho deploy'. No API updates available.",
+  "periods": ["hourly", "daily", "weekly", "monthly"],
+  "events": {
+    "api.calls": {
+      "op": "sum",
+      "description": "Total API calls"
+    },
+    "api.calls.authenticated": {
+      "op": "sum",
+      "description": "Authenticated API calls"
+    },
+    "api.calls.anonymous": {
+      "op": "sum",
+      "description": "Anonymous API calls"
+    },
+    "storage.bytes": {
+      "op": "max",
+      "description": "Peak storage usage in bytes"
+    },
+    "storage.files.count": {
+      "op": "last",
+      "description": "Final file count"
+    },
+    "storage.avg.file.size": {
+      "op": "avg",
+      "description": "Average file size in bytes"
+    },
+    "response.time.ms": {
+      "op": "avg",
+      "description": "Average response time in milliseconds"
+    },
+    "response.time.min.ms": {
+      "op": "min",
+      "description": "Fastest response time"
+    },
+    "response.time.max.ms": {
+      "op": "max",
+      "description": "Slowest response time"
+    },
+    "users.active": {
+      "op": "count",
+      "description": "Number of active user sessions"
+    },
+    "users.first.login": {
+      "op": "first",
+      "description": "First user login timestamp"
+    },
+    "users.last.login": {
+      "op": "last",
+      "description": "Last user login timestamp"
+    },
+    "errors.4xx": {
+      "op": "count",
+      "description": "Client errors (4xx status codes)"
+    },
+    "errors.5xx": {
+      "op": "count",
+      "description": "Server errors (5xx status codes)"
+    },
+    "bandwidth.bytes.sent": {
+      "op": "sum",
+      "description": "Total bandwidth sent"
+    },
+    "bandwidth.bytes.received": {
+      "op": "sum",
+      "description": "Total bandwidth received"
+    }
+  },
+  "webhooks": [
+    {
+      "url": "https://your-billing-system.com/webhooks/metering",
+      "secret": "whsec_your_webhook_secret_here",
+      "enabled": true,
+      "description": "Billing system webhook"
+    },
+    {
+      "url": "https://your-analytics.com/webhooks/usage",
+      "secret": "whsec_another_secret",
+      "enabled": false,
+      "description": "Analytics webhook (disabled)"
+    }
+  ]
+}
