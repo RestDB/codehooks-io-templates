@@ -762,8 +762,6 @@ app.job('*/5 * * * *', async (req, res) => {
 
         // Process each customer for this period
         for (const customerId of customersInPeriod) {
-          processedCustomers.add(customerId);
-
           // Check if we've already aggregated this period for this customer
           const existingAgg = await conn.getOne('aggregations', `${customerId}_${periodType}_${periodKey}`);
           if (existingAgg) {
@@ -814,6 +812,7 @@ app.job('*/5 * * * *', async (req, res) => {
 
             await conn.insertOne('aggregations', aggregation);
             aggregationCount++;
+            processedCustomers.add(customerId); // Only count customers when aggregation is actually created
 
             console.log(`✅ [Cron] Created ${periodType} aggregation for ${customerId} (${periodKey})`);
 
