@@ -7,7 +7,8 @@
 - **Implemented** simple, reliable batch-based aggregation (v2.0)
 - Events stored with time period fields for fast querying
 - Manual JavaScript aggregation (no complex MongoDB operators)
-- Cron-based processing every 15 minutes
+- Cron-based processing every 5 minutes
+- Lookback windows to catch missed periods (7/30/60/90/365 days)
 - Much easier to understand, debug, and maintain
 
 ### 2. Code Complete and Deployed
@@ -43,42 +44,52 @@ coho query current_aggregations --delete # ✅ Cleared
 - ✅ Clear logging shows when webhooks are skipped
 - ✅ Cron job already had correct behavior (no changes needed)
 
-## ⚠️ Authentication Issue to Resolve
+### 6. Cron Job Lookback Window Fixed (2026-01-14)
+**Issue**: Cron job only looked at events from the last hour, missing older completed periods.
 
-### Problem
-All HTTP endpoints return `401 No access` even with valid API key:
-```bash
-curl "https://testempty-eack.api.codehooks.io/dev/" \
-  -H "x-apikey: 7c30800e-ad7a-4055-b9ae-f1c5f3b6a15d"
-# Returns: No access 401
-```
+**Root Cause**:
+- Cron job queried events with `receivedAt >= oneHourAgo`
+- Events older than 1 hour were never aggregated
+- System couldn't catch up on missed periods
 
-### Evidence This is NOT a Code Issue
-1. ✅ Cron jobs work (proves service is running and code is correct)
-2. ✅ CLI works with same API key (proves key is valid)
-3. ✅ No errors in deployment or startup logs
-4. ❌ Only HTTP endpoints affected
+**Fix**: Modified `index.js:667-851` to implement lookback windows:
+- Hourly: 7 days
+- Daily: 30 days
+- Weekly: 60 days
+- Monthly: 90 days
+- Yearly: 365 days
 
-### Diagnosis
-This is a **Codehooks project configuration issue** - something in the dashboard settings is blocking HTTP access with API keys.
+**Result**:
+- ✅ Cron job now processes all completed periods within lookback window
+- ✅ System catches up on missed aggregations automatically
+- ✅ Changed interval from 15 minutes to 5 minutes for faster processing
+- ✅ Successfully created 22 aggregations (7 hourly, 5 daily, 5 weekly, 5 monthly)
+- ✅ Webhooks queued and delivered for all completed periods
 
-### What to Check in Codehooks Dashboard
+## ✅ System Fully Operational (2026-01-14)
 
-1. **Project Settings** (`testempty-eack` → `dev` space):
-   - Look for "Security", "Access Control", or "Authentication" sections
-   - Verify API key authentication is enabled for HTTP routes
-   - Check if there are restrictions on which endpoints accept API keys
+### Current Status
+All components are working correctly:
+- ✅ Event capture and storage
+- ✅ Cron job running every 5 minutes
+- ✅ Aggregations created for all completed periods
+- ✅ Webhooks queued and delivered (in DRY_RUN mode)
+- ✅ HTTP endpoints accessible with API key
 
-2. **API Key Permissions**:
-   - Ensure the key `7c30800e-ad7a-4055-b9ae-f1c5f3b6a15d` has:
-     - ✅ Data access (proven - works with CLI)
-     - ❓ HTTP endpoint access (this is what's missing)
-   - Check if separate keys are needed for different access types
+### Production Environment
+- **Project**: `testempty-eack`
+- **Space**: `dev`
+- **API Key**: `7c30800e-0f17-4e0b-847f-cd5ee0f04940`
+- **Base URL**: `https://testempty-eack.api.codehooks.io/dev`
+- **DRY_RUN Mode**: Enabled (webhooks simulated, not sent)
 
-3. **Space Configuration**:
-   - No IP whitelist (confirmed by user)
-   - JWKS removed with `coho jwks ""`
-   - Check for any other authentication requirements
+### Current Database State
+- **Events**: 20+ events from multiple customers
+- **Aggregations**: 22 aggregations across all period types
+  - 7 hourly aggregations
+  - 5 daily aggregations
+  - 5 weekly aggregations
+  - 5 monthly aggregations
 
 ## 📊 System Ready to Test
 

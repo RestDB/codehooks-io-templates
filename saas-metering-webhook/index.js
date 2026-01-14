@@ -662,9 +662,9 @@ app.worker('deliver-aggregation-webhook', async (req, res) => {
 
 /**
  * Batch aggregation cron job
- * Runs every 15 minutes to aggregate completed periods
+ * Runs every 5 minutes to aggregate completed periods
  */
-app.job('*/15 * * * *', async (req, res) => {
+app.job('*/5 * * * *', async (req, res) => {
   console.log('🔄 [Cron] Starting batch aggregation...');
 
   try {
@@ -672,99 +672,164 @@ app.job('*/15 * * * *', async (req, res) => {
     const now = new Date();
     const { periods, events: eventOps, webhooks } = systemConfig;
 
-    // Get list of unique customers from recent events
-    const oneHourAgo = new Date(now.getTime() - 3600000);
-    const recentEvents = await conn.getMany('events', {
-      receivedAt: { $gte: oneHourAgo.toISOString() }
-    }).toArray();
-
-    const uniqueCustomers = [...new Set(recentEvents.map(e => e.customerId))];
-
-    if (uniqueCustomers.length === 0) {
-      console.log('✅ [Cron] No recent events to process');
-      return res.end();
-    }
-
-    console.log(`📊 [Cron] Processing ${uniqueCustomers.length} customers`);
-
     let aggregationCount = 0;
+    const processedCustomers = new Set();
 
-    // Process each customer
-    for (const customerId of uniqueCustomers) {
-      // Process each configured period
-      for (const periodType of periods) {
-        const { periodStart, periodEnd, periodKey } = calculatePeriodBounds(periodType, now);
+    // Define lookback windows for each period type (in days)
+    const lookbackDays = {
+      hourly: 7,    // Look back 7 days for hourly aggregations
+      daily: 30,    // Look back 30 days for daily aggregations
+      weekly: 60,   // Look back 60 days for weekly aggregations
+      monthly: 90,  // Look back 90 days for monthly aggregations
+      yearly: 365   // Look back 1 year for yearly aggregations
+    };
+
+    // Process each configured period type
+    for (const periodType of periods) {
+      // Get the period field name for querying
+      const periodField = periodType === 'hourly' ? 'hour' :
+                          periodType === 'daily' ? 'day' :
+                          periodType === 'weekly' ? 'week' :
+                          periodType === 'monthly' ? 'month' : 'year';
+
+      // Get events from the lookback window
+      const lookbackMs = (lookbackDays[periodType] || 7) * 86400000;
+      const lookbackDate = new Date(now.getTime() - lookbackMs);
+
+      const recentEvents = await conn.getMany('events', {
+        receivedAt: { $gte: lookbackDate.toISOString() }
+      }).toArray();
+
+      if (recentEvents.length === 0) {
+        continue; // No events in lookback window
+      }
+
+      // Group events by period key
+      const eventsByPeriod = {};
+      for (const event of recentEvents) {
+        const eventPeriodKey = event[periodField];
+        if (!eventPeriodKey) continue;
+
+        if (!eventsByPeriod[eventPeriodKey]) {
+          eventsByPeriod[eventPeriodKey] = [];
+        }
+        eventsByPeriod[eventPeriodKey].push(event);
+      }
+
+      // Process each period that has events
+      for (const [periodKey, eventsInPeriod] of Object.entries(eventsByPeriod)) {
+        // Calculate period bounds to check if it's complete
+        // We need to parse the periodKey to reconstruct the date
+        let periodStart, periodEnd;
+        try {
+          // Reconstruct date from periodKey and calculate bounds
+          const testDate = new Date(eventsInPeriod[0].receivedAt);
+          const bounds = calculatePeriodBounds(periodType, testDate);
+          if (bounds.periodKey !== periodKey) {
+            // Find the correct date for this period key by iterating backwards
+            let searchDate = new Date(now);
+            let found = false;
+            for (let i = 0; i < lookbackDays[periodType] * 24; i++) {
+              const testBounds = calculatePeriodBounds(periodType, searchDate);
+              if (testBounds.periodKey === periodKey) {
+                periodStart = testBounds.periodStart;
+                periodEnd = testBounds.periodEnd;
+                found = true;
+                break;
+              }
+              searchDate = new Date(searchDate.getTime() - 3600000); // Go back 1 hour
+            }
+            if (!found) {
+              console.log(`⚠️  [Cron] Could not find period bounds for ${periodType} ${periodKey}`);
+              continue;
+            }
+          } else {
+            periodStart = bounds.periodStart;
+            periodEnd = bounds.periodEnd;
+          }
+        } catch (error) {
+          console.error(`❌ [Cron] Error calculating period bounds for ${periodType} ${periodKey}:`, error);
+          continue;
+        }
 
         // Check if this period has ended
         if (now < periodEnd) {
           continue; // Period not yet complete
         }
 
-        // Check if we've already aggregated this period
-        const existingAgg = await conn.getOne('aggregations', `${customerId}_${periodType}_${periodKey}`);
-        if (existingAgg) {
-          continue; // Already processed
-        }
+        // Get unique customers in this period
+        const customersInPeriod = [...new Set(eventsInPeriod.map(e => e.customerId))];
 
-        // Aggregate each event type
-        const aggregatedEvents = {};
-        const eventCounts = {};
+        // Process each customer for this period
+        for (const customerId of customersInPeriod) {
+          processedCustomers.add(customerId);
 
-        for (const [eventType, config] of Object.entries(eventOps)) {
-          try {
-            const result = await performAggregation(
-              conn,
-              customerId,
-              eventType,
-              periodType,
-              periodKey,
-              config.op
-            );
-
-            if (result && result.value !== null && result.value !== undefined) {
-              aggregatedEvents[eventType] = result.value;
-              eventCounts[eventType] = result.count;
-            }
-          } catch (error) {
-            console.error(`❌ [Cron] Error aggregating ${eventType} for ${customerId}:`, error);
+          // Check if we've already aggregated this period for this customer
+          const existingAgg = await conn.getOne('aggregations', `${customerId}_${periodType}_${periodKey}`);
+          if (existingAgg) {
+            continue; // Already processed
           }
-        }
 
-        // Only create aggregation if we have data
-        if (Object.keys(aggregatedEvents).length > 0) {
-          const aggregation = {
-            _id: `${customerId}_${periodType}_${periodKey}`,
-            customerId,
-            period: periodType,
-            periodStart: periodStart.toISOString(),
-            periodEnd: periodEnd.toISOString(),
-            periodKey,
-            timestamp: now.toISOString(),
-            events: aggregatedEvents,
-            eventCounts,
-            webhookStatus: {
-              delivered: false,
-              attempts: 0
+          // Aggregate each event type
+          const aggregatedEvents = {};
+          const eventCounts = {};
+
+          for (const [eventType, config] of Object.entries(eventOps)) {
+            try {
+              const result = await performAggregation(
+                conn,
+                customerId,
+                eventType,
+                periodType,
+                periodKey,
+                config.op
+              );
+
+              if (result && result.value !== null && result.value !== undefined) {
+                aggregatedEvents[eventType] = result.value;
+                eventCounts[eventType] = result.count;
+              }
+            } catch (error) {
+              console.error(`❌ [Cron] Error aggregating ${eventType} for ${customerId}:`, error);
             }
-          };
+          }
 
-          await conn.insertOne('aggregations', aggregation);
-          aggregationCount++;
+          // Only create aggregation if we have data
+          if (Object.keys(aggregatedEvents).length > 0) {
+            const aggregation = {
+              _id: `${customerId}_${periodType}_${periodKey}`,
+              customerId,
+              period: periodType,
+              periodStart: periodStart.toISOString(),
+              periodEnd: periodEnd.toISOString(),
+              periodKey,
+              timestamp: now.toISOString(),
+              events: aggregatedEvents,
+              eventCounts,
+              webhookStatus: {
+                delivered: false,
+                attempts: 0
+              }
+            };
 
-          console.log(`✅ [Cron] Created ${periodType} aggregation for ${customerId} (${periodKey})`);
+            await conn.insertOne('aggregations', aggregation);
+            aggregationCount++;
 
-          // Queue webhook deliveries
-          if (webhooks && webhooks.length > 0) {
-            for (const webhook of webhooks) {
-              if (webhook.enabled) {
-                await conn.enqueue('deliver-aggregation-webhook', {
-                  aggregationId: aggregation._id,
-                  webhookUrl: webhook.url,
-                  webhookSecret: webhook.secret,
-                  customerId,
-                  period: periodType
-                });
-                console.log(`📤 [Cron] Queued webhook to ${webhook.url}`);
+            console.log(`✅ [Cron] Created ${periodType} aggregation for ${customerId} (${periodKey})`);
+
+            // Queue webhook deliveries
+            if (webhooks && webhooks.length > 0) {
+              for (const webhook of webhooks) {
+                if (webhook.enabled) {
+                  await conn.enqueue('deliver-aggregation-webhook', {
+                    aggregationId: aggregation._id,
+                    webhookUrl: webhook.url,
+                    webhookSecret: webhook.secret,
+                    customerId,
+                    period: periodType
+                  });
+                  console.log(`📤 [Cron] Queued webhook to ${webhook.url}`);
+                }
               }
             }
           }
@@ -772,7 +837,12 @@ app.job('*/15 * * * *', async (req, res) => {
       }
     }
 
-    console.log(`✅ [Cron] Completed batch aggregation: ${aggregationCount} aggregations created`);
+    if (processedCustomers.size === 0) {
+      console.log('✅ [Cron] No completed periods with unaggregated events found');
+    } else {
+      console.log(`✅ [Cron] Completed batch aggregation: ${aggregationCount} aggregations created for ${processedCustomers.size} customers`);
+    }
+
     res.end();
   } catch (error) {
     console.error('❌ [Cron] Fatal error:', error);

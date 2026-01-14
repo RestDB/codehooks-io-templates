@@ -8,7 +8,7 @@ A production-ready usage metering system for Codehooks.io that captures events, 
 - ✅ **Batch Aggregation** - Periodic aggregation of usage data
 - ✅ **Flexible Time Periods** - Hourly, daily, weekly, monthly, yearly aggregation
 - ✅ **7 Aggregation Operations** - Sum, avg, min, max, count, first, last
-- ✅ **Cron-Based Processing** - Automated batch processing every 15 minutes
+- ✅ **Cron-Based Processing** - Automated batch processing every 5 minutes
 - ✅ **Calendar-Based Periods** - Billing-friendly periods (e.g., monthly = 1st to last day)
 - ✅ **Webhook Delivery** - HMAC-SHA256 signed webhooks for completed periods
 - ✅ **Global Configuration** - Single config applies to all customers
@@ -311,7 +311,8 @@ curl -X POST https://your-project.api.codehooks.io/dev/aggregations/trigger \
 **Important Notes:**
 - Webhooks are **only sent for completed periods** (periodEnd < now)
 - Incomplete periods show in GET /aggregations but won't trigger webhooks until complete
-- The cron job (every 15 min) only processes completed periods
+- The cron job (every 5 min) only processes completed periods
+- The cron job looks back multiple days to catch any missed periods (7 days for hourly, 30 days for daily, etc.)
 
 
 ## Aggregation Operations Explained
@@ -468,14 +469,19 @@ Result: 300
 2. **Event stored** - Returns 201 Created (event immediately stored in database)
 3. **Event indexed** - Event stored with time period fields (hour, day, week, month, year) for fast aggregation
 
-**Batch Aggregation (Automatic - Every 15 minutes):**
+**Batch Aggregation (Automatic - Every 5 minutes):**
 
-The cron job runs **every 15 minutes** (`*/15 * * * *`) to aggregate completed periods:
+The cron job runs **every 5 minutes** (`*/5 * * * *`) to aggregate completed periods:
 
-1. **Find recent events** - Gets list of customers with events in the last hour
-2. **For each customer and period type:**
+1. **Find events within lookback window** - Gets all events from the configured lookback period:
+   - Hourly: 7 days
+   - Daily: 30 days
+   - Weekly: 60 days
+   - Monthly: 90 days
+   - Yearly: 365 days
+2. **For each completed period with events:**
    - Check if period has completed (periodEnd < now)
-   - Skip if period not complete or already aggregated
+   - Skip if period already aggregated
    - Query all events for that customer/period using indexed time fields
    - Apply configured operations (sum, avg, min, max, count, first, last)
    - Store aggregation result in `aggregations` collection
@@ -506,9 +512,9 @@ You can manually trigger aggregation for testing or real-time dashboards:
 **Example Timeline:**
 - **10:00:00** - Event arrives and is stored in events collection
 - **10:00:05** - Event available via GET /events
-- **11:15:00** - Cron job runs, finds completed 10:00-10:59 hourly period
-- **11:15:05** - Aggregation created and webhook sent
-- **11:15:10** - Historical aggregation available in GET /aggregations
+- **11:05:00** - Cron job runs, finds completed 10:00-10:59 hourly period
+- **11:05:05** - Aggregation created and webhook sent
+- **11:05:10** - Historical aggregation available in GET /aggregations
 
 ## Webhook Delivery
 
@@ -914,7 +920,7 @@ curl "$BASE_URL/events?customerId=test_customer&limit=20" \
 
 # Should show 10 events with test.metric
 
-# 5. Wait for next hour + 15 minutes for aggregation to complete
+# 5. Wait for next hour + 5 minutes for aggregation to complete
 curl "$BASE_URL/aggregations?customerId=test_customer" \
   -H "x-apikey: $API_KEY"
 
@@ -987,12 +993,12 @@ Monitor these log messages:
 **Event Processing:**
 - `✅ [API] Event captured: api.calls for cust_456` - Event stored in database
 
-**Batch Aggregation (Every 15 minutes):**
+**Batch Aggregation (Every 5 minutes):**
 - `🔄 [Cron] Starting batch aggregation...` - Cron job started
-- `📊 [Cron] Processing 5 customers` - Number of customers being processed
+- `📊 [Cron] Found 5 customers with events in completed daily period (20260113)` - Found customers/events in completed period
 - `✅ [Cron] Created daily aggregation for cust_456 (20260113)` - Period aggregated
 - `📤 [Cron] Queued webhook to https://...` - Webhook queued for completed period
-- `✅ [Cron] Completed batch aggregation: 12 aggregations created` - Cron job finished
+- `✅ [Cron] Completed batch aggregation: 12 aggregations created for 5 customers` - Cron job finished
 
 **Manual Aggregation Trigger:**
 - `✅ [Manual] Created hourly aggregation for cust_456 (2026011315)` - Aggregation created
@@ -1041,12 +1047,20 @@ Returns service information and API documentation links.
    curl "$BASE_URL/events?limit=10" -H "x-apikey: $API_KEY"
    ```
 
-3. Wait for cron job to run (every 15 minutes)
+3. Wait for cron job to run (every 5 minutes)
 
 4. Check logs for errors:
    ```bash
    coho logs --follow
    ```
+
+5. Note: The cron job only processes completed periods. Hourly periods complete at the top of each hour, daily periods at midnight UTC, etc. Events from incomplete periods won't be aggregated until the period completes.
+
+6. The cron job looks back multiple days to catch any missed aggregations:
+   - Hourly: up to 7 days back
+   - Daily: up to 30 days back
+   - Weekly: up to 60 days back
+   - Monthly: up to 90 days back
 
 ### Webhooks not being delivered
 

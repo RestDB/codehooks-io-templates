@@ -53,11 +53,18 @@ Events are stored immediately with time period indexing:
 ### 2. Aggregation Processing
 
 #### Automatic (Cron-based)
-- Runs every 15 minutes via `app.job('*/15 * * * *')`
-- Finds customers with recent events (last hour)
+- Runs every 5 minutes via `app.job('*/5 * * * *')`
+- Finds events within configurable lookback windows:
+  - Hourly: 7 days
+  - Daily: 30 days
+  - Weekly: 60 days
+  - Monthly: 90 days
+  - Yearly: 365 days
+- Groups events by period key and identifies completed periods
 - **Only processes completed periods** (periodEnd < now)
 - Creates aggregation documents in `aggregations` collection
 - Queues webhooks for all completed aggregations
+- **Catches up on missed periods** - Processes all completed periods within the lookback window, not just the most recent one
 
 #### Manual (For Testing & Real-time Dashboards)
 - Endpoint: `POST /aggregations/trigger`
@@ -300,8 +307,12 @@ Create indexes on frequently queried fields:
 For high-volume scenarios:
 
 1. **Event Storage**: Events scale linearly - consider retention policies
-2. **Aggregation**: Batch processing scales well, consider:
-   - Limiting lookback window for finding customers (currently 1 hour)
+2. **Aggregation**: Batch processing scales well, with configurable lookback windows:
+   - Hourly: 7 days (processes last 168 completed hours)
+   - Daily: 30 days (processes last 30 completed days)
+   - Weekly: 60 days (processes last ~8 completed weeks)
+   - Monthly: 90 days (processes last 3 completed months)
+   - Adjust these values in code if needed for your use case
    - Processing customers in parallel (if Codehooks supports)
    - Archiving old events after aggregation
 
