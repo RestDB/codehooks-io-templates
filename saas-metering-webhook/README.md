@@ -24,6 +24,8 @@ A production-ready usage metering system for Codehooks.io that captures events, 
 
 ## Quick Start
 
+> **Testing?** Jump to the [Testing](#testing) section to use the event generator script for quick testing with realistic data.
+
 ### 1. Deploy to Codehooks.io
 
 ```bash
@@ -427,7 +429,7 @@ Result: 300
 │  Collection  │  ◄─── GET /events (Query raw events)
 └──────────────┘
        │
-       │ Every 15 min - Cron job runs
+       │ Every 5 min - Cron job runs
        ▼
 ┌──────────────────┐
 │  Cron Job        │
@@ -880,14 +882,42 @@ setInterval(() => displayUsageDashboard('cust_acme'), 60000);
 
 ## Testing
 
-See the `examples/` directory for complete testing scripts.
+The `examples/` directory contains ready-to-use testing tools and scripts:
+
+- **`generate-events.js`** - Event generator that creates realistic test data across multiple customers and event types
+- **`webhook-receiver.js`** - Example webhook endpoint with HMAC signature verification
+- **`curl-examples.sh`** - Collection of curl commands for manual API testing
+- **Full documentation** - See [examples/README.md](examples/README.md) for detailed usage instructions
+
+### Quick Testing with Event Generator
+
+The easiest way to test the system is using the event generator:
+
+```bash
+# Generate 100 test events
+BASE_URL=https://your-project.api.codehooks.io/dev \
+API_KEY=your_api_key \
+node examples/generate-events.js
+
+# Verify events were stored
+curl "https://your-project.api.codehooks.io/dev/events?limit=10" \
+  -H "x-apikey: your_api_key"
+
+# Trigger aggregation manually (for testing)
+curl -X POST https://your-project.api.codehooks.io/dev/aggregations/trigger \
+  -H "x-apikey: your_api_key"
+
+# Check aggregations
+curl "https://your-project.api.codehooks.io/dev/aggregations?limit=10" \
+  -H "x-apikey: your_api_key"
+```
 
 ### Manual Testing
 
 1. Deploy the application
 2. Create configuration
 3. Send test events
-4. Wait for cron job (runs every 15 minutes)
+4. Wait for cron job (runs every 5 minutes)
 5. Query aggregations
 
 ### Quick Test (Hourly Period)
