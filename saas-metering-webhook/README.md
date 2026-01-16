@@ -8,7 +8,7 @@ A production-ready usage metering system for Codehooks.io that captures events, 
 - ✅ **Batch Aggregation** - Periodic aggregation of usage data
 - ✅ **Flexible Time Periods** - Hourly, daily, weekly, monthly, yearly aggregation
 - ✅ **7 Aggregation Operations** - Sum, avg, min, max, count, first, last
-- ✅ **Cron-Based Processing** - Automated batch processing every 5 minutes
+- ✅ **Cron-Based Processing** - Automated batch processing every 15 minutes
 - ✅ **Calendar-Based Periods** - Billing-friendly periods (e.g., monthly = 1st to last day)
 - ✅ **Webhook Delivery** - HMAC-SHA256 signed webhooks for completed periods
 - ✅ **Global Configuration** - Single config applies to all customers
@@ -123,7 +123,7 @@ curl "https://your-project.api.codehooks.io/dev/events?customerId=cust_123&limit
 
 #### POST /usage/:eventType
 
-Capture a usage event. Events are queued for async processing (returns 202 Accepted immediately).
+Capture a usage event. Events are stored immediately and available for querying.
 
 **URL Parameters:**
 - `eventType` - Event type (e.g., `api.calls`, `storage.bytes`, `user.signups`)
@@ -140,12 +140,57 @@ Capture a usage event. Events are queued for async processing (returns 202 Accep
 }
 ```
 
-**Response: 202 Accepted**
+**Response: 201 Created**
 ```json
 {
-  "message": "Event queued for processing",
+  "message": "Event captured",
   "eventType": "api.calls",
   "customerId": "cust_123"
+}
+```
+
+#### POST /usagebatch
+
+Capture multiple usage events in a single request. Useful for high-volume event ingestion or batch imports.
+
+**Body:**
+```json
+[
+  {
+    "eventType": "api.calls",
+    "customerId": "cust_123",
+    "value": 1,
+    "metadata": { "endpoint": "/api/users" }
+  },
+  {
+    "eventType": "storage.bytes",
+    "customerId": "cust_123",
+    "value": 1048576,
+    "metadata": { "fileId": "file_456" }
+  }
+]
+```
+
+**Response: 201 Created**
+```json
+{
+  "message": "Events captured",
+  "count": 2
+}
+```
+
+**Validation Errors:**
+
+If some events fail validation, the entire batch is rejected with details:
+```json
+{
+  "error": "Validation failed for some events",
+  "validationErrors": [
+    { "index": 0, "errors": ["customerId is required"] },
+    { "index": 2, "errors": ["value must be a number"] }
+  ],
+  "validCount": 8,
+  "invalidCount": 2
 }
 ```
 
@@ -313,7 +358,7 @@ curl -X POST https://your-project.api.codehooks.io/dev/aggregations/trigger \
 **Important Notes:**
 - Webhooks are **only sent for completed periods** (periodEnd < now)
 - Incomplete periods show in GET /aggregations but won't trigger webhooks until complete
-- The cron job (every 5 min) only processes completed periods
+- The cron job (every 15 min) only processes completed periods
 - The cron job looks back multiple days to catch any missed periods (7 days for hourly, 30 days for daily, etc.)
 
 
@@ -429,7 +474,7 @@ Result: 300
 │  Collection  │  ◄─── GET /events (Query raw events)
 └──────────────┘
        │
-       │ Every 5 min - Cron job runs
+       │ Every 15 min - Cron job runs
        ▼
 ┌──────────────────┐
 │  Cron Job        │
@@ -471,9 +516,9 @@ Result: 300
 2. **Event stored** - Returns 201 Created (event immediately stored in database)
 3. **Event indexed** - Event stored with time period fields (hour, day, week, month, year) for fast aggregation
 
-**Batch Aggregation (Automatic - Every 5 minutes):**
+**Batch Aggregation (Automatic - Every 15 minutes):**
 
-The cron job runs **every 5 minutes** (`*/5 * * * *`) to aggregate completed periods:
+The cron job runs **every 15 minutes** (`*/15 * * * *`) to aggregate completed periods:
 
 1. **Find events within lookback window** - Gets all events from the configured lookback period:
    - Hourly: 7 days
@@ -514,9 +559,9 @@ You can manually trigger aggregation for testing or real-time dashboards:
 **Example Timeline:**
 - **10:00:00** - Event arrives and is stored in events collection
 - **10:00:05** - Event available via GET /events
-- **11:05:00** - Cron job runs, finds completed 10:00-10:59 hourly period
-- **11:05:05** - Aggregation created and webhook sent
-- **11:05:10** - Historical aggregation available in GET /aggregations
+- **11:15:00** - Cron job runs, finds completed 10:00-10:59 hourly period
+- **11:15:05** - Aggregation created and webhook sent
+- **11:15:10** - Historical aggregation available in GET /aggregations
 
 ## Webhook Delivery
 
@@ -884,7 +929,8 @@ setInterval(() => displayUsageDashboard('cust_acme'), 60000);
 
 The `examples/` directory contains ready-to-use testing tools and scripts:
 
-- **`generate-events.js`** - Event generator that creates realistic test data across multiple customers and event types
+- **`generate-events.js`** - Event generator that creates realistic test data across multiple customers and event types (sends events one at a time)
+- **`generate-batchevents.js`** - Batch event generator that sends multiple events in a single request using the `/usagebatch` endpoint
 - **`webhook-receiver.js`** - Example webhook endpoint with HMAC signature verification
 - **`curl-examples.sh`** - Collection of curl commands for manual API testing
 - **Full documentation** - See [examples/README.md](examples/README.md) for detailed usage instructions
@@ -894,10 +940,15 @@ The `examples/` directory contains ready-to-use testing tools and scripts:
 The easiest way to test the system is using the event generator:
 
 ```bash
-# Generate 100 test events
+# Generate 100 test events (sent one at a time)
 BASE_URL=https://your-project.api.codehooks.io/dev \
 API_KEY=your_api_key \
 node examples/generate-events.js
+
+# Or use the batch generator for faster testing (sends all events in one request)
+BASE_URL=https://your-project.api.codehooks.io/dev \
+API_KEY=your_api_key \
+node examples/generate-batchevents.js --count 100
 
 # Verify events were stored
 curl "https://your-project.api.codehooks.io/dev/events?limit=10" \
@@ -917,7 +968,7 @@ curl "https://your-project.api.codehooks.io/dev/aggregations?limit=10" \
 1. Deploy the application
 2. Create configuration
 3. Send test events
-4. Wait for cron job (runs every 5 minutes)
+4. Wait for cron job (runs every 15 minutes)
 5. Query aggregations
 
 ### Quick Test (Hourly Period)
@@ -950,7 +1001,7 @@ curl "$BASE_URL/events?customerId=test_customer&limit=20" \
 
 # Should show 10 events with test.metric
 
-# 5. Wait for next hour + 5 minutes for aggregation to complete
+# 5. Wait for next hour + 15 minutes for aggregation to complete
 curl "$BASE_URL/aggregations?customerId=test_customer" \
   -H "x-apikey: $API_KEY"
 
@@ -1023,7 +1074,7 @@ Monitor these log messages:
 **Event Processing:**
 - `✅ [API] Event captured: api.calls for cust_456` - Event stored in database
 
-**Batch Aggregation (Every 5 minutes):**
+**Batch Aggregation (Every 15 minutes):**
 - `🔄 [Cron] Starting batch aggregation...` - Cron job started
 - `📊 [Cron] Found 5 customers with events in completed daily period (20260113)` - Found customers/events in completed period
 - `✅ [Cron] Created daily aggregation for cust_456 (20260113)` - Period aggregated
@@ -1077,7 +1128,7 @@ Returns service information and API documentation links.
    curl "$BASE_URL/events?limit=10" -H "x-apikey: $API_KEY"
    ```
 
-3. Wait for cron job to run (every 5 minutes)
+3. Wait for cron job to run (every 15 minutes)
 
 4. Check logs for errors:
    ```bash

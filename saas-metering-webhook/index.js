@@ -280,6 +280,7 @@ app.get('/', (req, res) => {
     ],
     endpoints: {
       capture: 'POST /usage/:eventType',
+      captureBatch: 'POST /usagebatch',
       config: 'GET /config',
       management: {
         events: 'GET /events',
@@ -289,6 +290,91 @@ app.get('/', (req, res) => {
     configuration: 'Edit systemconfig.json file and redeploy',
     documentation: 'See README.md for complete API documentation'
   });
+});
+
+/**
+ * Capture multiple usage events in batch
+ * POST /usagebatch
+ * Body: [{ eventType, customerId, value, metadata? }, ...]
+ */
+app.post('/usagebatch', async (req, res) => {
+  const events = req.body;
+
+  // Validate input is an array
+  if (!Array.isArray(events)) {
+    return res.status(400).json({ error: 'Request body must be an array of events' });
+  }
+
+  if (events.length === 0) {
+    return res.status(400).json({ error: 'Events array cannot be empty' });
+  }
+
+  // Validate each event and collect errors
+  const validationErrors = [];
+  const validEvents = [];
+
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
+    const errors = [];
+
+    if (!event.eventType) {
+      errors.push('eventType is required');
+    } else if (!systemConfig.events[event.eventType]) {
+      errors.push(`Invalid event type: ${event.eventType}. Must be one of: ${Object.keys(systemConfig.events).join(', ')}`);
+    }
+
+    if (!event.customerId) {
+      errors.push('customerId is required');
+    }
+
+    if (typeof event.value !== 'number') {
+      errors.push('value must be a number');
+    }
+
+    if (errors.length > 0) {
+      validationErrors.push({ index: i, errors });
+    } else {
+      validEvents.push(event);
+    }
+  }
+
+  // If there are validation errors, return them
+  if (validationErrors.length > 0) {
+    return res.status(400).json({
+      error: 'Validation failed for some events',
+      validationErrors,
+      validCount: validEvents.length,
+      invalidCount: validationErrors.length
+    });
+  }
+
+  try {
+    const conn = await Datastore.open();
+    const timestamp = new Date();
+    const timePeriods = calculateTimePeriods(timestamp);
+
+    // Store all events
+    const insertedCount = await Promise.all(
+      validEvents.map(event =>
+        conn.insertOne('events', {
+          eventType: event.eventType,
+          customerId: event.customerId,
+          value: event.value,
+          metadata: event.metadata || {},
+          receivedAt: timestamp.toISOString(),
+          ...timePeriods
+        })
+      )
+    );
+
+    res.status(201).json({
+      message: 'Events captured',
+      count: insertedCount.length
+    });
+  } catch (error) {
+    console.error('❌ [API] Error storing batch events:', error);
+    res.status(500).json({ error: 'Failed to store events' });
+  }
 });
 
 /**
@@ -662,9 +748,9 @@ app.worker('deliver-aggregation-webhook', async (req, res) => {
 
 /**
  * Batch aggregation cron job
- * Runs every 5 minutes to aggregate completed periods
+ * Runs every 15 minutes to aggregate completed periods
  */
-app.job('*/5 * * * *', async (req, res) => {
+app.job('*/15 * * * *', async (req, res) => {
   console.log('🔄 [Cron] Starting batch aggregation...');
 
   try {
