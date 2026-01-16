@@ -499,7 +499,12 @@ app.get('/subscribers', async (req, res) => {
 app.get('/subscribers/:id', async (req, res) => {
   try {
     const conn = await getDB();
-    const subscriber = await conn.getOne('subscribers', { _id: req.params.id });
+    let subscriber = null;
+    try {
+      subscriber = await conn.getOne('subscribers', { _id: req.params.id });
+    } catch (err) {
+      subscriber = null;
+    }
 
     if (!subscriber) {
       return res.status(404).json({ error: 'Subscriber not found' });
@@ -520,7 +525,12 @@ app.get('/subscribers/:id', async (req, res) => {
 app.post('/subscribers/:id/unsubscribe', async (req, res) => {
   try {
     const conn = await getDB();
-    const subscriber = await conn.getOne('subscribers', { _id: req.params.id });
+    let subscriber = null;
+    try {
+      subscriber = await conn.getOne('subscribers', { _id: req.params.id });
+    } catch (err) {
+      subscriber = null;
+    }
 
     if (!subscriber) {
       return res.status(404).json({ error: 'Subscriber not found' });
@@ -893,7 +903,12 @@ app.worker('send-email', async (req, res) => {
     console.log(`📨 [Worker] Processing email for ${email}, step ${step}${retryCount > 0 ? ` (retry ${retryCount}/${MAX_RETRIES})` : ''}`);
 
     // Check subscriber is still subscribed
-    const subscriber = await conn.getOne('subscribers', { _id: subscriberId });
+    let subscriber = null;
+    try {
+      subscriber = await conn.getOne('subscribers', { _id: subscriberId });
+    } catch (err) {
+      subscriber = null;
+    }
 
     if (!subscriber || !subscriber.subscribed) {
       console.log(`⚠️ [Worker] Subscriber ${subscriberId} not found or unsubscribed, skipping`);
