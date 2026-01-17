@@ -59,6 +59,10 @@
       {
         "name": "drip-email-workflow",
         "description": "3-step drip email campaign with SendGrid/Mailgun, subscriber management, and scheduled delivery"
+      },
+      {
+        "name": "saas-metering-webhook",
+        "description": "Usage metering system with multi-tenant event capture, batch aggregation, and HMAC-signed webhook delivery"
       }
     ]
   }

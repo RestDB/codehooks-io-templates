@@ -87,6 +87,13 @@ coho create mywebhooks --template webhook-delivery
 coho create my-drip-campaign --template drip-email-workflow
 ```
 
+#### SaaS Metering Webhook
+Production-ready usage metering system for SaaS applications. Captures events per customer, aggregates them over configurable time periods (hourly, daily, weekly, monthly, yearly), and delivers results via HMAC-signed webhooks. Supports 7 aggregation operations (sum, avg, min, max, count, first, last) and includes batch event ingestion, cron-based processing, and comprehensive testing tools.
+
+```bash
+coho create my-metering --template saas-metering-webhook
+```
+
 ### Minimal Webhook Templates
 
 These templates provide minimal, educational implementations of webhook handlers for popular services. Each includes proper signature verification, basic event handling, and comprehensive documentation. Perfect for learning or as a starting point for your own integrations.
