@@ -335,6 +335,17 @@ homeassistant-event-gateway/
     └── ai.js           # Optional LLM explanation helper
 ```
 
+## Security
+
+Authentication uses the [webhook-verify](https://github.com/RestDB/webhook-verify) library for secure, constant-time token comparison. This prevents timing attacks when validating the `X-HA-Secret` header.
+
+The shared secret should be a random string of at least 32 characters:
+
+```bash
+# Generate a secure secret
+openssl rand -hex 32
+```
+
 ## Limitations
 
 This template intentionally does **not** support:

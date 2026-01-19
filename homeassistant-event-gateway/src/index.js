@@ -14,6 +14,7 @@
  */
 
 import { app, Datastore } from 'codehooks-js';
+import { verify } from 'webhook-verify';
 import { evaluateEvent, isEventNotable } from './rules.js';
 import { sendSlackNotification, formatSlackMessage } from './slack.js';
 import { generateEventExplanation, isAIEnabled } from './ai.js';
@@ -26,19 +27,19 @@ const EVENTS_COLLECTION = 'ha_events';
 // ============================================================================
 
 /**
- * Validate shared secret from Home Assistant
+ * Validate shared secret from Home Assistant using webhook-verify
  * Events are rejected if the secret doesn't match
  */
 function validateSecret(req) {
-  const expectedSecret = process.env.HA_SHARED_SECRET;
+  const secret = process.env.HA_SHARED_SECRET;
 
-  if (!expectedSecret) {
+  if (!secret) {
     console.warn('HA_SHARED_SECRET not configured - webhook is unprotected');
     return true; // Allow if not configured (development mode)
   }
 
-  const providedSecret = req.headers['x-ha-secret'];
-  return providedSecret === expectedSecret;
+  // Use webhook-verify for secure constant-time comparison
+  return verify('homeassistant', req.rawBody, req.headers, secret);
 }
 
 // ============================================================================
