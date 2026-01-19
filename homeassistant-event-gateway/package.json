@@ -1,0 +1,24 @@
+{
+  "name": "homeassistant-event-gateway",
+  "version": "1.0.0",
+  "description": "Home Assistant event gateway with noise filtering and Slack notifications",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "deploy": "codehooks deploy"
+  },
+  "keywords": [
+    "codehooks",
+    "home-assistant",
+    "webhook",
+    "slack",
+    "notifications",
+    "smart-home",
+    "iot"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "codehooks-js": "^1.0.0"
+  }
+}
