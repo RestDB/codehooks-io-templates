@@ -11,8 +11,6 @@
  * - If no API key is configured, the system works without AI
  */
 
-import https from 'https';
-
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
@@ -78,68 +76,36 @@ ${JSON.stringify(eventSummary, null, 2)}`;
 // ============================================================================
 
 /**
- * Make HTTPS request helper
- */
-function makeRequest(options, body) {
-  return new Promise((resolve, reject) => {
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            resolve(JSON.parse(data));
-          } catch (e) {
-            reject(new Error('Invalid JSON response from AI API'));
-          }
-        } else {
-          reject(new Error(`AI API error: ${res.statusCode} - ${data}`));
-        }
-      });
-    });
-
-    req.on('error', reject);
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('AI API request timeout'));
-    });
-
-    req.write(body);
-    req.end();
-  });
-}
-
-/**
  * Call OpenAI API
  */
 async function callOpenAI(systemPrompt, userPrompt) {
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
-  const payload = JSON.stringify({
-    model,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ],
-    max_tokens: 150,
-    temperature: 0.3 // Lower temperature for more factual responses
-  });
-
-  const options = {
-    hostname: 'api.openai.com',
-    path: '/v1/chat/completions',
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Length': Buffer.byteLength(payload)
+      'Authorization': `Bearer ${apiKey}`
     },
-    timeout: 15000
-  };
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      max_tokens: 150,
+      temperature: 0.3
+    })
+  });
 
-  const response = await makeRequest(options, payload);
-  return response.choices?.[0]?.message?.content?.trim() || null;
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`OpenAI API error: ${response.status} - ${body}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content?.trim() || null;
 }
 
 /**
@@ -149,30 +115,30 @@ async function callAnthropic(systemPrompt, userPrompt) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   const model = process.env.ANTHROPIC_MODEL || 'claude-3-haiku-20240307';
 
-  const payload = JSON.stringify({
-    model,
-    max_tokens: 150,
-    system: systemPrompt,
-    messages: [
-      { role: 'user', content: userPrompt }
-    ]
-  });
-
-  const options = {
-    hostname: 'api.anthropic.com',
-    path: '/v1/messages',
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'Content-Length': Buffer.byteLength(payload)
+      'anthropic-version': '2023-06-01'
     },
-    timeout: 15000
-  };
+    body: JSON.stringify({
+      model,
+      max_tokens: 150,
+      system: systemPrompt,
+      messages: [
+        { role: 'user', content: userPrompt }
+      ]
+    })
+  });
 
-  const response = await makeRequest(options, payload);
-  return response.content?.[0]?.text?.trim() || null;
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Anthropic API error: ${response.status} - ${body}`);
+  }
+
+  const data = await response.json();
+  return data.content?.[0]?.text?.trim() || null;
 }
 
 // ============================================================================

@@ -8,8 +8,6 @@
  * notifications are silently skipped.
  */
 
-import https from 'https';
-
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
@@ -234,46 +232,20 @@ export async function sendSlackNotification(message) {
     return;
   }
 
-  return new Promise((resolve, reject) => {
-    const url = new URL(webhookUrl);
-    const payload = JSON.stringify(message);
-
-    const options = {
-      hostname: url.hostname,
-      path: url.pathname,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(payload)
-      },
-      timeout: 10000
-    };
-
-    const req = https.request(options, (res) => {
-      let body = '';
-      res.on('data', chunk => body += chunk);
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          console.log('Slack notification sent successfully');
-          resolve();
-        } else {
-          reject(new Error(`Slack API error: ${res.statusCode} - ${body}`));
-        }
-      });
-    });
-
-    req.on('error', (error) => {
-      reject(new Error(`Slack request failed: ${error.message}`));
-    });
-
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('Slack request timeout'));
-    });
-
-    req.write(payload);
-    req.end();
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(message)
   });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Slack API error: ${response.status} - ${body}`);
+  }
+
+  console.log('Slack notification sent successfully');
 }
 
 /**
