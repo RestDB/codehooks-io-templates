@@ -10,6 +10,18 @@
     },
     "response.time.ms": {
       "op": "avg"
+    },
+    "test.min": {
+      "op": "min"
+    },
+    "test.count": {
+      "op": "count"
+    },
+    "test.first": {
+      "op": "first"
+    },
+    "test.last": {
+      "op": "last"
     }
   },
   "webhooks": [
