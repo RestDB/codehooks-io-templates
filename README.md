@@ -88,11 +88,13 @@ coho create my-drip-campaign --template drip-email-workflow
 ```
 
 #### SaaS Metering Webhook
-Production-ready usage metering system for SaaS applications. Captures events per customer, aggregates them over configurable time periods (hourly, daily, weekly, monthly, yearly), and delivers results via HMAC-signed webhooks. Supports 7 aggregation operations (sum, avg, min, max, count, first, last) and includes batch event ingestion, cron-based processing, and comprehensive testing tools.
+Production-ready usage metering system for SaaS applications. Captures events per customer, aggregates them over configurable time periods (hourly, daily, weekly, monthly, yearly), and delivers results via HMAC-signed webhooks. Supports 7 aggregation operations (sum, avg, min, max, count, first, last) and includes batch event ingestion, cron-based processing (every 15 minutes), and comprehensive testing tools.
 
 ```bash
 coho create my-metering --template saas-metering-webhook
 ```
+
+**Testing:** The `test-aggregation.js` script verifies all aggregation operators. It requires `systemconfig.json` to include all 7 test event types (`api.calls`, `storage.bytes`, `response.time.ms`, `test.min`, `test.count`, `test.first`, `test.last`) with their corresponding operators. The default config includes these.
 
 ### Minimal Webhook Templates
 

@@ -53,7 +53,7 @@ Events are stored immediately with time period indexing:
 ### 2. Aggregation Processing
 
 #### Automatic (Cron-based)
-- Runs every 5 minutes via `app.job('*/5 * * * *')`
+- Runs every 15 minutes via `app.job('*/15 * * * *')`
 - Finds events within configurable lookback windows:
   - Hourly: 7 days
   - Daily: 30 days
@@ -182,11 +182,15 @@ Returns: systemconfig.json contents
 
 ```json
 {
-  "periods": ["daily", "weekly", "monthly"],
+  "periods": ["hourly", "daily", "weekly", "monthly"],
   "events": {
     "api.calls": { "op": "sum" },
     "storage.bytes": { "op": "max" },
-    "response.time.ms": { "op": "avg" }
+    "response.time.ms": { "op": "avg" },
+    "test.min": { "op": "min" },
+    "test.count": { "op": "count" },
+    "test.first": { "op": "first" },
+    "test.last": { "op": "last" }
   },
   "webhooks": [
     {
@@ -200,85 +204,33 @@ Returns: systemconfig.json contents
 
 ## Testing
 
-```bash
-# Clear collections first (events, aggregations)
+Run the comprehensive aggregation test suite to verify all operators:
 
+```bash
 # Set environment variables
 export BASE_URL="https://your-project.api.codehooks.io/dev"
 export API_KEY="your_api_key"
 
 # Run tests
-node test-metering.js
+node test-aggregation.js
 ```
+
+The test script:
+1. Drops `events` and `aggregations` collections
+2. Posts known test data for each operator
+3. Triggers aggregation manually
+4. Verifies results against expected values
+5. Runs edge case tests (negative values, decimals, zeros)
 
 ## Current Status
 
 ### ✅ Working
 - Event storage with time period fields
 - Manual JavaScript aggregation (sum, avg, min, max, count, first, last)
-- Cron job execution (confirmed in logs at 09:00, 09:15, 09:30)
-- Batch processing logic
-- Webhook delivery worker
-- Configuration system
-
-### ⚠️ Issue: HTTP 401 Errors
-
-All HTTP endpoints return `401 No access`, even with API key header:
-
-```bash
-curl "https://testempty-eack.api.codehooks.io/dev/" -H "x-apikey: 7c30800e-ad7a-4055-b9ae-f1c5f3b6a15d"
-# Returns: No access 401
-```
-
-**What's Working:**
-- ✅ CLI commands work (collections can be queried/deleted with API key)
-- ✅ Cron jobs run successfully (confirmed in logs at 09:00, 09:15, 09:30)
-- ✅ Service is deployed and active
-- ✅ Collections cleared: `coho query COLLECTION --delete` works
-
-**What's Not Working:**
-- ❌ All HTTP endpoints return 401
-- ❌ Even root `/` endpoint returns 401
-- ❌ API key header `x-apikey` not being accepted
-
-**Diagnosis:**
-This is a **Codehooks project-level authentication configuration issue**, not a code problem:
-1. The code is correct (cron jobs prove the service works)
-2. The API key is valid (CLI commands work)
-3. Something in the project settings is blocking HTTP access with API keys
-
-**Possible Causes:**
-1. **Project Authentication Settings** - Check in Codehooks dashboard:
-   - Is API key authentication enabled for HTTP endpoints?
-   - Are there any authentication method restrictions?
-   - Check "Security" or "Access Control" settings
-
-2. **Space-Level Restrictions** - Check if the `dev` space has:
-   - Additional authentication requirements
-   - IP whitelist (though user confirmed this shouldn't be used)
-   - JWKS/OAuth configuration (we removed this with `coho jwks ""`)
-
-3. **Deployment Configuration** - Verify:
-   - `config.json` is correct (confirmed: `{"name": "testempty-eack", "space": "dev"}`)
-   - No conflicting security middleware in code
-   - Service initialization completes (cron jobs suggest yes)
-
-**Resolution Steps:**
-1. **Check Codehooks Dashboard:**
-   - Navigate to project `testempty-eack` → space `dev`
-   - Look for "Security", "Access Control", or "Authentication" settings
-   - Verify API key authentication is enabled for HTTP routes
-   - Check if there are any additional authentication requirements
-
-2. **Verify API Key Scope:**
-   - Ensure the API key has permissions for HTTP endpoints (not just data operations)
-   - Check if there are separate keys for different access types
-
-3. **Contact Codehooks Support:**
-   - Provide project ID: `testempty-eack`
-   - Space: `dev`
-   - Symptom: HTTP endpoints return 401 even with valid API key, but CLI and cron work
-   - Share this architecture document for context
+- Cron job execution every 15 minutes
+- Batch processing logic with lookback windows
+- Webhook delivery worker with HMAC signing
+- Configuration system (file-based)
 
 ## Performance Considerations
 

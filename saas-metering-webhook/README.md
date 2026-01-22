@@ -24,7 +24,7 @@ A production-ready usage metering system for Codehooks.io that captures events, 
 
 ## Quick Start
 
-> **Testing?** Jump to the [Testing](#testing) section to use the event generator script for quick testing with realistic data.
+> **Testing?** Jump to the [Testing](#testing) section to verify aggregation logic with `test-aggregation.js` or generate realistic test data with the event generators.
 
 ### 1. Deploy to Codehooks.io
 
@@ -56,12 +56,15 @@ Edit the `systemconfig.json` file to define which events to track and how to agg
 
 ```json
 {
-  "periods": ["daily", "weekly", "monthly"],
+  "periods": ["hourly", "daily", "weekly", "monthly"],
   "events": {
     "api.calls": { "op": "sum" },
     "storage.bytes": { "op": "max" },
     "response.time.ms": { "op": "avg" },
-    "error.count": { "op": "count" }
+    "test.min": { "op": "min" },
+    "test.count": { "op": "count" },
+    "test.first": { "op": "first" },
+    "test.last": { "op": "last" }
   },
   "webhooks": [
     {
@@ -225,15 +228,11 @@ Configuration is **file-based only** - there is no API endpoint to update config
 **Configuration Format:**
 ```json
 {
-  "periods": ["hourly", "daily", "weekly", "monthly", "yearly"],
+  "periods": ["hourly", "daily", "weekly", "monthly"],
   "events": {
     "api.calls": { "op": "sum" },
     "storage.bytes": { "op": "max" },
-    "response.time": { "op": "avg" },
-    "error.count": { "op": "count" },
-    "min.latency": { "op": "min" },
-    "first.request": { "op": "first" },
-    "last.request": { "op": "last" }
+    "response.time.ms": { "op": "avg" }
   },
   "webhooks": [
     {
@@ -926,6 +925,86 @@ setInterval(() => displayUsageDashboard('cust_acme'), 60000);
 - Set appropriate limit values based on expected event volumes
 
 ## Testing
+
+### Verifying Aggregation Logic
+
+The `test-aggregation.js` script in the project root provides comprehensive verification of all aggregation operators. This is the recommended way to verify that the system is working correctly after deployment.
+
+```bash
+# Run the aggregation test suite
+BASE_URL=https://your-project.api.codehooks.io/dev \
+API_KEY=your_api_key \
+node test-aggregation.js
+```
+
+**What the test does:**
+
+1. Drops the `events` and `aggregations` collections (clean slate)
+2. Posts known test data for each configured operator (sum, avg, min, max, count, first, last)
+3. Triggers aggregation manually
+4. Verifies the aggregated results against mathematically expected values
+5. Runs edge case tests (negative values, decimals, single values, zeros)
+
+**Example output:**
+
+```
+============================================================
+COMPREHENSIVE AGGREGATION TEST SUITE
+============================================================
+Base URL: https://your-project.api.codehooks.io/dev
+API Key: abc12345...
+
+Configured event types:
+  - api.calls: sum
+  - storage.bytes: max
+  - response.time.ms: avg
+  - test.min: min
+  - test.count: count
+  - test.first: first
+  - test.last: last
+
+============================================================
+MAIN OPERATOR TESTS
+============================================================
+
+Step 1: Clearing test data...
+Step 2: Posting test events...
+Step 3: Triggering aggregation...
+Step 4: Waiting for aggregation to complete...
+Step 5: Verifying results...
+
+[PASS] api.calls (sum)
+  Input values: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+  Expected: 550
+  Actual: 550
+
+[PASS] storage.bytes (max)
+  Input values: [1000, 5000, 2500, 3000, 4500, 1500, 6000, 2000, 3500, 4000]
+  Expected: 6000
+  Actual: 6000
+...
+
+============================================================
+FINAL TEST SUMMARY
+============================================================
+
+Total Tests: 24
+Passed: 24
+Failed: 0
+Success Rate: 100.0%
+
+SUCCESS: All aggregation tests passed!
+Aggregation operators verified as 100% correct.
+```
+
+**When to run this test:**
+
+- After initial deployment to verify the system works
+- After making changes to aggregation logic in `index.js`
+- To validate your `systemconfig.json` event type configuration
+- As part of CI/CD pipeline validation
+
+### Event Generator Tools
 
 The `examples/` directory contains ready-to-use testing tools and scripts:
 
