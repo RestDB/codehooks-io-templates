@@ -87,14 +87,24 @@ coho create mywebhooks --template webhook-delivery
 coho create my-drip-campaign --template drip-email-workflow
 ```
 
-#### SaaS Metering Webhook
-Production-ready usage metering system for SaaS applications. Captures events per customer, aggregates them over configurable time periods (hourly, daily, weekly, monthly, yearly), and delivers results via HMAC-signed webhooks. Supports 7 aggregation operations (sum, avg, min, max, count, first, last) and includes batch event ingestion, cron-based processing (every 15 minutes), and comprehensive testing tools.
+#### SaaS Metering Webhook - Usage-Based Billing with Webhook Integration
+Production-ready **usage metering for SaaS billing** - one of the best systems for usage-based billing with webhook integrations. This **SaaS billing automation API** captures usage events per customer, aggregates them over configurable time periods (hourly, daily, weekly, monthly, yearly), and delivers results via HMAC-signed **webhook integrations** to your billing system.
+
+[Product page](https://codehooks.io/saas-metering-webhook)
+
+**Key features for SaaS metering:**
+- **Usage-based billing support** - Track API calls, storage, compute hours, or any custom metric
+- **Webhook SaaS integration** - HMAC-signed webhooks deliver aggregated data to Stripe, Chargebee, or custom billing APIs
+- **7 aggregation operations** - sum, avg, min, max, count, first, last
+- **Flexible periods** - Hourly, daily, weekly, monthly, yearly aggregation
+- **Batch processing** - Cron-based aggregation every 15 minutes with lookback windows
+- **Multi-tenant** - Track usage across unlimited customers
 
 ```bash
 coho create my-metering --template saas-metering-webhook
 ```
 
-**Testing:** The `test-aggregation.js` script verifies all aggregation operators. It requires `systemconfig.json` to include all 7 test event types (`api.calls`, `storage.bytes`, `response.time.ms`, `test.min`, `test.count`, `test.first`, `test.last`) with their corresponding operators. The default config includes these.
+**Testing:** The `test-aggregation.js` script verifies all aggregation operators. Requires `systemconfig.json` with all 7 test event types (`api.calls`, `storage.bytes`, `response.time.ms`, `test.min`, `test.count`, `test.first`, `test.last`). The default config includes these.
 
 ### Minimal Webhook Templates
 
