@@ -1264,7 +1264,6 @@ ISC
 
 - Documentation: See this README
 - Issues: Report at [GitHub Issues](https://github.com/anthropics/codehooks-io-templates/issues)
-- Community: [Codehooks Discord](https://discord.gg/codehooks)
 
 ## Credits
 
