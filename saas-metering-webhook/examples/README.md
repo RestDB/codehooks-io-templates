@@ -103,11 +103,12 @@ By Event Type:
 
 3. **Trigger aggregation manually** (for testing):
    ```bash
+   # Returns 202 Accepted - processing happens asynchronously via workers
    curl -X POST https://your-project.api.codehooks.io/dev/aggregations/trigger \
      -H "x-apikey: your_api_key"
    ```
 
-4. **Check aggregations**:
+4. **Wait a few seconds for workers to process**, then **check aggregations**:
    ```bash
    curl "https://your-project.api.codehooks.io/dev/aggregations?limit=10" \
      -H "x-apikey: your_api_key"
@@ -248,7 +249,7 @@ coho deploy
 To test with larger volumes:
 
 ```bash
-# Generate 10,000 events
+# Generate 10,000 events (uses single-event endpoint, no batch limit)
 EVENT_COUNT=10000 node examples/generate-events.js
 
 # Or run multiple generators in parallel
@@ -257,3 +258,19 @@ for i in {1..10}; do
 done
 wait
 ```
+
+**Note:** The `/usagebatch` endpoint has a **1000 event limit** per request. The batch generator (`generate-batchevents.js`) automatically handles this by splitting larger batches into multiple requests.
+
+### Response Codes
+
+The API uses these HTTP status codes:
+
+| Code | Meaning |
+|------|---------|
+| 201  | Events captured successfully |
+| 202  | Aggregation jobs queued (async processing) |
+| 207  | Partial success (some events failed) |
+| 400  | Bad request (missing body, not array) |
+| 413  | Batch too large (> 1000 events) |
+| 422  | Validation failed (invalid event data) |
+| 503  | Service misconfigured (no event types) |

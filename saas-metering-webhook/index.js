@@ -298,63 +298,107 @@ app.get('/', (req, res) => {
  * Body: [{ eventType, customerId, value, metadata? }, ...]
  */
 app.post('/usagebatch', async (req, res) => {
-  const events = req.body;
-
-  // Validate input is an array
-  if (!Array.isArray(events)) {
-    return res.status(400).json({ error: 'Request body must be an array of events' });
-  }
-
-  if (events.length === 0) {
-    return res.status(400).json({ error: 'Events array cannot be empty' });
-  }
-
-  // Validate each event and collect errors
-  const validationErrors = [];
-  const validEvents = [];
-
-  for (let i = 0; i < events.length; i++) {
-    const event = events[i];
-    const errors = [];
-
-    if (!event.eventType) {
-      errors.push('eventType is required');
-    } else if (!systemConfig.events[event.eventType]) {
-      errors.push(`Invalid event type: ${event.eventType}. Must be one of: ${Object.keys(systemConfig.events).join(', ')}`);
-    }
-
-    if (!event.customerId) {
-      errors.push('customerId is required');
-    }
-
-    if (typeof event.value !== 'number') {
-      errors.push('value must be a number');
-    }
-
-    if (errors.length > 0) {
-      validationErrors.push({ index: i, errors });
-    } else {
-      validEvents.push(event);
-    }
-  }
-
-  // If there are validation errors, return them
-  if (validationErrors.length > 0) {
-    return res.status(400).json({
-      error: 'Validation failed for some events',
-      validationErrors,
-      validCount: validEvents.length,
-      invalidCount: validationErrors.length
-    });
-  }
+  const MAX_BATCH_SIZE = 1000;
 
   try {
+    // Validate request body exists
+    if (req.body === null || req.body === undefined) {
+      console.warn('⚠️ [API] /usagebatch called with null/undefined body');
+      return res.status(400).json({ error: 'Request body is required' });
+    }
+
+    const events = req.body;
+
+    // Validate input is an array
+    if (!Array.isArray(events)) {
+      console.warn('⚠️ [API] /usagebatch called with non-array body:', typeof events);
+      return res.status(400).json({ error: 'Request body must be an array of events' });
+    }
+
+    if (events.length === 0) {
+      return res.status(400).json({ error: 'Events array cannot be empty' });
+    }
+
+    // Enforce batch size limit
+    if (events.length > MAX_BATCH_SIZE) {
+      console.warn(`⚠️ [API] /usagebatch batch size exceeded: ${events.length} > ${MAX_BATCH_SIZE}`);
+      return res.status(413).json({
+        error: `Batch size exceeds maximum limit of ${MAX_BATCH_SIZE} events`,
+        received: events.length,
+        maxAllowed: MAX_BATCH_SIZE
+      });
+    }
+
+    // Get valid event types safely
+    const validEventTypes = systemConfig?.events ? Object.keys(systemConfig.events) : [];
+    if (validEventTypes.length === 0) {
+      console.error('❌ [API] /usagebatch: No event types configured in systemconfig.json');
+      return res.status(503).json({ error: 'Service misconfigured: no event types available' });
+    }
+
+    // Validate each event and collect errors
+    const validationErrors = [];
+    const validEvents = [];
+
+    for (let i = 0; i < events.length; i++) {
+      const event = events[i];
+      const errors = [];
+
+      // Check if event is a valid object
+      if (event === null || event === undefined || typeof event !== 'object') {
+        validationErrors.push({ index: i, errors: ['Event must be an object'] });
+        continue;
+      }
+
+      if (!event.eventType) {
+        errors.push('eventType is required');
+      } else if (typeof event.eventType !== 'string') {
+        errors.push('eventType must be a string');
+      } else if (!systemConfig.events[event.eventType]) {
+        errors.push(`Invalid event type: ${event.eventType}. Must be one of: ${validEventTypes.join(', ')}`);
+      }
+
+      if (!event.customerId) {
+        errors.push('customerId is required');
+      } else if (typeof event.customerId !== 'string') {
+        errors.push('customerId must be a string');
+      }
+
+      if (event.value === null || event.value === undefined) {
+        errors.push('value is required');
+      } else if (typeof event.value !== 'number' || !Number.isFinite(event.value)) {
+        errors.push('value must be a finite number');
+      }
+
+      // Validate metadata if provided
+      if (event.metadata !== undefined && (typeof event.metadata !== 'object' || event.metadata === null || Array.isArray(event.metadata))) {
+        errors.push('metadata must be an object if provided');
+      }
+
+      if (errors.length > 0) {
+        validationErrors.push({ index: i, errors });
+      } else {
+        validEvents.push(event);
+      }
+    }
+
+    // If there are validation errors, return them
+    if (validationErrors.length > 0) {
+      console.warn(`⚠️ [API] /usagebatch validation failed: ${validationErrors.length}/${events.length} events invalid`);
+      return res.status(422).json({
+        error: 'Validation failed for some events',
+        validationErrors,
+        validCount: validEvents.length,
+        invalidCount: validationErrors.length
+      });
+    }
+
     const conn = await Datastore.open();
     const timestamp = new Date();
     const timePeriods = calculateTimePeriods(timestamp);
 
-    // Store all events
-    const insertedCount = await Promise.all(
+    // Store all events with individual error tracking
+    const results = await Promise.allSettled(
       validEvents.map(event =>
         conn.insertOne('events', {
           eventType: event.eventType,
@@ -367,13 +411,37 @@ app.post('/usagebatch', async (req, res) => {
       )
     );
 
+    // Check for any failed inserts
+    const failed = results.filter(r => r.status === 'rejected');
+    const succeeded = results.filter(r => r.status === 'fulfilled');
+
+    if (failed.length > 0) {
+      console.error(`❌ [API] /usagebatch partial failure: ${failed.length}/${validEvents.length} inserts failed`);
+      failed.forEach((f, i) => console.error(`  - Insert ${i} failed:`, f.reason?.message || f.reason));
+
+      if (succeeded.length === 0) {
+        return res.status(500).json({
+          error: 'Failed to store all events',
+          failedCount: failed.length
+        });
+      }
+
+      // Partial success
+      return res.status(207).json({
+        message: 'Events partially captured',
+        successCount: succeeded.length,
+        failedCount: failed.length
+      });
+    }
+
+    console.log(`✅ [API] /usagebatch: ${succeeded.length} events captured`);
     res.status(201).json({
       message: 'Events captured',
-      count: insertedCount.length
+      count: succeeded.length
     });
   } catch (error) {
-    console.error('❌ [API] Error storing batch events:', error);
-    res.status(500).json({ error: 'Failed to store events' });
+    console.error('❌ [API] /usagebatch unexpected error:', error.message, error.stack);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -383,23 +451,66 @@ app.post('/usagebatch', async (req, res) => {
  * Body: { customerId, value, metadata? }
  */
 app.post('/usage/:eventType', async (req, res) => {
-  const { eventType } = req.params;
-  const { customerId, value, metadata = {} } = req.body;
-
-  // Validation
-  if (!systemConfig.events[eventType]) {
-    return res.status(400).json({
-      error: `Invalid event type: ${eventType}. Must be one of: ${Object.keys(systemConfig.events).join(', ')}`
-    });
-  }
-  if (!customerId) {
-    return res.status(400).json({ error: 'customerId is required' });
-  }
-  if (typeof value !== 'number') {
-    return res.status(400).json({ error: 'value must be a number' });
-  }
-
   try {
+    const { eventType } = req.params;
+
+    // Validate eventType parameter
+    if (!eventType || typeof eventType !== 'string') {
+      console.warn('⚠️ [API] /usage/:eventType called with invalid eventType param');
+      return res.status(400).json({ error: 'eventType parameter is required' });
+    }
+
+    // Get valid event types safely
+    const validEventTypes = systemConfig?.events ? Object.keys(systemConfig.events) : [];
+    if (validEventTypes.length === 0) {
+      console.error('❌ [API] /usage/:eventType: No event types configured in systemconfig.json');
+      return res.status(503).json({ error: 'Service misconfigured: no event types available' });
+    }
+
+    // Validate event type exists in config
+    if (!systemConfig.events[eventType]) {
+      console.warn(`⚠️ [API] /usage/${eventType}: Invalid event type`);
+      return res.status(400).json({
+        error: `Invalid event type: ${eventType}. Must be one of: ${validEventTypes.join(', ')}`
+      });
+    }
+
+    // Validate request body exists
+    if (req.body === null || req.body === undefined || typeof req.body !== 'object') {
+      console.warn(`⚠️ [API] /usage/${eventType}: Missing or invalid request body`);
+      return res.status(400).json({ error: 'Request body must be a JSON object' });
+    }
+
+    const { customerId, value, metadata } = req.body;
+
+    // Collect all validation errors
+    const errors = [];
+
+    if (!customerId) {
+      errors.push('customerId is required');
+    } else if (typeof customerId !== 'string') {
+      errors.push('customerId must be a string');
+    }
+
+    if (value === null || value === undefined) {
+      errors.push('value is required');
+    } else if (typeof value !== 'number' || !Number.isFinite(value)) {
+      errors.push('value must be a finite number');
+    }
+
+    // Validate metadata if provided
+    if (metadata !== undefined && (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata))) {
+      errors.push('metadata must be an object if provided');
+    }
+
+    if (errors.length > 0) {
+      console.warn(`⚠️ [API] /usage/${eventType}: Validation failed - ${errors.join(', ')}`);
+      return res.status(422).json({
+        error: 'Validation failed',
+        details: errors
+      });
+    }
+
     const conn = await Datastore.open();
     const timestamp = new Date();
     const timePeriods = calculateTimePeriods(timestamp);
@@ -409,19 +520,21 @@ app.post('/usage/:eventType', async (req, res) => {
       eventType,
       customerId,
       value,
-      metadata,
+      metadata: metadata || {},
       receivedAt: timestamp.toISOString(),
       ...timePeriods
     });
 
+    console.log(`✅ [API] /usage/${eventType}: Event captured for ${customerId}`);
     res.status(201).json({
       message: 'Event captured',
       eventType,
       customerId
     });
   } catch (error) {
-    console.error('❌ [API] Error storing event:', error);
-    res.status(500).json({ error: 'Failed to store event' });
+    const eventType = req.params?.eventType || 'unknown';
+    console.error(`❌ [API] /usage/${eventType} unexpected error:`, error.message, error.stack);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -462,125 +575,285 @@ app.get('/events', async (req, res) => {
 });
 
 /**
- * Trigger aggregation manually (for testing)
+ * Trigger aggregation manually (queue-based with enqueueFromQuery)
  * POST /aggregations/trigger
+ *
+ * Uses enqueueFromQuery for ultra-fast bulk enqueueing directly on the server.
+ * 1. Creates pending job records in 'pending_agg_jobs' collection (with upsert for dedup)
+ * 2. Uses enqueueFromQuery to bulk-enqueue all pending jobs in one call
  */
 app.post('/aggregations/trigger', async (req, res) => {
-  console.log('🔄 [Manual] Triggering batch aggregation...');
+  console.log('🔄 [Trigger] Creating aggregation jobs...');
 
   try {
     const conn = await Datastore.open();
     const now = new Date();
-    const { periods, events: eventOps, webhooks } = systemConfig;
+    const { periods } = systemConfig;
 
-    // Get all unique customers
-    const allEvents = await conn.getMany('events', {}).toArray();
-    const uniqueCustomers = [...new Set(allEvents.map(e => e.customerId))];
+    if (!periods || periods.length === 0) {
+      return res.status(503).json({ error: 'No periods configured in systemconfig.json' });
+    }
 
-    let aggregationCount = 0;
+    // Stream through all events to collect unique customers (memory efficient)
+    const uniqueCustomers = new Set();
+    let eventCount = 0;
 
-    // Process each customer
-    for (const customerId of uniqueCustomers) {
-      // Process each configured period
+    await conn.getMany('events', {}, {
+      hints: { $fields: { customerId: 1 } }
+    }).forEach(event => {
+      if (event.customerId) uniqueCustomers.add(event.customerId);
+      eventCount++;
+    });
+
+    const customerArray = Array.from(uniqueCustomers);
+    console.log(`📊 [Trigger] Found ${customerArray.length} unique customers from ${eventCount} events`);
+
+    if (customerArray.length === 0) {
+      return res.json({
+        message: 'No events to aggregate',
+        jobsQueued: 0
+      });
+    }
+
+    let jobsCreated = 0;
+    let jobsSkipped = 0;
+
+    // Create pending job records for each customer + period combination
+    // Using upsert to prevent duplicates
+    for (const customerId of customerArray) {
       for (const periodType of periods) {
-        // For testing, process the current period even if not complete
         const { periodStart, periodEnd, periodKey } = calculatePeriodBounds(periodType, now);
+        const jobId = `${customerId}_${periodType}_${periodKey}`;
 
-        // Check if period is complete
-        const isPeriodComplete = now >= periodEnd;
-
-        // Check if we've already aggregated this period
-        const existingAgg = await conn.getOne('aggregations', `${customerId}_${periodType}_${periodKey}`);
-
-        if (existingAgg) {
-          if (isPeriodComplete) {
-            // Period is complete and already aggregated - skip it
-            console.log(`✅ [Manual] Skipping ${periodType} aggregation for ${customerId} (${periodKey}) - complete and already exists`);
-            continue;
-          } else {
-            // Period is incomplete - delete and recreate with latest data
-            await conn.removeOne('aggregations', `${customerId}_${periodType}_${periodKey}`);
-            console.log(`🔄 [Manual] Deleting incomplete ${periodType} aggregation for ${customerId} (${periodKey}) to recreate with latest data`);
-          }
-        }
-
-        // Aggregate each event type
-        const aggregatedEvents = {};
-        const eventCounts = {};
-
-        for (const [eventType, config] of Object.entries(eventOps)) {
-          try {
-            const result = await performAggregation(
-              conn,
+        // Use upsert to create or skip existing pending jobs
+        const result = await conn.updateOne(
+          'pending_agg_jobs',
+          jobId,
+          {
+            $set: {
               customerId,
-              eventType,
               periodType,
               periodKey,
-              config.op
-            );
-
-            if (result && result.value !== null && result.value !== undefined) {
-              aggregatedEvents[eventType] = result.value;
-              eventCounts[eventType] = result.count;
+              periodStart: periodStart.toISOString(),
+              periodEnd: periodEnd.toISOString(),
+              status: 'pending',
+              createdAt: now.toISOString(),
+              source: 'trigger'
             }
-          } catch (error) {
-            console.error(`❌ [Manual] Error aggregating ${eventType} for ${customerId}:`, error);
-          }
-        }
+          },
+          { upsert: true }
+        );
 
-        // Only create aggregation if we have data
-        if (Object.keys(aggregatedEvents).length > 0) {
-          const aggregation = {
-            _id: `${customerId}_${periodType}_${periodKey}`,
-            customerId,
-            period: periodType,
-            periodStart: periodStart.toISOString(),
-            periodEnd: periodEnd.toISOString(),
-            periodKey,
-            timestamp: now.toISOString(),
-            events: aggregatedEvents,
-            eventCounts,
-            webhookStatus: {
-              delivered: false,
-              attempts: 0
-            }
-          };
-
-          await conn.insertOne('aggregations', aggregation);
-          aggregationCount++;
-
-          console.log(`✅ [Manual] Created ${periodType} aggregation for ${customerId} (${periodKey})`);
-
-          // Queue webhook deliveries ONLY for completed periods
-          if (isPeriodComplete && webhooks && webhooks.length > 0) {
-            for (const webhook of webhooks) {
-              if (webhook.enabled) {
-                await conn.enqueue('deliver-aggregation-webhook', {
-                  aggregationId: aggregation._id,
-                  webhookUrl: webhook.url,
-                  webhookSecret: webhook.secret,
-                  customerId,
-                  period: periodType
-                });
-                console.log(`📤 [Manual] Queued webhook to ${webhook.url} for completed period`);
-              }
-            }
-          } else if (!isPeriodComplete) {
-            console.log(`⏭️  [Manual] Skipping webhook for incomplete ${periodType} period (${periodKey})`);
-          }
+        if (result?.upsertedId || result?.upserted) {
+          jobsCreated++;
+        } else {
+          jobsSkipped++;
         }
       }
     }
 
-    res.json({
-      message: 'Aggregation triggered',
-      aggregationsCreated: aggregationCount
+    console.log(`📝 [Trigger] Created ${jobsCreated} new, updated ${jobsSkipped} existing job records`);
+
+    // Count pending jobs before enqueueing
+    const pendingJobs = await conn.getMany('pending_agg_jobs', { status: 'pending' }).toArray();
+    const pendingCount = pendingJobs.length;
+
+    if (pendingCount === 0) {
+      console.log(`✅ [Trigger] No pending jobs to enqueue`);
+    } else {
+      // Bulk enqueue all pending jobs using enqueueFromQuery (server-side, ultra fast)
+      await conn.enqueueFromQuery(
+        'pending_agg_jobs',
+        { status: 'pending' },
+        'process-aggregation-job'
+      );
+
+      // Mark jobs as queued to prevent re-queuing
+      await conn.updateMany(
+        'pending_agg_jobs',
+        { status: 'pending' },
+        { $set: { status: 'queued', queuedAt: now.toISOString() } }
+      );
+
+      console.log(`✅ [Trigger] Bulk enqueued ${pendingCount} jobs for ${customerArray.length} customers`);
+    }
+
+    res.status(202).json({
+      message: 'Aggregation jobs queued for processing',
+      jobsCreated,
+      jobsUpdated: jobsSkipped,
+      jobsQueued: pendingCount,
+      customersFound: customerArray.length,
+      periodsConfigured: periods.length,
+      eventsScanned: eventCount
     });
   } catch (error) {
-    console.error('❌ [Manual] Fatal error:', error);
-    res.status(500).json({ error: error.message });
+    console.error('❌ [Trigger] Error queueing jobs:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to queue aggregation jobs' });
   }
 });
+
+/**
+ * Worker: Process individual aggregation job
+ * Handles aggregation for a single customer + period combination
+ * Payload comes from enqueueFromQuery (full document from pending_agg_jobs)
+ * Uses distributed locking and upsert for idempotency
+ */
+app.worker('process-aggregation-job', async (req, res) => {
+  const { payload } = req.body;
+  const { _id: jobId, customerId, periodType, periodKey, periodStart, periodEnd } = payload;
+
+  const aggregationId = `${customerId}_${periodType}_${periodKey}`;
+  const lockKey = `agg_lock_${aggregationId}`;
+
+  try {
+    const conn = await Datastore.open();
+    const now = new Date();
+    const { events: eventOps, webhooks } = systemConfig;
+
+    // Try to acquire a processing lock (prevents concurrent processing)
+    const existingLock = await conn.get(lockKey, { keyspace: 'aggregation-locks' });
+    if (existingLock) {
+      console.log(`⏭️ [Worker] Skipping ${periodType} for ${customerId} (${periodKey}) - already being processed`);
+      return res.end();
+    }
+
+    // Acquire lock with 2 minute TTL
+    await conn.set(lockKey, now.toISOString(), {
+      keyspace: 'aggregation-locks',
+      ttl: 2 * 60 * 1000
+    });
+
+    if (!eventOps || Object.keys(eventOps).length === 0) {
+      console.error('❌ [Worker] No event types configured');
+      await conn.del(lockKey, { keyspace: 'aggregation-locks' });
+      return res.end();
+    }
+
+    // Check if period is complete
+    const periodEndDate = new Date(periodEnd);
+    const isPeriodComplete = now >= periodEndDate;
+
+    // For completed periods, check if already aggregated to avoid unnecessary work
+    if (isPeriodComplete) {
+      const existingAgg = await conn.findOneOrNull('aggregations', aggregationId);
+      if (existingAgg) {
+        console.log(`⏭️ [Worker] Skipping ${periodType} for ${customerId} (${periodKey}) - already finalized`);
+        await conn.del(lockKey, { keyspace: 'aggregation-locks' });
+        if (jobId) await conn.removeOne('pending_agg_jobs', jobId);
+        return res.end();
+      }
+    }
+
+    console.log(`🔄 [Worker] Processing ${periodType} aggregation for ${customerId} (${periodKey})`);
+
+    // Aggregate each event type
+    const aggregatedEvents = {};
+    const eventCounts = {};
+
+    for (const [eventType, config] of Object.entries(eventOps)) {
+      try {
+        const result = await performAggregation(
+          conn,
+          customerId,
+          eventType,
+          periodType,
+          periodKey,
+          config.op
+        );
+
+        if (result && result.value !== null && result.value !== undefined) {
+          aggregatedEvents[eventType] = result.value;
+          eventCounts[eventType] = result.count;
+        }
+      } catch (error) {
+        console.error(`❌ [Worker] Error aggregating ${eventType} for ${customerId}:`, error.message);
+      }
+    }
+
+    // Only create/update aggregation if we have data
+    if (Object.keys(aggregatedEvents).length === 0) {
+      console.log(`⏭️ [Worker] No data for ${periodType} aggregation of ${customerId} (${periodKey})`);
+      await conn.del(lockKey, { keyspace: 'aggregation-locks' });
+      if (jobId) await conn.removeOne('pending_agg_jobs', jobId);
+      return res.end();
+    }
+
+    // Check if aggregation already exists (to determine if this is create vs update)
+    const existingAgg = await conn.findOneOrNull('aggregations', aggregationId);
+    const isNewAggregation = !existingAgg;
+
+    // Use explicit insert or update (upsert with query doesn't preserve _id in Codehooks)
+    if (isNewAggregation) {
+      // Insert new aggregation with our deterministic ID
+      await conn.insertOne('aggregations', {
+        _id: aggregationId,
+        customerId,
+        period: periodType,
+        periodStart,
+        periodEnd,
+        periodKey,
+        timestamp: now.toISOString(),
+        events: aggregatedEvents,
+        eventCounts,
+        webhookStatus: { delivered: false, attempts: 0 }
+      });
+    } else {
+      // Update existing aggregation
+      await conn.updateOne(
+        'aggregations',
+        aggregationId,
+        {
+          $set: {
+            timestamp: now.toISOString(),
+            events: aggregatedEvents,
+            eventCounts
+          }
+        }
+      );
+    }
+
+    if (isNewAggregation) {
+      console.log(`✅ [Worker] Created ${periodType} aggregation for ${customerId} (${periodKey})`);
+
+      // Queue webhook deliveries ONLY for completed periods and new aggregations
+      if (isPeriodComplete && webhooks && webhooks.length > 0) {
+        for (const webhook of webhooks) {
+          if (webhook.enabled) {
+            await conn.enqueue('deliver-aggregation-webhook', {
+              aggregationId,
+              webhookUrl: webhook.url,
+              webhookSecret: webhook.secret,
+              customerId,
+              period: periodType
+            });
+            console.log(`📤 [Worker] Queued webhook for ${customerId} ${periodType}`);
+          }
+        }
+      }
+    } else {
+      console.log(`🔄 [Worker] Updated ${periodType} aggregation for ${customerId} (${periodKey})`);
+    }
+
+    // Release lock and clean up pending job record
+    await conn.del(lockKey, { keyspace: 'aggregation-locks' });
+    if (jobId) {
+      await conn.removeOne('pending_agg_jobs', jobId);
+    }
+
+    res.end();
+  } catch (error) {
+    console.error(`❌ [Worker] Fatal error for ${customerId} ${periodType}:`, error.message, error.stack);
+    // Try to release lock on error
+    try {
+      const conn = await Datastore.open();
+      await conn.del(lockKey, { keyspace: 'aggregation-locks' });
+    } catch (cleanupError) {
+      console.error('❌ [Worker] Failed to release lock:', cleanupError.message);
+    }
+    res.status(500).end();
+  }
+}, { timeout: 30000, workers: 1 });
 
 /**
  * Query aggregations
@@ -743,200 +1016,186 @@ app.worker('deliver-aggregation-webhook', async (req, res) => {
 });
 
 // ============================================================================
-// CRON JOB - BATCH AGGREGATION PROCESSOR
+// CRON JOB - COMPLETED PERIOD AGGREGATION PROCESSOR
 // ============================================================================
 
 /**
+ * Calculate the PREVIOUS (completed) period boundaries
+ * @param {string} periodType - hourly, daily, weekly, monthly
+ * @param {Date} now - Current date/time
+ * @returns {{periodStart: Date, periodEnd: Date, periodKey: string}}
+ */
+function calculateCompletedPeriodBounds(periodType, now = new Date()) {
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  const date = now.getUTCDate();
+  const hour = now.getUTCHours();
+  const day = now.getUTCDay();
+
+  let periodStart, periodEnd, periodKey;
+
+  switch (periodType) {
+    case 'hourly':
+      // Previous hour
+      periodStart = new Date(Date.UTC(year, month, date, hour - 1, 0, 0, 0));
+      periodEnd = new Date(Date.UTC(year, month, date, hour - 1, 59, 59, 999));
+      periodKey = `${periodStart.getUTCFullYear()}${String(periodStart.getUTCMonth() + 1).padStart(2, '0')}${String(periodStart.getUTCDate()).padStart(2, '0')}${String(periodStart.getUTCHours()).padStart(2, '0')}`;
+      break;
+
+    case 'daily':
+      // Yesterday
+      periodStart = new Date(Date.UTC(year, month, date - 1, 0, 0, 0, 0));
+      periodEnd = new Date(Date.UTC(year, month, date - 1, 23, 59, 59, 999));
+      periodKey = `${periodStart.getUTCFullYear()}${String(periodStart.getUTCMonth() + 1).padStart(2, '0')}${String(periodStart.getUTCDate()).padStart(2, '0')}`;
+      break;
+
+    case 'weekly':
+      // Last week (Monday to Sunday)
+      const lastMonday = new Date(Date.UTC(year, month, date - day - 6, 0, 0, 0, 0));
+      periodStart = lastMonday;
+      periodEnd = new Date(lastMonday.getTime() + 7 * 86400000 - 1);
+      periodKey = getISOWeek(periodStart);
+      break;
+
+    case 'monthly':
+      // Last month
+      periodStart = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
+      periodEnd = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+      periodKey = `${periodStart.getUTCFullYear()}${String(periodStart.getUTCMonth() + 1).padStart(2, '0')}`;
+      break;
+
+    default:
+      throw new Error(`Invalid period type: ${periodType}`);
+  }
+
+  return { periodStart, periodEnd, periodKey };
+}
+
+/**
  * Batch aggregation cron job
- * Runs every 15 minutes to aggregate completed periods
+ * Runs every 15 minutes to check for and process COMPLETED periods only
+ * - Daily: aggregates yesterday's data
+ * - Weekly: aggregates last week's data
+ * - Monthly: aggregates last month's data
  */
 app.job('*/15 * * * *', async (req, res) => {
-  console.log('🔄 [Cron] Starting batch aggregation...');
+  console.log('🔄 [Cron] Checking for completed periods to aggregate...');
 
   try {
     const conn = await Datastore.open();
     const now = new Date();
-    const { periods, events: eventOps, webhooks } = systemConfig;
+    const { periods } = systemConfig;
 
-    let aggregationCount = 0;
-    const processedCustomers = new Set();
+    if (!periods || periods.length === 0) {
+      console.log('⚠️ [Cron] No periods configured');
+      return res.end();
+    }
 
-    // Define lookback windows for each period type (in days)
-    const lookbackDays = {
-      hourly: 7,    // Look back 7 days for hourly aggregations
-      daily: 30,    // Look back 30 days for daily aggregations
-      weekly: 60,   // Look back 60 days for weekly aggregations
-      monthly: 90,  // Look back 90 days for monthly aggregations
-      yearly: 365   // Look back 1 year for yearly aggregations
-    };
+    // Stream through all events to collect unique customers
+    const uniqueCustomers = new Set();
+    let eventCount = 0;
 
-    // Process each configured period type
+    await conn.getMany('events', {}, {
+      hints: { $fields: { customerId: 1 } }
+    }).forEach(event => {
+      if (event.customerId) uniqueCustomers.add(event.customerId);
+      eventCount++;
+    });
+
+    const customerArray = Array.from(uniqueCustomers);
+
+    if (customerArray.length === 0) {
+      console.log('✅ [Cron] No customers to process');
+      return res.end();
+    }
+
+    let totalJobsCreated = 0;
+    let totalJobsSkipped = 0;
+
+    // Process each period type - only for COMPLETED periods
     for (const periodType of periods) {
-      // Get the period field name for querying
-      const periodField = periodType === 'hourly' ? 'hour' :
-                          periodType === 'daily' ? 'day' :
-                          periodType === 'weekly' ? 'week' :
-                          periodType === 'monthly' ? 'month' : 'year';
+      const { periodStart, periodEnd, periodKey } = calculateCompletedPeriodBounds(periodType, now);
 
-      // Get events from the lookback window
-      const lookbackMs = (lookbackDays[periodType] || 7) * 86400000;
-      const lookbackDate = new Date(now.getTime() - lookbackMs);
+      // Check if we have any events in this completed period
+      const periodFieldMap = { hourly: 'hour', daily: 'day', weekly: 'week', monthly: 'month' };
+      const periodField = periodFieldMap[periodType];
+      const eventsInPeriod = await conn.getMany('events', { [periodField]: periodKey }, { limit: 1 }).toArray();
 
-      const recentEvents = await conn.getMany('events', {
-        receivedAt: { $gte: lookbackDate.toISOString() }
-      }).toArray();
-
-      if (recentEvents.length === 0) {
-        continue; // No events in lookback window
+      if (eventsInPeriod.length === 0) {
+        console.log(`⏭️ [Cron] No events found for completed ${periodType} period ${periodKey}, skipping`);
+        continue;
       }
 
-      // Group events by period key
-      const eventsByPeriod = {};
-      for (const event of recentEvents) {
-        const eventPeriodKey = event[periodField];
-        if (!eventPeriodKey) continue;
+      // Create pending job records for each customer for this completed period
+      for (const customerId of customerArray) {
+        const jobId = `${customerId}_${periodType}_${periodKey}`;
 
-        if (!eventsByPeriod[eventPeriodKey]) {
-          eventsByPeriod[eventPeriodKey] = [];
-        }
-        eventsByPeriod[eventPeriodKey].push(event);
-      }
-
-      // Process each period that has events
-      for (const [periodKey, eventsInPeriod] of Object.entries(eventsByPeriod)) {
-        // Calculate period bounds to check if it's complete
-        // We need to parse the periodKey to reconstruct the date
-        let periodStart, periodEnd;
-        try {
-          // Reconstruct date from periodKey and calculate bounds
-          const testDate = new Date(eventsInPeriod[0].receivedAt);
-          const bounds = calculatePeriodBounds(periodType, testDate);
-          if (bounds.periodKey !== periodKey) {
-            // Find the correct date for this period key by iterating backwards
-            let searchDate = new Date(now);
-            let found = false;
-            for (let i = 0; i < lookbackDays[periodType] * 24; i++) {
-              const testBounds = calculatePeriodBounds(periodType, searchDate);
-              if (testBounds.periodKey === periodKey) {
-                periodStart = testBounds.periodStart;
-                periodEnd = testBounds.periodEnd;
-                found = true;
-                break;
-              }
-              searchDate = new Date(searchDate.getTime() - 3600000); // Go back 1 hour
-            }
-            if (!found) {
-              console.log(`⚠️  [Cron] Could not find period bounds for ${periodType} ${periodKey}`);
-              continue;
-            }
-          } else {
-            periodStart = bounds.periodStart;
-            periodEnd = bounds.periodEnd;
-          }
-        } catch (error) {
-          console.error(`❌ [Cron] Error calculating period bounds for ${periodType} ${periodKey}:`, error);
+        // Check if aggregation already exists and is finalized
+        const existingAgg = await conn.findOneOrNull('aggregations', jobId);
+        if (existingAgg) {
+          // Already aggregated, skip
           continue;
         }
 
-        // Check if this period has ended
-        if (now < periodEnd) {
-          continue; // Period not yet complete
-        }
-
-        // Get unique customers in this period
-        const customersInPeriod = [...new Set(eventsInPeriod.map(e => e.customerId))];
-
-        // Process each customer for this period
-        for (const customerId of customersInPeriod) {
-          // Check if we've already aggregated this period for this customer
-          const existingAgg = await conn.getOne('aggregations', `${customerId}_${periodType}_${periodKey}`);
-          if (existingAgg) {
-            continue; // Already processed
-          }
-
-          // Aggregate each event type
-          const aggregatedEvents = {};
-          const eventCounts = {};
-
-          for (const [eventType, config] of Object.entries(eventOps)) {
-            try {
-              const result = await performAggregation(
-                conn,
-                customerId,
-                eventType,
-                periodType,
-                periodKey,
-                config.op
-              );
-
-              if (result && result.value !== null && result.value !== undefined) {
-                aggregatedEvents[eventType] = result.value;
-                eventCounts[eventType] = result.count;
-              }
-            } catch (error) {
-              console.error(`❌ [Cron] Error aggregating ${eventType} for ${customerId}:`, error);
-            }
-          }
-
-          // Only create aggregation if we have data
-          if (Object.keys(aggregatedEvents).length > 0) {
-            const aggregation = {
-              _id: `${customerId}_${periodType}_${periodKey}`,
+        const result = await conn.updateOne(
+          'pending_agg_jobs',
+          jobId,
+          {
+            $set: {
               customerId,
-              period: periodType,
+              periodType,
+              periodKey,
               periodStart: periodStart.toISOString(),
               periodEnd: periodEnd.toISOString(),
-              periodKey,
-              timestamp: now.toISOString(),
-              events: aggregatedEvents,
-              eventCounts,
-              webhookStatus: {
-                delivered: false,
-                attempts: 0
-              }
-            };
-
-            await conn.insertOne('aggregations', aggregation);
-            aggregationCount++;
-            processedCustomers.add(customerId); // Only count customers when aggregation is actually created
-
-            console.log(`✅ [Cron] Created ${periodType} aggregation for ${customerId} (${periodKey})`);
-
-            // Queue webhook deliveries
-            if (webhooks && webhooks.length > 0) {
-              for (const webhook of webhooks) {
-                if (webhook.enabled) {
-                  await conn.enqueue('deliver-aggregation-webhook', {
-                    aggregationId: aggregation._id,
-                    webhookUrl: webhook.url,
-                    webhookSecret: webhook.secret,
-                    customerId,
-                    period: periodType
-                  });
-                  console.log(`📤 [Cron] Queued webhook to ${webhook.url}`);
-                }
-              }
+              status: 'pending',
+              createdAt: now.toISOString(),
+              source: 'cron'
             }
-          }
+          },
+          { upsert: true }
+        );
+
+        if (result?.upsertedId || result?.upserted) {
+          totalJobsCreated++;
+        } else {
+          totalJobsSkipped++;
         }
       }
     }
 
-    if (processedCustomers.size === 0) {
-      console.log('✅ [Cron] No completed periods with unaggregated events found');
+    // Count and enqueue all pending jobs
+    const pendingJobs = await conn.getMany('pending_agg_jobs', { status: 'pending' }).toArray();
+    const pendingCount = pendingJobs.length;
+
+    if (pendingCount === 0) {
+      console.log(`✅ [Cron] No pending jobs to enqueue (all completed periods already aggregated)`);
     } else {
-      console.log(`✅ [Cron] Completed batch aggregation: ${aggregationCount} aggregations created for ${processedCustomers.size} customers`);
+      await conn.enqueueFromQuery(
+        'pending_agg_jobs',
+        { status: 'pending' },
+        'process-aggregation-job'
+      );
+
+      await conn.updateMany(
+        'pending_agg_jobs',
+        { status: 'pending' },
+        { $set: { status: 'queued', queuedAt: now.toISOString() } }
+      );
+
+      console.log(`✅ [Cron] Queued ${pendingCount} jobs for completed periods (${totalJobsCreated} new, ${totalJobsSkipped} updated)`);
     }
 
     res.end();
   } catch (error) {
-    console.error('❌ [Cron] Fatal error:', error);
+    console.error('❌ [Cron] Fatal error:', error.message, error.stack);
     res.end();
   }
 });
+
 
 // ============================================================================
 // EXPORT
 // ============================================================================
 
+// Note: events collection is capped to 10000 via CLI: coho cap events 10000
 export default app.init();

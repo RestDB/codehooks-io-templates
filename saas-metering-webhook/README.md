@@ -156,6 +156,9 @@ Capture a usage event. Events are stored immediately and available for querying.
 
 Capture multiple usage events in a single request. Useful for high-volume event ingestion or batch imports.
 
+**Limits:**
+- Maximum batch size: **1000 events** per request
+
 **Body:**
 ```json
 [
@@ -182,7 +185,29 @@ Capture multiple usage events in a single request. Useful for high-volume event 
 }
 ```
 
-**Validation Errors:**
+**Response: 207 Multi-Status** (partial success)
+
+If some events failed to store after validation passed:
+```json
+{
+  "message": "Events partially captured",
+  "successCount": 8,
+  "failedCount": 2
+}
+```
+
+**Response: 413 Payload Too Large**
+
+If batch exceeds the 1000 event limit:
+```json
+{
+  "error": "Batch size exceeds maximum limit of 1000 events",
+  "received": 1500,
+  "maxAllowed": 1000
+}
+```
+
+**Response: 422 Unprocessable Entity** (validation errors)
 
 If some events fail validation, the entire batch is rejected with details:
 ```json
@@ -190,7 +215,7 @@ If some events fail validation, the entire batch is rejected with details:
   "error": "Validation failed for some events",
   "validationErrors": [
     { "index": 0, "errors": ["customerId is required"] },
-    { "index": 2, "errors": ["value must be a number"] }
+    { "index": 2, "errors": ["value must be a finite number"] }
   ],
   "validCount": 8,
   "invalidCount": 2
@@ -327,13 +352,14 @@ Query historical aggregated results (completed periods).
 
 #### POST /aggregations/trigger
 
-Manually trigger batch aggregation (useful for testing and real-time dashboards).
+Manually trigger batch aggregation using queue-based processing (useful for testing and real-time dashboards).
 
-**Behavior:**
-- Creates aggregations for **all periods** (including incomplete ones)
-- Queues webhooks **only for completed periods**
-- Incomplete periods are aggregated for real-time queries but do not trigger webhooks
-- Idempotent: Won't create duplicate aggregations for already-processed periods
+**How It Works:**
+1. Scans events to find unique customers (memory-efficient streaming)
+2. Creates job records in `pending_agg_jobs` collection for each customer+period combination
+3. Uses `enqueueFromQuery` for ultra-fast bulk enqueueing (server-side)
+4. Worker processes jobs with distributed locking for idempotency
+5. Webhooks queued **only for completed periods**
 
 **Request:**
 ```bash
@@ -341,11 +367,16 @@ curl -X POST https://your-project.api.codehooks.io/dev/aggregations/trigger \
   -H "x-apikey: YOUR_API_KEY"
 ```
 
-**Response:**
+**Response: 202 Accepted**
 ```json
 {
-  "message": "Aggregation triggered",
-  "aggregationsCreated": 12
+  "message": "Aggregation jobs queued for processing",
+  "jobsCreated": 15,
+  "jobsUpdated": 3,
+  "jobsQueued": 18,
+  "customersFound": 6,
+  "periodsConfigured": 3,
+  "eventsScanned": 1543
 }
 ```
 
@@ -355,10 +386,11 @@ curl -X POST https://your-project.api.codehooks.io/dev/aggregations/trigger \
 - Forcing immediate aggregation after bulk event imports
 
 **Important Notes:**
+- Returns **202 Accepted** (processing happens asynchronously via workers)
 - Webhooks are **only sent for completed periods** (periodEnd < now)
-- Incomplete periods show in GET /aggregations but won't trigger webhooks until complete
-- The cron job (every 15 min) only processes completed periods
-- The cron job looks back multiple days to catch any missed periods (7 days for hourly, 30 days for daily, etc.)
+- Uses distributed locking to prevent concurrent processing of the same aggregation
+- Idempotent: duplicate job records are skipped via upsert
+- The cron job (every 15 min) only processes the **previous completed period** (e.g., yesterday for daily)
 
 
 ## Aggregation Operations Explained
@@ -474,19 +506,42 @@ Result: 300
 └──────────────┘
        │
        │ Every 15 min - Cron job runs
+       │ Or POST /aggregations/trigger
        ▼
 ┌──────────────────┐
-│  Cron Job        │
-│  Batch           │
-│  Aggregation     │
+│  Job Creator     │
+│  (Cron/Trigger)  │
 ├──────────────────┤
-│  For each period:│
-│  ├─► Check if    │
-│  │   complete    │
+│  1. Find unique  │
+│     customers    │
+│  2. Create job   │
+│     records      │
+│  3. Bulk enqueue │
+│     via query    │
+└──────┬───────────┘
+       │
+       ▼
+┌──────────────────┐
+│  pending_agg_    │
+│  jobs Collection │  (job tracking)
+└──────┬───────────┘
+       │
+       │ enqueueFromQuery
+       ▼
+┌──────────────────┐
+│  Worker Queue    │
+│  process-        │
+│  aggregation-job │
+├──────────────────┤
+│  Per job:        │
+│  ├─► Acquire     │
+│  │   lock (KV)   │
 │  ├─► Aggregate   │
 │  │   events      │
-│  └─► Store       │
-│      results     │
+│  ├─► Store       │
+│  │   result      │
+│  └─► Release     │
+│      lock        │
 └──────┬───────────┘
        │
        ├────────────────────┐
@@ -517,49 +572,47 @@ Result: 300
 
 **Batch Aggregation (Automatic - Every 15 minutes):**
 
-The cron job runs **every 15 minutes** (`*/15 * * * *`) to aggregate completed periods:
+The cron job runs **every 15 minutes** (`*/15 * * * *`) to aggregate **only completed periods**:
 
-1. **Find events within lookback window** - Gets all events from the configured lookback period:
-   - Hourly: 7 days
-   - Daily: 30 days
-   - Weekly: 60 days
-   - Monthly: 90 days
-   - Yearly: 365 days
-2. **For each completed period with events:**
-   - Check if period has completed (periodEnd < now)
-   - Skip if period already aggregated
-   - Query all events for that customer/period using indexed time fields
-   - Apply configured operations (sum, avg, min, max, count, first, last)
-   - Store aggregation result in `aggregations` collection
-3. **Queue webhook deliveries** - For each completed aggregation, queue webhook worker
-4. **Webhooks sent** - Delivered with HMAC-SHA256 signatures
+1. **Calculate completed period bounds** - Determines the PREVIOUS period (e.g., yesterday for daily, last hour for hourly)
+2. **Stream events to find unique customers** - Memory-efficient using field projection
+3. **Create job records** - For each customer + period combination, creates a record in `pending_agg_jobs` collection (with upsert to prevent duplicates)
+4. **Bulk enqueue** - Uses `enqueueFromQuery` to enqueue all pending jobs in one server-side call
+5. **Worker processes jobs** - Each job:
+   - Acquires distributed lock (key-value store with 2-minute TTL)
+   - Aggregates events using indexed time fields
+   - Stores result in `aggregations` collection
+   - Queues webhook delivery
+   - Releases lock and removes job record
+6. **Webhooks sent** - Delivered with HMAC-SHA256 signatures
 
 **Manual Aggregation (POST /aggregations/trigger):**
 
-You can manually trigger aggregation for testing or real-time dashboards:
+Triggers queue-based aggregation for testing or real-time dashboards:
 
-1. **Process all customers** - Aggregates for all customers with events
-2. **For each customer and period type:**
-   - Create/update aggregation for the period (even if incomplete)
-   - **Queue webhooks ONLY for completed periods** (periodEnd < now)
-   - Incomplete periods are aggregated for queries but don't trigger webhooks
-3. **Use case** - View real-time metrics without waiting for periods to complete
+1. **Returns 202 Accepted** - Processing happens asynchronously
+2. **Processes all periods** - Including current (incomplete) periods
+3. **Same queue-based architecture** - Uses `enqueueFromQuery` and worker processing
+4. **Webhooks ONLY for completed periods** - Incomplete periods are aggregated but don't trigger webhooks
+5. **Use case** - View real-time metrics without waiting for periods to complete
 
 **Important:** Webhooks are **only sent when periods are complete**, regardless of how aggregation is triggered (cron or manual).
 
-**Benefits of Batch Aggregation:**
+**Benefits of Queue-Based Architecture:**
 
-- **Efficient**: Processes events in bulk using indexed queries
-- **Reliable**: Idempotent - won't create duplicate aggregations
-- **Flexible**: Supports 7 different aggregation operations
-- **Scalable**: Each customer processed independently
-- **Accurate**: Aggregates reflect all events in the completed period
+- **Scalable**: Bulk enqueueing via `enqueueFromQuery` handles thousands of jobs efficiently
+- **Reliable**: Distributed locking prevents concurrent processing of same aggregation
+- **Memory-efficient**: Streams events instead of loading all into memory
+- **Idempotent**: Upsert pattern and lock checks prevent duplicate work
+- **Fault-tolerant**: Jobs can be retried if worker fails
 
 **Example Timeline:**
 - **10:00:00** - Event arrives and is stored in events collection
 - **10:00:05** - Event available via GET /events
-- **11:15:00** - Cron job runs, finds completed 10:00-10:59 hourly period
-- **11:15:05** - Aggregation created and webhook sent
+- **11:15:00** - Cron job runs, creates jobs for completed 10:00-10:59 hourly period
+- **11:15:01** - Jobs bulk-enqueued via `enqueueFromQuery`
+- **11:15:02** - Worker processes aggregation jobs
+- **11:15:05** - Aggregation created and webhook queued
 - **11:15:10** - Historical aggregation available in GET /aggregations
 
 ## Webhook Delivery
@@ -1151,19 +1204,29 @@ coho unset-env DRY_RUN
 Monitor these log messages:
 
 **Event Processing:**
-- `✅ [API] Event captured: api.calls for cust_456` - Event stored in database
+- `✅ [API] /usage/api.calls: Event captured for cust_456` - Event stored in database
+- `✅ [API] /usagebatch: 100 events captured` - Batch events stored
 
-**Batch Aggregation (Every 15 minutes):**
-- `🔄 [Cron] Starting batch aggregation...` - Cron job started
-- `📊 [Cron] Found 5 customers with events in completed daily period (20260113)` - Found customers/events in completed period
-- `✅ [Cron] Created daily aggregation for cust_456 (20260113)` - Period aggregated
-- `📤 [Cron] Queued webhook to https://...` - Webhook queued for completed period
-- `✅ [Cron] Completed batch aggregation: 12 aggregations created for 5 customers` - Cron job finished
+**Aggregation Trigger (Manual):**
+- `🔄 [Trigger] Creating aggregation jobs...` - Trigger endpoint called
+- `📊 [Trigger] Found 5 unique customers from 1543 events` - Scanned events
+- `📝 [Trigger] Created 15 new, updated 3 existing job records` - Job records created
+- `✅ [Trigger] Bulk enqueued 18 jobs for 5 customers` - Jobs queued via `enqueueFromQuery`
 
-**Manual Aggregation Trigger:**
-- `✅ [Manual] Created hourly aggregation for cust_456 (2026011315)` - Aggregation created
-- `📤 [Manual] Queued webhook to https://... for completed period` - Webhook queued for completed period
-- `⏭️  [Manual] Skipping webhook for incomplete hourly period (2026011315)` - Webhook not sent (period incomplete)
+**Batch Aggregation (Cron - Every 15 minutes):**
+- `🔄 [Cron] Checking for completed periods to aggregate...` - Cron job started
+- `⏭️ [Cron] No events found for completed daily period 20260113, skipping` - No events in period
+- `✅ [Cron] Queued 12 jobs for completed periods (10 new, 2 updated)` - Jobs created and queued
+- `✅ [Cron] No pending jobs to enqueue (all completed periods already aggregated)` - Nothing to process
+
+**Worker Processing:**
+- `🔄 [Worker] Processing daily aggregation for cust_456 (20260113)` - Worker processing job
+- `✅ [Worker] Created daily aggregation for cust_456 (20260113)` - New aggregation created
+- `🔄 [Worker] Updated daily aggregation for cust_456 (20260113)` - Existing aggregation updated
+- `📤 [Worker] Queued webhook for cust_456 daily` - Webhook queued for completed period
+- `⏭️ [Worker] Skipping daily for cust_456 (20260113) - already being processed` - Lock held by another worker
+- `⏭️ [Worker] Skipping daily for cust_456 (20260113) - already finalized` - Already aggregated
+- `⏭️ [Worker] No data for daily aggregation of cust_456 (20260113)` - No events in period
 
 **Webhook Delivery:**
 - `✅ [Webhook] Delivered aggregation agg_123 to https://...` - Webhook delivered successfully
@@ -1172,8 +1235,11 @@ Monitor these log messages:
 - `❌ [Webhook] Delivery failed: ...` - Webhook delivery failed (will retry)
 
 **Errors:**
-- `❌ [Worker] Error updating daily aggregate for cust_789: ...` - Aggregate update failed (will retry)
-- `❌ [Cron] Error finalizing aggregation agg_xyz: ...` - Period finalization failed
+- `❌ [Worker] Error aggregating api.calls for cust_456: ...` - Single event type aggregation failed
+- `❌ [Worker] Fatal error for cust_456 daily: ...` - Worker job failed
+- `❌ [Worker] Failed to release lock: ...` - Lock cleanup failed
+- `❌ [Trigger] Error queueing jobs: ...` - Trigger endpoint failed
+- `❌ [Cron] Fatal error: ...` - Cron job failed
 
 ### View Logs
 
@@ -1214,13 +1280,21 @@ Returns service information and API documentation links.
    coho logs --follow
    ```
 
-5. Note: The cron job only processes completed periods. Hourly periods complete at the top of each hour, daily periods at midnight UTC, etc. Events from incomplete periods won't be aggregated until the period completes.
+5. Note: The cron job only processes **completed periods**:
+   - Hourly: aggregates the previous hour (e.g., at 11:15, aggregates 10:00-10:59)
+   - Daily: aggregates yesterday
+   - Weekly: aggregates last week (Monday-Sunday)
+   - Monthly: aggregates last month
 
-6. The cron job looks back multiple days to catch any missed aggregations:
-   - Hourly: up to 7 days back
-   - Daily: up to 30 days back
-   - Weekly: up to 60 days back
-   - Monthly: up to 90 days back
+6. Check pending jobs collection for stuck jobs:
+   ```bash
+   curl "$BASE_URL/pending_agg_jobs" -H "x-apikey: $API_KEY"
+   ```
+
+7. For immediate testing, use the manual trigger (processes all periods including current):
+   ```bash
+   curl -X POST $BASE_URL/aggregations/trigger -H "x-apikey: $API_KEY"
+   ```
 
 ### Webhooks not being delivered
 
@@ -1235,26 +1309,39 @@ Returns service information and API documentation links.
 
 ### Duplicate aggregations
 
-The system prevents duplicates using the `aggregation_state` collection. If you see duplicates:
+The system prevents duplicates using multiple mechanisms:
 
-1. Check for multiple cron job instances (shouldn't happen)
-2. Verify `aggregation_state` documents exist
-3. Contact support if issue persists
+1. **Distributed locking** - Workers acquire a lock (2-minute TTL) before processing
+2. **Upsert pattern** - Job records use upsert to prevent duplicate entries
+3. **Deterministic IDs** - Aggregation IDs follow `{customerId}_{period}_{periodKey}` format
+
+If you see duplicates:
+
+1. Check for lock-related errors in logs
+2. Verify the `pending_agg_jobs` collection doesn't have stale entries
+3. Clear the `aggregation-locks` keyspace if needed:
+   ```bash
+   # Via Codehooks dashboard or API
+   ```
+4. Contact support if issue persists
 
 ## Performance
 
 ### Scalability
 
 - **Events**: Handles millions of events via queue-based processing
-- **Aggregation**: Streaming architecture processes events without loading all into memory
-- **Customers**: Scales to thousands of customers (each processed independently)
+- **Aggregation**: Uses `enqueueFromQuery` for server-side bulk enqueueing (ultra-fast)
+- **Memory**: Streams events with field projection instead of loading all into memory
+- **Customers**: Scales to thousands of customers (each processed via dedicated worker job)
+- **Concurrency**: Distributed locking prevents duplicate processing
 
 ### Optimization Tips
 
 1. **Use appropriate periods**: Don't aggregate hourly if you only bill monthly
 2. **Limit event types**: Only track metrics you need
 3. **Archive old events**: Remove events older than your longest period
-4. **Monitor queue depth**: Ensure events are being processed quickly
+4. **Monitor worker queue**: Check `pending_agg_jobs` collection for backlog
+5. **Batch size**: Use `/usagebatch` endpoint for high-volume ingestion (up to 1000 events per request)
 
 ## License
 

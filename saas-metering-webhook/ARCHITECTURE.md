@@ -1,25 +1,26 @@
-# SaaS Metering System v2.0 - Architecture
+# SaaS Metering System v3.0 - Architecture
 
 ## Overview
 
-This is a **batch-based metering system** that captures usage events and creates periodic aggregations. It uses a simple, reliable approach with manual JavaScript aggregation instead of complex real-time atomic updates.
+This is a **queue-based metering system** that captures usage events and creates periodic aggregations using distributed workers. It uses `enqueueFromQuery` for scalable bulk job processing with distributed locking for idempotency.
 
 ## Key Design Decisions
 
-### Why Batch-Based?
+### Why Queue-Based?
 
-The previous real-time approach had issues with:
-- Race conditions in document initialization
-- Complex atomic update logic for different operations
-- Codehooks-specific limitations (`$setOnInsert` not supported)
-- Difficult to debug and maintain
+The previous batch approach had scalability issues:
+- Loading all events into memory with `.toArray()`
+- Sequential processing of customers
+- No parallelism or fault tolerance
+- Lookback windows required repeated processing of same data
 
-The batch approach is:
-- ✅ Simple and reliable
-- ✅ Easy to understand and debug
-- ✅ Uses standard JavaScript array operations
-- ✅ No race conditions or complex atomic updates
-- ✅ Cron-based processing ensures eventual consistency
+The queue-based approach is:
+- ✅ **Scalable**: Uses `enqueueFromQuery` for server-side bulk enqueueing
+- ✅ **Memory-efficient**: Streams events with field projection
+- ✅ **Parallel**: Worker processes jobs concurrently
+- ✅ **Idempotent**: Distributed locking prevents duplicate processing
+- ✅ **Fault-tolerant**: Failed jobs can be retried
+- ✅ **Observable**: Job records track processing state
 
 ## System Architecture
 
@@ -50,31 +51,68 @@ Events are stored immediately with time period indexing:
 - No need for complex date range queries
 - ISO week calculation for accurate weekly aggregations
 
-### 2. Aggregation Processing
+### 2. Job Creation & Enqueueing
+
+#### Job Records (`pending_agg_jobs` collection)
+
+```javascript
+{
+  _id: "cust_123_daily_20260113",  // Deterministic ID for dedup
+  customerId: "cust_123",
+  periodType: "daily",
+  periodKey: "20260113",
+  periodStart: "2026-01-13T00:00:00.000Z",
+  periodEnd: "2026-01-13T23:59:59.999Z",
+  status: "pending",  // pending → queued → (removed after processing)
+  createdAt: "2026-01-14T00:15:00.000Z",
+  source: "cron"  // or "trigger"
+}
+```
 
 #### Automatic (Cron-based)
 - Runs every 15 minutes via `app.job('*/15 * * * *')`
-- Finds events within configurable lookback windows:
-  - Hourly: 7 days
-  - Daily: 30 days
-  - Weekly: 60 days
-  - Monthly: 90 days
-  - Yearly: 365 days
-- Groups events by period key and identifies completed periods
-- **Only processes completed periods** (periodEnd < now)
-- Creates aggregation documents in `aggregations` collection
-- Queues webhooks for all completed aggregations
-- **Catches up on missed periods** - Processes all completed periods within the lookback window, not just the most recent one
+- Calculates **previous completed period** using `calculateCompletedPeriodBounds()`:
+  - Hourly: previous hour (e.g., at 11:15, processes 10:00-10:59)
+  - Daily: yesterday
+  - Weekly: last week (Monday-Sunday)
+  - Monthly: last month
+- Streams events with field projection to find unique customers (memory-efficient)
+- Creates job records with upsert (prevents duplicates)
+- Uses `enqueueFromQuery` for ultra-fast bulk enqueueing
+- Marks jobs as "queued" after enqueueing
 
 #### Manual (For Testing & Real-time Dashboards)
 - Endpoint: `POST /aggregations/trigger`
-- **Processes all periods** (including incomplete ones)
+- Returns **202 Accepted** (async processing)
+- **Processes all periods** (including current/incomplete ones)
+- Uses same queue-based architecture as cron
 - **Webhooks only queued for completed periods** (periodEnd < now)
-- Incomplete periods are aggregated but don't trigger webhooks
-- Useful for:
-  - Testing aggregation logic without waiting for periods to complete
-  - Viewing real-time metrics in dashboards via GET /aggregations
-  - Forcing immediate aggregation after bulk imports
+
+### 3. Worker Processing (`process-aggregation-job`)
+
+#### Distributed Locking
+
+```javascript
+const lockKey = `agg_lock_${aggregationId}`;
+
+// Check for existing lock
+const existingLock = await conn.get(lockKey, { keyspace: 'aggregation-locks' });
+if (existingLock) {
+  console.log('Skipping - already being processed');
+  return res.end();
+}
+
+// Acquire lock with 2-minute TTL
+await conn.set(lockKey, now.toISOString(), {
+  keyspace: 'aggregation-locks',
+  ttl: 2 * 60 * 1000
+});
+
+// ... process aggregation ...
+
+// Release lock
+await conn.del(lockKey, { keyspace: 'aggregation-locks' });
+```
 
 #### Aggregation Logic
 
@@ -99,15 +137,25 @@ switch (op) {
     value = events.length;
     break;
   case 'first':
-    // Sort by receivedAt and take first
+    // Sort by receivedAt ascending and take first
     break;
   case 'last':
-    // Sort by receivedAt and take last
+    // Sort by receivedAt descending and take first
     break;
 }
 ```
 
-### 3. Aggregation Storage
+#### Worker Flow
+
+1. Extract job details from payload (comes from `enqueueFromQuery`)
+2. Acquire distributed lock (skip if already held)
+3. Check if completed period already aggregated (skip if so)
+4. Aggregate each event type using configured operation
+5. Insert or update aggregation document
+6. Queue webhook delivery (only for completed periods)
+7. Release lock and remove job record
+
+### 4. Aggregation Storage
 
 ```javascript
 {
@@ -138,7 +186,7 @@ switch (op) {
 }
 ```
 
-### 4. Webhook Delivery
+### 5. Webhook Delivery
 
 - **Only triggered for completed periods** (periodEnd < now)
 - Queue-based async delivery via `conn.enqueue()`
@@ -154,6 +202,20 @@ switch (op) {
 POST /usage/:eventType
 Body: { customerId, value, metadata? }
 Response: 201 { message, eventType, customerId }
+Response: 422 { error, details } (validation errors)
+Response: 503 { error } (no event types configured)
+```
+
+### Batch Event Capture
+```
+POST /usagebatch
+Body: [{ eventType, customerId, value, metadata? }, ...]
+Limit: 1000 events max
+Response: 201 { message, count }
+Response: 207 { message, successCount, failedCount } (partial success)
+Response: 413 { error, received, maxAllowed } (batch too large)
+Response: 422 { error, validationErrors, validCount, invalidCount }
+Response: 503 { error } (no event types configured)
 ```
 
 ### Query Events
@@ -166,10 +228,10 @@ GET /events?customerId=xxx&eventType=yyy&from=timestamp&to=timestamp&limit=100
 GET /aggregations?customerId=xxx&period=daily&from=timestamp&to=timestamp&limit=100
 ```
 
-### Manual Trigger (Testing)
+### Manual Trigger (Queue-based)
 ```
 POST /aggregations/trigger
-Response: { message, aggregationsCreated }
+Response: 202 { message, jobsCreated, jobsUpdated, jobsQueued, customersFound, periodsConfigured, eventsScanned }
 ```
 
 ### Configuration
@@ -226,11 +288,22 @@ The test script:
 
 ### ✅ Working
 - Event storage with time period fields
+- Enhanced input validation with proper HTTP status codes (422, 413, 503, 207)
+- Batch event capture with 1000 event limit
+- Queue-based aggregation using `enqueueFromQuery`
+- Worker-based processing with distributed locking
+- Cron job processes only completed periods (previous hour/day/week/month)
 - Manual JavaScript aggregation (sum, avg, min, max, count, first, last)
-- Cron job execution every 15 minutes
-- Batch processing logic with lookback windows
 - Webhook delivery worker with HMAC signing
 - Configuration system (file-based)
+
+### Collections Used
+- `events` - Raw usage events with time period indexing
+- `aggregations` - Completed aggregations with webhook status
+- `pending_agg_jobs` - Job tracking for queue-based processing
+
+### Key-Value Stores
+- `aggregation-locks` keyspace - Distributed locks with 2-minute TTL
 
 ## Performance Considerations
 
@@ -259,16 +332,15 @@ Create indexes on frequently queried fields:
 For high-volume scenarios:
 
 1. **Event Storage**: Events scale linearly - consider retention policies
-2. **Aggregation**: Batch processing scales well, with configurable lookback windows:
-   - Hourly: 7 days (processes last 168 completed hours)
-   - Daily: 30 days (processes last 30 completed days)
-   - Weekly: 60 days (processes last ~8 completed weeks)
-   - Monthly: 90 days (processes last 3 completed months)
-   - Adjust these values in code if needed for your use case
-   - Processing customers in parallel (if Codehooks supports)
-   - Archiving old events after aggregation
-
-3. **Webhook Delivery**: Queue-based with retry - scales well
+2. **Job Enqueueing**: Uses `enqueueFromQuery` for server-side bulk enqueueing (ultra-fast, handles thousands of jobs)
+3. **Worker Processing**:
+   - Distributed locking prevents duplicate processing
+   - Jobs processed independently (can be parallelized)
+   - Failed jobs can be retried
+4. **Memory Efficiency**:
+   - Streams events with field projection instead of loading all into memory
+   - Job records cleaned up after processing
+5. **Webhook Delivery**: Queue-based with retry - scales well
 
 ## Future Enhancements
 
@@ -278,12 +350,18 @@ For high-volume scenarios:
 4. **Alerts**: Threshold-based notifications
 5. **Analytics**: Trend analysis and forecasting
 
-## Migration from v1.0
+## Migration from v2.0
 
-The v1.0 (real-time atomic update) approach had fundamental issues. V2.0 is a complete rewrite with:
-- Simpler architecture
-- More reliable aggregation
-- Better testability
-- Easier maintenance
+The v2.0 (synchronous batch processing) approach had scalability limitations. V3.0 improves with:
+- Queue-based processing using `enqueueFromQuery`
+- Worker-based aggregation with distributed locking
+- Memory-efficient streaming instead of loading all events
+- Cron processes only the previous completed period (no lookback windows)
+- Enhanced validation with proper HTTP status codes (422, 413, 503, 207)
+- Batch size limit (1000 events)
 
-No migration path needed - just redeploy and start fresh.
+**Migration steps:**
+1. Deploy the new version
+2. The new `pending_agg_jobs` collection will be created automatically
+3. Existing aggregations remain intact
+4. Old lookback-based aggregations won't re-run (cron now processes only previous period)
