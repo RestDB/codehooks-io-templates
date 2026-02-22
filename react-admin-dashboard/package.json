@@ -1,0 +1,12 @@
+{
+  "name": "react-admin-dashboard",
+  "version": "1.0.0",
+  "description": "Data-driven admin dashboard with React frontend and Codehooks backend",
+  "private": true,
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "deploy": "cd frontend && npm run build && cd ../backend && coho deploy",
+    "install:all": "cd frontend && npm install && cd ../backend && npm install"
+  }
+}

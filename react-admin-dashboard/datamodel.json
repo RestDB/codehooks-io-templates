@@ -1,0 +1,193 @@
+{
+  "app": {
+    "title": "Admin Panel",
+    "subtitle": "Master Detail",
+    "icon": "zap"
+  },
+  "collections": {
+    "customers": {
+      "label": "Customers",
+      "icon": "users",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Full Name",
+            "minLength": 1
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email Address"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "company": {
+            "type": "string",
+            "title": "Company"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "inactive", "lead"],
+            "title": "Status",
+            "default": "active"
+          },
+          "avatar": {
+            "type": "string",
+            "format": "image",
+            "title": "Avatar",
+            "x-accept": ".jpg,.jpeg,.png,.webp"
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes",
+            "format": "textarea"
+          }
+        },
+        "required": ["name", "email"]
+      },
+      "listFields": ["name", "email", "company", "status"],
+      "searchFields": ["name", "email", "company"],
+      "defaultSort": { "name": 1 },
+      "relatedCollections": [
+        {
+          "collection": "orders",
+          "foreignKey": "customer._id",
+          "title": "Orders",
+          "displayFields": ["orderNumber", "total", "status", "orderDate"],
+          "allowCreate": true,
+          "sort": { "orderDate": -1 },
+          "filters": [
+            { "field": "status", "value": "pending", "label": "Pending", "active": false },
+            { "field": "status", "value": "processing", "label": "Processing", "active": false },
+            { "field": "status", "value": "delivered", "label": "Exclude Delivered", "exclude": true }
+          ]
+        }
+      ]
+    },
+    "products": {
+      "label": "Products",
+      "icon": "package",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Product Name",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "format": "textarea"
+          },
+          "price": {
+            "type": "number",
+            "title": "Price",
+            "minimum": 0
+          },
+          "category": {
+            "type": "string",
+            "enum": ["electronics", "clothing", "food", "services"],
+            "title": "Category"
+          },
+          "inStock": {
+            "type": "boolean",
+            "title": "In Stock",
+            "default": true
+          },
+          "sku": {
+            "type": "string",
+            "title": "SKU"
+          },
+          "image": {
+            "type": "string",
+            "format": "image",
+            "title": "Product Image"
+          },
+          "documents": {
+            "type": "array",
+            "format": "file",
+            "title": "Product Documents",
+            "items": { "type": "string" },
+            "x-accept": ".pdf,.doc,.docx,.xls,.xlsx"
+          }
+        },
+        "required": ["name", "price"]
+      },
+      "listFields": ["name", "price", "category", "inStock"],
+      "searchFields": ["name", "sku"],
+      "defaultSort": { "name": 1 },
+      "relatedCollections": [
+        {
+          "collection": "orders",
+          "foreignKey": "product._id",
+          "title": "Orders",
+          "displayFields": ["orderNumber", "customer", "total", "status", "orderDate"],
+          "allowCreate": true,
+          "sort": { "orderDate": -1 },
+          "filters": [
+            { "field": "status", "value": "pending", "label": "Pending" },
+            { "field": "status", "value": "delivered", "label": "Exclude Delivered", "exclude": true }
+          ]
+        }
+      ]
+    },
+    "orders": {
+      "label": "Orders",
+      "icon": "shopping-cart",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "orderNumber": {
+            "type": "string",
+            "title": "Order #"
+          },
+          "customer": {
+            "type": "object",
+            "title": "Customer",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": {
+              "collection": "customers",
+              "displayField": "name",
+              "searchFields": ["name", "email", "company"]
+            }
+          },
+          "product": {
+            "type": "object",
+            "title": "Product",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": {
+              "collection": "products",
+              "displayField": "name",
+              "searchFields": ["name", "sku"]
+            }
+          },
+          "total": {
+            "type": "number",
+            "title": "Total",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "processing", "shipped", "delivered", "cancelled"],
+            "title": "Status",
+            "default": "pending"
+          },
+          "orderDate": {
+            "type": "string",
+            "format": "date",
+            "title": "Order Date"
+          }
+        },
+        "required": ["orderNumber", "customer"]
+      },
+      "listFields": ["orderNumber", "customer", "product", "total", "status", "orderDate"],
+      "searchFields": ["orderNumber"],
+      "defaultSort": { "orderDate": -1 }
+    }
+  }
+}

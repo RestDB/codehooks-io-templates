@@ -63,6 +63,10 @@
       {
         "name": "saas-metering-webhook",
         "description": "Usage metering system with multi-tenant event capture, batch aggregation, and HMAC-signed webhook delivery"
+      },
+      {
+        "name": "react-admin-dashboard",
+        "description": "Data-driven admin dashboard with React frontend, dynamic CRUD from a JSON datamodel, role-based auth, and a visual datamodel editor"
       }
     ]
   }

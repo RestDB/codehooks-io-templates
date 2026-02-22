@@ -1,0 +1,15 @@
+{
+  "name": "master-detail-backend",
+  "version": "1.0.0",
+  "description": "Master-detail admin backend",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "deploy": "coho deploy"
+  },
+  "dependencies": {
+    "ajv": "latest",
+    "codehooks-js": "latest",
+    "jsonwebtoken": "latest"
+  }
+}
