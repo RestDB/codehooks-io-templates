@@ -110,6 +110,8 @@ Update `frontend/vite.config.js` with your project URL:
 const BACKEND_URL = 'https://YOUR_PROJECT.api.codehooks.io/dev';
 ```
 
+> **Note:** The `BACKEND_URL` (including the space path, e.g. `/dev`) is only used by the Vite dev server to proxy API calls during local development. It is not used in production.
+
 #### 6. Build and deploy
 
 ```bash
@@ -124,6 +126,19 @@ Navigate to your project URL. Default credentials:
 - **User**: `user` / `user`
 
 > On first deploy, the app automatically seeds these two users if the `system_users` collection is empty.
+
+### URL Structure
+
+Codehooks.io provides two types of URLs for your project:
+
+| URL | Purpose |
+|-----|---------|
+| `https://YOUR_PROJECT.codehooks.io` | **App URL** — Load the React frontend here |
+| `https://YOUR_PROJECT.api.codehooks.io/dev` | **API URL** — Used for API calls, includes the space path (`/dev`, `/prod`, etc.) |
+
+The React app must always be loaded from the **app URL** (`YOUR_PROJECT.codehooks.io`) — this is the auto-provisioned URL without the space sub-path. The full API URL with the space path is only used for backend API and auth requests, which are handled automatically by the app.
+
+**Custom domains** are supported by Codehooks.io. Point your own domain to the app URL and an automatic Let's Encrypt TLS certificate will be provisioned. The same rule applies: serve the frontend from your custom domain, and the app handles API routing internally.
 
 ### Development
 
