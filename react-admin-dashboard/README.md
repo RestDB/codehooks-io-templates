@@ -6,7 +6,7 @@ A complete, data-driven admin dashboard built with React and [Codehooks.io](http
 
 Building admin dashboards from scratch is repetitive. You end up writing the same CRUD forms, list views, auth flows, and user management over and over. This template eliminates that boilerplate — you describe your data model in a single JSON file, and the app generates everything dynamically: collections, forms, search, filters, and relationships.
 
-It's designed as a starting point for real projects. The datamodel is editable at runtime through a visual editor or JSON, so you can iterate without redeploying. Authentication and role-based access control are built in, with a clean separation that makes it easy to swap in Clerk.com or another auth provider later.
+It's designed as a starting point for real projects. The datamodel is editable at runtime through a visual editor or JSON, so you can iterate without redeploying. Want to build something completely new? Copy the built-in prompt to your favorite AI agent, describe your system, paste the result back — and your new application is live in seconds. Authentication and role-based access control are built in, with a clean separation that makes it easy to swap in Clerk.com or another auth provider later.
 
 ## What
 
@@ -15,6 +15,7 @@ A monorepo with a React frontend and a Codehooks.io serverless backend that work
 - **Dynamic CRUD** — Collections, list views, detail panels, and forms generated from `datamodel.json`
 - **Authentication** — JWT-based login with cookie sessions, two roles (admin/user), user management UI
 - **Visual Datamodel Editor** — Add/remove collections and fields, configure relationships, edit as JSON with syntax highlighting, version history with rollback
+- **AI-Powered Design** — Copy the built-in prompt to ChatGPT, Claude, or any AI agent, describe what you need, paste the generated datamodel JSON back into the editor, hit Save — and your new app is live instantly
 - **Lookup Fields** — Reference fields across collections with live search (single and multi-select)
 - **Related Collections** — Show linked records with configurable filters and inline create
 - **Activity Log** — Audit trail for all create, update, and delete operations
@@ -240,6 +241,18 @@ Show linked records in the detail view:
   ]
 }
 ```
+
+## Design with AI
+
+The Datamodel Editor includes a **Copy Prompt** button that generates a context-rich prompt describing the current datamodel format, field types, and conventions. Use it with any AI agent to design new applications or modify existing ones:
+
+1. Open the Datamodel Editor and click **Copy Prompt**
+2. Paste it into ChatGPT, Claude, Cursor, or any AI tool
+3. Describe what you want: *"Build me a project management app with tasks, projects, and team members"*
+4. Copy the generated JSON datamodel from the AI response
+5. Paste it into the JSON tab in the editor and click **Save**
+
+Your new collections, fields, relationships, and UI are live instantly — no code changes, no redeployment. Combined with version history, you can experiment freely and roll back anytime.
 
 ## Roles and Permissions
 
