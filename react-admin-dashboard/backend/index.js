@@ -51,6 +51,15 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// Clear token cookie - send both Secure and non-Secure variants
+// to ensure stale cookies from either configuration get removed
+function clearTokenCookie(res) {
+  res.set('Set-Cookie', [
+    'token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    'token=; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=0'
+  ]);
+}
+
 // ---- 1. Public Endpoints (bypass auth) ----
 app.auth('/auth/*', (req, res, next) => next());
 app.auth('/api/app', (req, res, next) => next());
@@ -65,6 +74,7 @@ app.auth('/api/*', (req, res, next) => {
 
   if (!token) {
     console.log(`AUTH DENIED ${req.method} ${req.originalUrl || req.url} reason=missing_token`);
+    clearTokenCookie(res);
     res.status(401).json({ error: 'Missing token' });
     return res.end();
   }
@@ -77,6 +87,7 @@ app.auth('/api/*', (req, res, next) => {
     next();
   } catch (err) {
     console.log(`AUTH DENIED ${req.method} ${req.originalUrl || req.url} reason=invalid_token`);
+    clearTokenCookie(res);
     res.status(401).json({ error: 'Invalid token' });
     return res.end();
   }
@@ -95,9 +106,11 @@ app.post('/auth/login',
 
   const user = await findUserByUsername(username);
   if (!user || !verifyPassword(password, user.password)) {
+    clearTokenCookie(res);
     return res.status(401).json({ error: 'Invalid username or password' });
   }
   if (user.active === false) {
+    clearTokenCookie(res);
     return res.status(401).json({ error: 'Account is deactivated' });
   }
 
@@ -130,6 +143,7 @@ app.get('/auth/me',
     const decoded = jwt.verify(token, JWT_SECRET);
     res.json({ username: decoded.username, role: decoded.role });
   } catch {
+    clearTokenCookie(res);
     res.status(401).json({ error: 'Invalid token' });
   }
 });
@@ -141,7 +155,7 @@ app.get('/auth/logout',
     responses: { 200: { description: 'Logged out successfully' } }
   }),
   (req, res) => {
-  res.set('Set-Cookie', 'token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+  clearTokenCookie(res);
   res.json({ ok: true });
 });
 
