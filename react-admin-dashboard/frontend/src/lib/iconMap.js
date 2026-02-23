@@ -30,6 +30,9 @@ import {
   Shield,
   BarChart3,
   CircleDollarSign,
+  FolderKanban,
+  Flag,
+  CheckSquare,
 } from 'lucide-react';
 
 const iconMap = {
@@ -64,6 +67,9 @@ const iconMap = {
   'shield': Shield,
   'bar-chart': BarChart3,
   'dollar-sign': CircleDollarSign,
+  'folder-kanban': FolderKanban,
+  'flag': Flag,
+  'check-square': CheckSquare,
 };
 
 export default iconMap;

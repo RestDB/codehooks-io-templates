@@ -24,6 +24,7 @@ import {
   Code,
   DatabaseZap,
   Users,
+  List,
 } from 'lucide-react';
 import iconMap from '../lib/iconMap.js';
 
