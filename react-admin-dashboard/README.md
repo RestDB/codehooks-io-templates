@@ -239,6 +239,7 @@ Reference records from other collections:
   "customer": {
     "type": "object",
     "title": "Customer",
+    "properties": { "_id": { "type": "string" } },
     "x-lookup": {
       "collection": "customers",
       "displayField": "name",
