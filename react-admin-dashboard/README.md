@@ -2,6 +2,14 @@
 
 A complete, data-driven admin dashboard built with React and [Codehooks.io](https://codehooks.io). Define your data model once in JSON, and get a full admin interface with CRUD, authentication, and a visual editor — ready to deploy in minutes.
 
+| Collection List View | Detail View |
+|---|---|
+| ![List View](https://codehooks.io/img/react-admin-dashboard/list-view.webp) | ![Detail View](https://codehooks.io/img/react-admin-dashboard/detail-view.webp) |
+
+| Visual Datamodel Editor | Data Relations |
+|---|---|
+| ![Datamodel Editor](https://codehooks.io/img/react-admin-dashboard/datamodel-editor.webp) | ![Data Relations](https://codehooks.io/img/react-admin-dashboard/data-relations.webp) |
+
 ## Why
 
 Building admin dashboards from scratch is repetitive. You end up writing the same CRUD forms, list views, auth flows, and user management over and over. This template eliminates that boilerplate — you describe your data model in a single JSON file, and the app generates everything dynamically: collections, forms, search, filters, and relationships.
