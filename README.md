@@ -32,6 +32,17 @@ coho deploy
 
 ## Available Templates
 
+### Full-Stack Application Templates
+
+#### React Admin Dashboard
+Complete, data-driven admin dashboard with React, Tailwind CSS, and shadcn/ui. Define your data model in JSON — or prompt an AI to generate it — and get a full admin app with CRUD, authentication, lookup fields, relations, file uploads, activity log, visual datamodel editor, and OpenAPI/Swagger docs. Designed for rapid prototyping and production use.
+
+[Documentation](react-admin-dashboard/README.md) | [Product page](https://codehooks.io/react-admin-dashboard)
+
+```bash
+coho create myadmin --template react-admin-dashboard
+```
+
 ### Backend & API Templates
 
 #### CRUD API Backend
