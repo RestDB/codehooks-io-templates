@@ -20,7 +20,7 @@ It's designed as a starting point for real projects. The datamodel is editable a
 
 A monorepo with a React frontend and a Codehooks.io serverless backend that work together to deliver:
 
-- **Dynamic CRUD** — Collections, list views, detail panels, and forms generated from `datamodel.json`
+- **Dynamic CRUD** — Collections, list views, detail panels, and forms generated from `datamodel.json`, with a full REST API and interactive OpenAPI/Swagger documentation at `https://<YOUR_APP_URL>.codehooks.io/docs`
 - **Authentication** — JWT-based login with cookie sessions, two roles (admin/user), user management UI
 - **Visual Datamodel Editor** — Add/remove collections and fields, configure relationships, edit as JSON with syntax highlighting, version history with rollback
 - **AI-Powered Design** — Copy the built-in prompt to ChatGPT, Claude, or any AI agent, describe what you need, paste the generated datamodel JSON back into the editor, hit Save — and your new app is live instantly
@@ -306,6 +306,8 @@ Your new collections, fields, relationships, and UI are live instantly — no co
 The sidebar dynamically hides admin sections for non-admin users. Direct URL access to admin pages redirects to the dashboard.
 
 ## API Reference
+
+The app includes a full CRUD REST API with interactive documentation. Open **API Docs** from the admin sidebar or navigate directly to `https://<YOUR_APP_URL>.codehooks.io/docs` to explore all endpoints via the built-in OpenAPI/Swagger UI.
 
 ### Public Endpoints
 
