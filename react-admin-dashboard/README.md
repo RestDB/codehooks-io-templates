@@ -183,6 +183,93 @@ This builds the frontend into `backend/dist/` and deploys everything to Codehook
 
 The `datamodel.json` file seeds the initial datamodel into the database on first deploy. After that, all changes are managed through the visual Datamodel Editor (admin only) or the JSON tab — stored in the database with full version history and rollback support. No redeployment needed.
 
+All datamodel updates (via the editor or `PUT /api/datamodel`) are validated against the master schema defined in `backend/datamodel-schema.js`. The structure below documents every property at each level.
+
+### Datamodel Schema Reference
+
+The top-level datamodel object:
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `app` | object | No | App-wide settings (title, subtitle, icon) |
+| `collections` | object | **Yes** | Map of collection definitions (at least one) |
+
+**`app`** object:
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `title` | string | No | App name shown in sidebar header |
+| `subtitle` | string | No | Subtitle shown below the title |
+| `icon` | string | No | [Lucide icon](https://lucide.dev/icons/) key for the app |
+
+**Each collection** (`collections.<name>`):
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `label` | string | **Yes** | Display name in the sidebar and UI |
+| `icon` | string | **Yes** | [Lucide icon](https://lucide.dev/icons/) key |
+| `schema` | object | **Yes** | JSON Schema defining the collection's fields |
+| `listFields` | string[] | **Yes** | Fields shown as columns in the list view (min 1) |
+| `searchFields` | string[] | **Yes** | Fields included in text search |
+| `defaultSort` | object | No | Default sort order, e.g. `{ "name": 1 }` |
+| `relatedCollections` | array | No | Reverse-lookup related records |
+
+**`schema`** object (per collection):
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `type` | string | **Yes** | Must be `"object"` |
+| `properties` | object | **Yes** | Field definitions (at least one) |
+| `required` | string[] | No | Fields that must be provided on create |
+
+**Each field** (`schema.properties.<name>`):
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `type` | string | **Yes** | `string`, `number`, `integer`, `boolean`, `object`, or `array` |
+| `title` | string | No | Display label in forms and list headers |
+| `format` | string | No | `email`, `date`, `textarea`, `image`, `file`, `uri` |
+| `enum` | string[] | No | Fixed list of allowed values (renders as dropdown) |
+| `default` | any | No | Default value for new records |
+| `minLength` | integer | No | Minimum string length |
+| `maxLength` | integer | No | Maximum string length |
+| `minimum` | number | No | Minimum numeric value |
+| `maximum` | number | No | Maximum numeric value |
+| `properties` | object | No | Sub-properties (required for `object` type lookups) |
+| `items` | object | No | Item schema (required for `array` type) |
+| `x-accept` | string | No | Accepted file extensions, e.g. `".jpg,.png,.webp"` |
+| `x-lookup` | object | No | Lookup configuration for reference fields |
+
+**`x-lookup`** object (for reference fields):
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `collection` | string | **Yes** | Target collection to search |
+| `displayField` | string or string[] | **Yes** | Field(s) to display from the referenced record |
+| `searchFields` | string[] | **Yes** | Fields to search when typing in the lookup input |
+
+**`relatedCollections[]`** items:
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `collection` | string | **Yes** | Collection that holds the related records |
+| `foreignKey` | string | **Yes** | Dot-path to the reference field, e.g. `"customer._id"` |
+| `title` | string | **Yes** | Section heading in the detail view |
+| `displayFields` | string[] | **Yes** | Columns shown in the related records table |
+| `sort` | object | No | Sort order, e.g. `{ "dueDate": 1 }` |
+| `allowCreate` | boolean | No | Show a "New" button to create related records |
+| `filters` | array | No | Predefined filter buttons |
+
+**`filters[]`** items (inside `relatedCollections`):
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `field` | string | **Yes** | Field to filter on |
+| `value` | any | **Yes** | Value to match |
+| `label` | string | **Yes** | Button label |
+| `exclude` | boolean | No | If `true`, filter excludes matching records |
+| `active` | boolean | No | Whether the filter is active by default |
+
 ### App Settings
 
 ```json
