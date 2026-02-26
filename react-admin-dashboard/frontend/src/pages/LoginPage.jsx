@@ -20,7 +20,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [appConfig, setAppConfig] = useState({ title: 'Admin Panel', subtitle: '' });
+  const [appConfig, setAppConfig] = useState(null);
 
   useEffect(() => {
     fetchAppConfig().then(setAppConfig);
@@ -43,8 +43,14 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-muted p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">{appConfig.title}</CardTitle>
-          {appConfig.subtitle && <CardDescription>{appConfig.subtitle}</CardDescription>}
+          {appConfig ? (
+            <>
+              <CardTitle className="text-2xl">{appConfig.title}</CardTitle>
+              {appConfig.subtitle && <CardDescription>{appConfig.subtitle}</CardDescription>}
+            </>
+          ) : (
+            <div className="h-9" />
+          )}
         </CardHeader>
         <CardContent>
           {error && (

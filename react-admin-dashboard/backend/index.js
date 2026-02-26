@@ -526,13 +526,13 @@ app.delete('/api/admin/activitylog',
   }
 });
 
-// ---- 9. Generic CRUD API (dynamic — works with any collection) ----
-app.get('/api/:collection', async (req, res) => {
-  if (PROTECTED_COLLECTIONS.includes(req.params.collection)) {
+// ---- 9. CRUD Handlers ----
+async function handleList(collectionName, req, res) {
+  if (PROTECTED_COLLECTIONS.includes(collectionName)) {
     return res.status(403).json({ error: 'This collection is not accessible via generic API' });
   }
   const user = getRequestUser(req).username;
-  console.log(`GET /api/${req.params.collection} user=${user} q=${req.query.q || '{}'} h=${req.query.h || '{}'}`);
+  console.log(`GET /api/${collectionName} user=${user} q=${req.query.q || '{}'} h=${req.query.h || '{}'}`);
   try {
     const conn = await Datastore.open();
     const query = req.query.q ? JSON.parse(req.query.q) : {};
@@ -542,123 +542,283 @@ app.get('/api/:collection', async (req, res) => {
     if (hints.$limit) options.limit = hints.$limit;
     if (hints.$offset) options.offset = hints.$offset;
     if (hints.$fields) options.hints = { $fields: hints.$fields };
-    const items = await conn.getMany(req.params.collection, query, options).toArray();
-    console.log(`GET /api/${req.params.collection} => ${items.length} items`);
+    const items = await conn.getMany(collectionName, query, options).toArray();
+    console.log(`GET /api/${collectionName} => ${items.length} items`);
     res.json(items);
   } catch (error) {
-    console.error(`GET /api/${req.params.collection} ERROR: ${error.message}`);
+    console.error(`GET /api/${collectionName} ERROR: ${error.message}`);
     res.status(500).json({ error: error.message });
   }
-});
+}
 
-app.get('/api/:collection/:id', async (req, res) => {
-  if (PROTECTED_COLLECTIONS.includes(req.params.collection)) {
+async function handleGetOne(collectionName, req, res) {
+  if (PROTECTED_COLLECTIONS.includes(collectionName)) {
     return res.status(403).json({ error: 'This collection is not accessible via generic API' });
   }
   const user = getRequestUser(req).username;
-  console.log(`GET /api/${req.params.collection}/${req.params.id} user=${user}`);
+  console.log(`GET /api/${collectionName}/${req.params.id} user=${user}`);
   try {
     const conn = await Datastore.open();
-    const doc = await conn.findOne(req.params.collection, req.params.id);
+    const doc = await conn.findOne(collectionName, req.params.id);
     res.json(doc);
   } catch (error) {
-    console.error(`GET /api/${req.params.collection}/${req.params.id} NOT FOUND`);
+    console.error(`GET /api/${collectionName}/${req.params.id} NOT FOUND`);
     res.status(404).json({ error: 'Document not found' });
   }
-});
+}
 
-app.post('/api/:collection', async (req, res) => {
-  if (PROTECTED_COLLECTIONS.includes(req.params.collection)) {
+async function handleCreate(collectionName, req, res) {
+  if (PROTECTED_COLLECTIONS.includes(collectionName)) {
     return res.status(403).json({ error: 'This collection is not accessible via generic API' });
   }
   const user = getRequestUser(req).username;
-  console.log(`POST /api/${req.params.collection} user=${user} body=${JSON.stringify(req.body)}`);
+  console.log(`POST /api/${collectionName} user=${user} body=${JSON.stringify(req.body)}`);
   try {
-    const errors = await validateBody(req.params.collection, req.body);
+    const errors = await validateBody(collectionName, req.body);
     if (errors) {
-      console.log(`POST /api/${req.params.collection} VALIDATION FAILED: ${JSON.stringify(errors)}`);
+      console.log(`POST /api/${collectionName} VALIDATION FAILED: ${JSON.stringify(errors)}`);
       return res.status(400).json(errors);
     }
     const conn = await Datastore.open();
-    const doc = await conn.insertOne(req.params.collection, req.body);
-    console.log(`POST /api/${req.params.collection} => created ${doc._id}`);
-    if (req.params.collection !== 'activitylog') {
-      const summary = buildSummary({ user, action: 'created', collection: req.params.collection, doc });
-      logActivity({ user, action: 'created', collection: req.params.collection, documentId: doc._id, summary, changes: req.body });
+    const doc = await conn.insertOne(collectionName, req.body);
+    console.log(`POST /api/${collectionName} => created ${doc._id}`);
+    if (collectionName !== 'activitylog') {
+      const summary = buildSummary({ user, action: 'created', collection: collectionName, doc });
+      logActivity({ user, action: 'created', collection: collectionName, documentId: doc._id, summary, changes: req.body });
     }
     res.json(doc);
   } catch (error) {
-    console.error(`POST /api/${req.params.collection} ERROR: ${error.message}`);
+    console.error(`POST /api/${collectionName} ERROR: ${error.message}`);
     res.status(500).json({ error: error.message });
   }
-});
+}
 
-app.patch('/api/:collection/:id', async (req, res) => {
-  if (PROTECTED_COLLECTIONS.includes(req.params.collection)) {
+async function handleUpdate(collectionName, req, res) {
+  if (PROTECTED_COLLECTIONS.includes(collectionName)) {
     return res.status(403).json({ error: 'This collection is not accessible via generic API' });
   }
   const user = getRequestUser(req).username;
-  console.log(`PATCH /api/${req.params.collection}/${req.params.id} user=${user} body=${JSON.stringify(req.body)}`);
+  console.log(`PATCH /api/${collectionName}/${req.params.id} user=${user} body=${JSON.stringify(req.body)}`);
   try {
-    const errors = await validateBody(req.params.collection, req.body, true);
+    const errors = await validateBody(collectionName, req.body, true);
     if (errors) {
-      console.log(`PATCH /api/${req.params.collection}/${req.params.id} VALIDATION FAILED: ${JSON.stringify(errors)}`);
+      console.log(`PATCH /api/${collectionName}/${req.params.id} VALIDATION FAILED: ${JSON.stringify(errors)}`);
       return res.status(400).json(errors);
     }
     const conn = await Datastore.open();
     // Skip $set if body is empty — Codehooks rejects $set: {}
     if (!req.body || Object.keys(req.body).length === 0) {
-      console.log(`PATCH /api/${req.params.collection}/${req.params.id} => no changes`);
-      const doc = await conn.findOne(req.params.collection, req.params.id);
+      console.log(`PATCH /api/${collectionName}/${req.params.id} => no changes`);
+      const doc = await conn.findOne(collectionName, req.params.id);
       return res.json(doc);
     }
-    const doc = await conn.updateOne(req.params.collection, req.params.id, { $set: req.body });
-    console.log(`PATCH /api/${req.params.collection}/${req.params.id} => updated`);
-    if (req.params.collection !== 'activitylog') {
-      const summary = buildSummary({ user, action: 'updated', collection: req.params.collection, doc, changes: req.body });
-      logActivity({ user, action: 'updated', collection: req.params.collection, documentId: req.params.id, summary, changes: req.body });
+    const doc = await conn.updateOne(collectionName, req.params.id, { $set: req.body });
+    console.log(`PATCH /api/${collectionName}/${req.params.id} => updated`);
+    if (collectionName !== 'activitylog') {
+      const summary = buildSummary({ user, action: 'updated', collection: collectionName, doc, changes: req.body });
+      logActivity({ user, action: 'updated', collection: collectionName, documentId: req.params.id, summary, changes: req.body });
     }
     res.json(doc);
   } catch (error) {
-    console.error(`PATCH /api/${req.params.collection}/${req.params.id} ERROR: ${error.message}`);
+    console.error(`PATCH /api/${collectionName}/${req.params.id} ERROR: ${error.message}`);
     res.status(500).json({ error: error.message });
   }
-});
+}
 
-app.delete('/api/:collection/:id', async (req, res) => {
-  if (PROTECTED_COLLECTIONS.includes(req.params.collection)) {
+async function handleDelete(collectionName, req, res) {
+  if (PROTECTED_COLLECTIONS.includes(collectionName)) {
     return res.status(403).json({ error: 'This collection is not accessible via generic API' });
   }
   const user = getRequestUser(req).username;
-  console.log(`DELETE /api/${req.params.collection}/${req.params.id} user=${user}`);
+  console.log(`DELETE /api/${collectionName}/${req.params.id} user=${user}`);
   try {
     const conn = await Datastore.open();
     let deletedDoc = {};
-    if (req.params.collection !== 'activitylog') {
-      try { deletedDoc = await conn.findOne(req.params.collection, req.params.id); } catch (e) { /* doc may be gone */ }
+    if (collectionName !== 'activitylog') {
+      try { deletedDoc = await conn.findOne(collectionName, req.params.id); } catch (e) { /* doc may be gone */ }
     }
-    await conn.removeOne(req.params.collection, req.params.id);
-    console.log(`DELETE /api/${req.params.collection}/${req.params.id} => deleted`);
-    if (req.params.collection !== 'activitylog') {
-      const summary = buildSummary({ user, action: 'deleted', collection: req.params.collection, doc: deletedDoc });
-      logActivity({ user, action: 'deleted', collection: req.params.collection, documentId: req.params.id, summary, changes: deletedDoc });
+    await conn.removeOne(collectionName, req.params.id);
+    console.log(`DELETE /api/${collectionName}/${req.params.id} => deleted`);
+    if (collectionName !== 'activitylog') {
+      const summary = buildSummary({ user, action: 'deleted', collection: collectionName, doc: deletedDoc });
+      logActivity({ user, action: 'deleted', collection: collectionName, documentId: req.params.id, summary, changes: deletedDoc });
     }
     res.status(204).end();
   } catch (error) {
-    console.error(`DELETE /api/${req.params.collection}/${req.params.id} ERROR: ${error.message}`);
+    console.error(`DELETE /api/${collectionName}/${req.params.id} ERROR: ${error.message}`);
     res.status(500).json({ error: error.message });
+  }
+}
+
+// ---- 10. OpenAPI: Build component schemas from datamodel ----
+function buildOpenAPISchemas(dm) {
+  const schemas = {};
+  for (const [name, config] of Object.entries(dm.collections || {})) {
+    if (!config.schema?.properties) continue;
+    const schemaName = name.charAt(0).toUpperCase() + name.slice(1).replace(/s$/, '');
+    const properties = { _id: { type: 'string', description: 'Document ID' } };
+    for (const [field, def] of Object.entries(config.schema.properties)) {
+      properties[field] = { ...def };
+    }
+    schemas[schemaName] = {
+      type: 'object',
+      properties,
+      ...(config.schema.required ? { required: config.schema.required } : {}),
+    };
+  }
+  return schemas;
+}
+
+// ---- 11. Dynamic OpenAPI specification (reads datamodel from DB) ----
+const STATIC_PATHS = {
+  '/auth/login': {
+    post: { summary: 'Login with username and password', tags: ['Auth'], requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { username: { type: 'string' }, password: { type: 'string' } }, required: ['username', 'password'] } } } }, responses: { '200': { description: 'Login successful, returns user info and sets auth cookie' }, '401': { description: 'Invalid credentials' } } },
+  },
+  '/auth/me': {
+    get: { summary: 'Get current authenticated user', tags: ['Auth'], responses: { '200': { description: 'Current user info' }, '401': { description: 'Not authenticated' } } },
+  },
+  '/auth/logout': {
+    get: { summary: 'Logout and clear auth cookie', tags: ['Auth'], responses: { '200': { description: 'Logged out successfully' } } },
+  },
+  '/api/app': {
+    get: { summary: 'Get public app settings (title, subtitle)', tags: ['Config'], responses: { '200': { description: 'App settings object' } } },
+  },
+  '/api/datamodel': {
+    get: { summary: 'Get the datamodel configuration', tags: ['Config'], responses: { '200': { description: 'Datamodel JSON with collection schemas, list fields, and search config' } } },
+    put: { summary: 'Replace the datamodel configuration (admin only)', tags: ['Config'], responses: { '200': { description: 'Updated datamodel' }, '403': { description: 'Admin access required' } } },
+  },
+  '/api/datamodel/prompt': {
+    get: { summary: 'Get AI prompt for generating or modifying the datamodel (admin only)', tags: ['Config'], responses: { '200': { description: 'Prompt text for AI assistants' } } },
+  },
+  '/api/datamodel/versions': {
+    get: { summary: 'List datamodel version history (admin only)', tags: ['Config'], responses: { '200': { description: 'Array of version metadata (id, date, user)' } } },
+  },
+  '/api/datamodel/versions/{id}': {
+    get: { summary: 'Get a specific datamodel version snapshot (admin only)', tags: ['Config'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Full datamodel snapshot' } } },
+  },
+  '/api/stats': {
+    get: { summary: 'Get document counts for all collections', tags: ['Config'], responses: { '200': { description: 'Object with collection names and their document counts' } } },
+  },
+  '/api/admin/users': {
+    get: { summary: 'List all users (admin only)', tags: ['Users'], responses: { '200': { description: 'Array of users' } } },
+    post: { summary: 'Create a user (admin only)', tags: ['Users'], responses: { '200': { description: 'Created user' } } },
+  },
+  '/api/admin/users/{id}': {
+    patch: { summary: 'Update a user (admin only)', tags: ['Users'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Updated user' } } },
+    delete: { summary: 'Delete a user (admin only)', tags: ['Users'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '204': { description: 'User deleted' } } },
+  },
+  '/api/admin/activitylog': {
+    delete: { summary: 'Clear activity log (admin only)', tags: ['Activity'], responses: { '204': { description: 'Activity log cleared' } } },
+  },
+  '/api/files/upload': {
+    post: { summary: 'Upload a file', tags: ['Files'], parameters: [{ name: 'filename', in: 'query', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Upload result with file path' } } },
+  },
+  '/api/files/download': {
+    get: { summary: 'Download a file', tags: ['Files'], parameters: [{ name: 'path', in: 'query', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'File content' } } },
+  },
+  '/api/files/delete': {
+    delete: { summary: 'Delete a file', tags: ['Files'], parameters: [{ name: 'path', in: 'query', required: true, schema: { type: 'string' } }], responses: { '204': { description: 'File deleted' } } },
+  },
+};
+
+function buildOpenAPISpec(dm) {
+  const schemas = buildOpenAPISchemas(dm);
+  const paths = { ...STATIC_PATHS };
+
+  for (const [collName, collConfig] of Object.entries(dm.collections || {})) {
+    if (PROTECTED_COLLECTIONS.includes(collName)) continue;
+    const tag = collConfig.label || collName;
+    const schemaName = collName.charAt(0).toUpperCase() + collName.slice(1).replace(/s$/, '');
+    const schemaRef = { $ref: `#/components/schemas/${schemaName}` };
+    const singular = tag.replace(/s$/, '').toLowerCase();
+
+    paths[`/api/${collName}`] = {
+      get: {
+        summary: `List all ${tag.toLowerCase()}`,
+        tags: [tag],
+        parameters: [
+          { name: 'q', in: 'query', schema: { type: 'string' }, description: 'JSON query filter, e.g. {"status":"active"}' },
+          { name: 'h', in: 'query', schema: { type: 'string' }, description: 'JSON hints: $sort, $limit, $offset, $fields' },
+        ],
+        responses: { '200': { description: `Array of ${tag.toLowerCase()}`, content: { 'application/json': { schema: { type: 'array', items: schemaRef } } } } },
+      },
+      post: {
+        summary: `Create a ${singular}`,
+        tags: [tag],
+        requestBody: { required: true, content: { 'application/json': { schema: schemaRef } } },
+        responses: { '200': { description: `Created ${singular}`, content: { 'application/json': { schema: schemaRef } } }, '400': { description: 'Validation error' } },
+      },
+    };
+
+    paths[`/api/${collName}/{id}`] = {
+      get: {
+        summary: `Get a ${singular} by ID`,
+        tags: [tag],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: `A ${singular}`, content: { 'application/json': { schema: schemaRef } } }, '404': { description: 'Not found' } },
+      },
+      patch: {
+        summary: `Update a ${singular}`,
+        tags: [tag],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { content: { 'application/json': { schema: schemaRef } } },
+        responses: { '200': { description: `Updated ${singular}`, content: { 'application/json': { schema: schemaRef } } }, '400': { description: 'Validation error' } },
+      },
+      delete: {
+        summary: `Delete a ${singular}`,
+        tags: [tag],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '204': { description: 'Deleted' }, '404': { description: 'Not found' } },
+      },
+    };
+  }
+
+  return {
+    openapi: '3.0.0',
+    info: {
+      title: dm.app?.title ? `${dm.app.title} API` : 'Admin API',
+      version: '1.0.0',
+      description: 'REST API with full CRUD for all collections. Schemas are auto-generated from the datamodel.',
+    },
+    paths,
+    components: { schemas },
+  };
+}
+
+app.get('/openapi.json', async (req, res) => {
+  try {
+    const dm = await getDatamodelFromDB();
+    res.json(buildOpenAPISpec(dm));
+  } catch (error) {
+    console.error('OpenAPI spec error:', error.message);
+    res.status(500).json({ error: 'Failed to generate OpenAPI spec' });
   }
 });
 
-// ---- OpenAPI Documentation ----
-app.openapi({
-  info: {
-    title: 'Master-Detail Admin API',
-    version: '1.0.0',
-    description: 'REST API for the master-detail admin template. CRUD endpoints are auto-generated from the datamodel.',
-  },
-  filter: (op) => !op.path.startsWith('/auth')
+app.get('/docs', (req, res) => {
+  res.set('content-type', 'text/html');
+  res.end(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>API Documentation</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+  <style>body { margin: 0; } .swagger-ui .topbar { display: none; }</style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>SwaggerUIBundle({ url: 'openapi.json', dom_id: '#swagger-ui', deepLinking: true });</script>
+</body>
+</html>`);
 });
+
+// ---- 12. Generic CRUD routes (handles all collections including those added at runtime) ----
+app.get('/api/:collection', (req, res) => handleList(req.params.collection, req, res));
+app.get('/api/:collection/:id', (req, res) => handleGetOne(req.params.collection, req, res));
+app.post('/api/:collection', (req, res) => handleCreate(req.params.collection, req, res));
+app.patch('/api/:collection/:id', (req, res) => handleUpdate(req.params.collection, req, res));
+app.delete('/api/:collection/:id', (req, res) => handleDelete(req.params.collection, req, res));
 
 // ---- SPA Static File Serving (must be AFTER API routes) ----
 app.static({

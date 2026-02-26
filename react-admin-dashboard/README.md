@@ -20,7 +20,7 @@ It's designed as a starting point for real projects. The datamodel is editable a
 
 A monorepo with a React frontend and a Codehooks.io serverless backend that work together to deliver:
 
-- **Dynamic CRUD** — Collections, list views, detail panels, and forms generated from `datamodel.json`, with a full REST API and interactive OpenAPI/Swagger documentation at `https://<YOUR_APP_URL>.codehooks.io/docs`
+- **Dynamic CRUD** — Collections, list views, detail panels, and forms generated from `datamodel.json`, with a full REST API and dynamic OpenAPI/Swagger documentation at `https://<YOUR_APP_URL>.codehooks.io/docs` that automatically reflects the current datamodel
 - **Authentication** — JWT-based login with cookie sessions, two roles (admin/user), user management UI
 - **Visual Datamodel Editor** — Add/remove collections and fields, configure relationships, edit as JSON with syntax highlighting, version history with rollback
 - **AI-Powered Design** — Copy the built-in prompt to ChatGPT, Claude, or any AI agent, describe what you need, paste the generated datamodel JSON back into the editor, hit Save — and your new app is live instantly
@@ -394,7 +394,9 @@ The sidebar dynamically hides admin sections for non-admin users. Direct URL acc
 
 ## API Reference
 
-The app includes a full CRUD REST API with interactive documentation. Open **API Docs** from the admin sidebar or navigate directly to `https://<YOUR_APP_URL>.codehooks.io/docs` to explore all endpoints via the built-in OpenAPI/Swagger UI.
+The app includes a full CRUD REST API with interactive documentation. Open **API Docs** from the admin sidebar or navigate directly to `https://<YOUR_APP_URL>.codehooks.io/docs` to explore all endpoints via the built-in Swagger UI.
+
+The OpenAPI specification is generated dynamically from the current datamodel stored in the database. When you add or modify collections through the Datamodel Editor (or `PUT /api/datamodel`), the API docs at `/docs` update automatically — no redeployment needed. Each collection gets its own set of CRUD endpoints with request/response schemas derived from the collection's field definitions.
 
 ### Public Endpoints
 
