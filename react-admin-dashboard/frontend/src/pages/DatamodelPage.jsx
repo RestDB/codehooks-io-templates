@@ -353,6 +353,10 @@ export default function DatamodelPage() {
     if (selectedVersion?._id === version._id) {
       setSelectedVersion(null);
       setSelectedVersionData(null);
+      if (jsonEditing) {
+        setJsonText(JSON.stringify(datamodel, null, 2));
+        setJsonError(null);
+      }
       return;
     }
     setSelectedVersion(version);
@@ -360,6 +364,10 @@ export default function DatamodelPage() {
     try {
       const doc = await fetchDatamodelVersion(version._id);
       setSelectedVersionData(doc.data);
+      if (jsonEditing) {
+        setJsonText(JSON.stringify(doc.data, null, 2));
+        setJsonError(null);
+      }
     } catch {
       toast.error('Failed to load version');
       setSelectedVersionData(null);
@@ -370,8 +378,8 @@ export default function DatamodelPage() {
 
   const restoreVersion = () => {
     if (!selectedVersionData) return;
-    setEditData(structuredClone(selectedVersionData));
-    setIsEditing(true);
+    setJsonText(JSON.stringify(selectedVersionData, null, 2));
+    setJsonError(null);
     setSelectedVersion(null);
     setSelectedVersionData(null);
     toast.info('Version loaded into editor — save to apply');
@@ -1035,8 +1043,8 @@ export default function DatamodelPage() {
             )}
           </div>
 
-          {/* Version history panel */}
-          <div className="w-64 shrink-0 flex flex-col gap-2">
+          {/* Version history panel (hidden on mobile) */}
+          <div className="w-64 shrink-0 hidden lg:flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                 <History className="h-3.5 w-3.5" />
@@ -1047,7 +1055,7 @@ export default function DatamodelPage() {
               </Button>
             </div>
 
-            {selectedVersion && selectedVersionData && !jsonEditing && (() => {
+            {selectedVersion && selectedVersionData && jsonEditing && (() => {
               const diff = computeDiff(datamodel, selectedVersionData);
               return (
                 <div className="space-y-2">

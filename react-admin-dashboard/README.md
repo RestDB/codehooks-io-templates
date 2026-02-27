@@ -130,8 +130,8 @@ npm run deploy
 
 Navigate to your project URL. Default credentials:
 
-- **Admin**: `admin` / `admin`
-- **User**: `user` / `user`
+- **Admin**: `admin` / `admin` (admin@example.com)
+- **User**: `user` / `user` (user@example.com)
 
 > On first deploy, the app automatically seeds these two users if the `system_users` collection is empty.
 
@@ -391,6 +391,10 @@ Your new collections, fields, relationships, and UI are live instantly — no co
 | API: `/api/admin/*` | Yes | 403 |
 
 The sidebar dynamically hides admin sections for non-admin users. Direct URL access to admin pages redirects to the dashboard.
+
+### Authentication Details
+
+The JWT token and auth responses (`/auth/login`, `/auth/me`) include `username`, `email`, and `role`. The user's email is available in the frontend via `useAuth()` as `user.email`, which is useful for custom features like filtering records by the logged-in user's email or auto-filling form fields.
 
 ## API Reference
 

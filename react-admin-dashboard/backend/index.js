@@ -115,14 +115,14 @@ app.post('/auth/login',
   }
 
   const token = jwt.sign(
-    { username: user.username, role: user.role },
+    { username: user.username, email: user.email || '', role: user.role },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
 
   // Set httpOnly cookie
   res.set('Set-Cookie', `token=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}`);
-  res.json({ username: user.username, role: user.role });
+  res.json({ username: user.username, email: user.email || '', role: user.role });
 });
 
 app.get('/auth/me',
@@ -141,7 +141,7 @@ app.get('/auth/me',
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    res.json({ username: decoded.username, role: decoded.role });
+    res.json({ username: decoded.username, email: decoded.email || '', role: decoded.role });
   } catch {
     clearTokenCookie(res);
     res.status(401).json({ error: 'Invalid token' });
@@ -847,14 +847,14 @@ export default app.init(async () => {
     const anyUser = await conn.getMany('system_users', {}, { limit: 1 }).toArray();
     if (anyUser.length === 0) {
       const defaultUsers = [
-        { username: 'admin', password: 'admin', role: 'admin' },
-        { username: 'user', password: 'user', role: 'user' },
+        { username: 'admin', password: 'admin', email: 'admin@example.com', role: 'admin' },
+        { username: 'user', password: 'user', email: 'user@example.com', role: 'user' },
       ];
       for (const u of defaultUsers) {
         await conn.insertOne('system_users', {
           username: u.username,
           password: hashPassword(u.password),
-          email: '',
+          email: u.email,
           role: u.role,
           active: true,
           externalId: null,
@@ -959,6 +959,8 @@ ${JSON.stringify(datamodelSchema, null, 2)}
 ## How to use the schema
 
 The root object has a single key \`collections\`, which is an object where each key is a collection name (lowercase, e.g. "customers", "orders") and each value defines that collection.
+
+**Reserved names — do NOT use these as collection names:** \`users\`, \`system_users\`, \`datamodel_config\`, \`datamodel_versions\`, \`activitylog\`. These are used internally by the system. For people/user data, use descriptive names like \`employees\`, \`members\`, \`contacts\`, \`staff\`, or \`team_members\` instead.
 
 ### Collection definition
 
