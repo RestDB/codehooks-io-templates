@@ -25,6 +25,7 @@ A monorepo with a React frontend and a Codehooks.io serverless backend that work
 - **Visual Datamodel Editor** — Add/remove collections and fields, configure relationships, edit as JSON with syntax highlighting, version history with rollback
 - **AI-Powered Design** — Copy the built-in prompt to ChatGPT, Claude, or any AI agent, describe what you need, paste the generated datamodel JSON back into the editor, hit Save — and your new app is live instantly
 - **Lookup Fields** — Reference fields across collections with live search (single and multi-select)
+- **Tree View** — Hierarchical data with expandable tree lists, nested sub-items in detail view, and inline child creation
 - **Related Collections** — Show linked records with configurable filters and inline create
 - **Activity Log** — Audit trail for all create, update, and delete operations
 - **File Uploads** — Image and file upload with preview
@@ -212,6 +213,7 @@ The top-level datamodel object:
 | `listFields` | string[] | **Yes** | Fields shown as columns in the list view (min 1) |
 | `searchFields` | string[] | **Yes** | Fields included in text search |
 | `defaultSort` | object | No | Default sort order, e.g. `{ "name": 1 }` |
+| `treeView` | object | No | Enable hierarchical tree view (see [Tree View](#tree-view-hierarchical-data)) |
 | `relatedCollections` | array | No | Reverse-lookup related records |
 
 **`schema`** object (per collection):
@@ -269,6 +271,12 @@ The top-level datamodel object:
 | `label` | string | **Yes** | Button label |
 | `exclude` | boolean | No | If `true`, filter excludes matching records |
 | `active` | boolean | No | Whether the filter is active by default |
+
+**`treeView`** object (per collection):
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `parentField` | string | **Yes** | Field name containing the parent reference (must be an `x-lookup` to the same collection) |
 
 ### App Settings
 
@@ -365,6 +373,50 @@ Show linked records in the detail view:
   ]
 }
 ```
+
+### Tree View (Hierarchical Data)
+
+Enable an expandable tree view for collections with hierarchical data — tasks with subtasks, categories with subcategories, page trees, org charts, etc. Add a self-referencing lookup field and a `treeView` config:
+
+```json
+{
+  "tasks": {
+    "label": "Tasks",
+    "icon": "check-square",
+    "treeView": {
+      "parentField": "parent"
+    },
+    "schema": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "title": "Title", "minLength": 1 },
+        "parent": {
+          "type": "object",
+          "title": "Parent Task",
+          "properties": { "_id": { "type": "string" } },
+          "x-lookup": {
+            "collection": "tasks",
+            "displayField": "title",
+            "searchFields": ["title"]
+          }
+        },
+        "status": { "type": "string", "title": "Status", "enum": ["To Do", "Done"] }
+      },
+      "required": ["title"]
+    },
+    "listFields": ["title", "status"],
+    "searchFields": ["title"]
+  }
+}
+```
+
+The `parent` field is a standard `x-lookup` that points to the same collection. The `treeView.parentField` tells the UI to render hierarchically instead of as a flat list.
+
+**List view** — Records render as an indented tree with expand/collapse chevrons. Root items (no parent) appear at the top level. Hover any row to see a "+" button for adding a child. Search filters to matching items while preserving ancestor nodes so the tree structure stays valid.
+
+**Detail view** — When viewing a record that has children, a "Sub-items" section appears below the form fields showing the nested tree. Each node has a "+" button, and a top-level "+ New" creates a direct child of the current record.
+
+**Visual editor** — In the Model Editor's Options section, a **Tree view** dropdown appears automatically when a collection has a self-referencing lookup field. Select the parent field to enable, or "None" to disable.
 
 ## Design with AI
 
@@ -481,6 +533,8 @@ Example: `/api/customers?q={"status":"active"}&h={"$sort":{"name":1},"$limit":25
         │   ├── LookupField      # Single lookup with search
         │   ├── MultiLookupField # Multi-select lookup
         │   ├── FileField        # File/image upload
+        │   ├── TreeList         # Hierarchical tree table view
+        │   ├── ChildrenTree     # Sub-items tree in detail view
         │   ├── RelatedList      # Related collection records
         │   ├── OptionsEditor    # Datamodel options editor
         │   └── FieldEditorDrawer# Field type/validation editor

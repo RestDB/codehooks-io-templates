@@ -1,0 +1,198 @@
+{
+  "app": {
+    "title": "Project Management",
+    "subtitle": "Manage projects, milestones and deliveries",
+    "icon": "folder-kanban"
+  },
+  "collections": {
+    "members": {
+      "label": "Members",
+      "icon": "users",
+      "schema": {
+        "type": "object",
+        "required": ["name", "email", "role"],
+        "properties": {
+          "name": { "type": "string", "title": "Name", "minLength": 1 },
+          "email": { "type": "string", "title": "Email", "format": "email" },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "enum": ["Project Manager", "Developer", "Designer", "QA", "DevOps", "Analyst", "Other"]
+          },
+          "phone": { "type": "string", "title": "Phone" },
+          "avatar": { "type": "string", "title": "Avatar", "format": "image", "x-accept": ".jpg,.png,.webp" },
+          "active": { "type": "boolean", "title": "Active", "default": true }
+        }
+      },
+      "listFields": ["name", "email", "role", "active"],
+      "searchFields": ["name", "email"],
+      "defaultSort": { "name": 1 }
+    },
+    "projects": {
+      "label": "Projects",
+      "icon": "folder-kanban",
+      "schema": {
+        "type": "object",
+        "required": ["name", "status"],
+        "properties": {
+          "name": { "type": "string", "title": "Project Name", "minLength": 1 },
+          "description": { "type": "string", "title": "Description", "format": "textarea" },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "enum": ["Planning", "In Progress", "On Hold", "Completed", "Cancelled"],
+            "default": "Planning"
+          },
+          "priority": {
+            "type": "string",
+            "title": "Priority",
+            "enum": ["Low", "Medium", "High", "Critical"],
+            "default": "Medium"
+          },
+          "startDate": { "type": "string", "title": "Start Date", "format": "date" },
+          "endDate": { "type": "string", "title": "End Date", "format": "date" },
+          "owner": {
+            "type": "object",
+            "title": "Project Owner",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": { "collection": "members", "displayField": "name", "searchFields": ["name", "email"] }
+          },
+          "team": {
+            "type": "array",
+            "title": "Team Members",
+            "items": { "type": "object", "properties": { "_id": { "type": "string" } } },
+            "x-lookup": { "collection": "members", "displayField": ["name", "role"], "searchFields": ["name", "email"] }
+          }
+        }
+      },
+      "listFields": ["name", "status", "priority", "owner", "startDate", "endDate"],
+      "searchFields": ["name", "description", "owner.name"],
+      "defaultSort": { "name": 1 },
+      "relatedCollections": [
+        {
+          "collection": "milestones",
+          "foreignKey": "project._id",
+          "title": "Milestones",
+          "displayFields": ["title", "dueDate", "status"],
+          "sort": { "dueDate": 1 },
+          "allowCreate": true
+        },
+        {
+          "collection": "tasks",
+          "foreignKey": "project._id",
+          "title": "Tasks & Deliveries",
+          "displayFields": ["title", "type", "status", "priority", "assignee", "dueDate"],
+          "sort": { "dueDate": 1 },
+          "allowCreate": true,
+          "filters": [
+            { "field": "status", "value": "To Do", "label": "To Do", "active": false },
+            { "field": "status", "value": "In Progress", "label": "In Progress", "active": false },
+            { "field": "status", "value": "Done", "label": "Exclude Done", "exclude": true, "active": false },
+            { "field": "type", "value": "Delivery", "label": "Deliveries Only", "active": false }
+          ]
+        }
+      ]
+    },
+    "milestones": {
+      "label": "Milestones",
+      "icon": "flag",
+      "schema": {
+        "type": "object",
+        "required": ["title", "project", "dueDate"],
+        "properties": {
+          "title": { "type": "string", "title": "Title", "minLength": 1 },
+          "description": { "type": "string", "title": "Description", "format": "textarea" },
+          "project": {
+            "type": "object",
+            "title": "Project",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": { "collection": "projects", "displayField": "name", "searchFields": ["name"] }
+          },
+          "dueDate": { "type": "string", "title": "Due Date", "format": "date" },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "enum": ["Upcoming", "In Progress", "Completed", "Missed"],
+            "default": "Upcoming"
+          }
+        }
+      },
+      "listFields": ["title", "project", "dueDate", "status"],
+      "searchFields": ["title", "project.name"],
+      "defaultSort": { "dueDate": 1 },
+      "relatedCollections": [
+        {
+          "collection": "tasks",
+          "foreignKey": "milestone._id",
+          "title": "Milestone Tasks",
+          "displayFields": ["title", "type", "status", "assignee", "dueDate"],
+          "sort": { "dueDate": 1 },
+          "allowCreate": true
+        }
+      ]
+    },
+    "tasks": {
+      "label": "Tasks",
+      "icon": "check-square",
+      "treeView": {
+        "parentField": "parent"
+      },
+      "schema": {
+        "type": "object",
+        "required": ["title", "project", "status", "type"],
+        "properties": {
+          "title": { "type": "string", "title": "Title", "minLength": 1 },
+          "description": { "type": "string", "title": "Description", "format": "textarea" },
+          "parent": {
+            "type": "object",
+            "title": "Parent Task",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": { "collection": "tasks", "displayField": "title", "searchFields": ["title"] }
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "enum": ["Task", "Delivery", "Bug", "Feature"],
+            "default": "Task"
+          },
+          "project": {
+            "type": "object",
+            "title": "Project",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": { "collection": "projects", "displayField": "name", "searchFields": ["name"] }
+          },
+          "milestone": {
+            "type": "object",
+            "title": "Milestone",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": { "collection": "milestones", "displayField": "title", "searchFields": ["title"] }
+          },
+          "assignee": {
+            "type": "object",
+            "title": "Assignee",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": { "collection": "members", "displayField": "name", "searchFields": ["name", "email"] }
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "enum": ["To Do", "In Progress", "In Review", "Done", "Cancelled"],
+            "default": "To Do"
+          },
+          "priority": {
+            "type": "string",
+            "title": "Priority",
+            "enum": ["Low", "Medium", "High", "Critical"],
+            "default": "Medium"
+          },
+          "dueDate": { "type": "string", "title": "Due Date", "format": "date" },
+          "estimatedHours": { "type": "number", "title": "Estimated Hours", "minimum": 0 },
+          "actualHours": { "type": "number", "title": "Actual Hours", "minimum": 0 }
+        }
+      },
+      "listFields": ["title", "type", "project", "status", "priority", "assignee", "dueDate"],
+      "searchFields": ["title", "description", "project.name", "assignee.name"],
+      "defaultSort": { "dueDate": 1 }
+    }
+  }
+}

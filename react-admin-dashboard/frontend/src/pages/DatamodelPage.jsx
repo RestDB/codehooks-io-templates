@@ -454,6 +454,9 @@ export default function DatamodelPage() {
     updateCollection(collName, (c) => {
       c.schema.properties[name] = { type: 'string', title: name };
     });
+    // Auto-enter rename mode so user can immediately type the field name
+    setRenameField({ collection: collName, oldName: name });
+    setRenameValue('');
   };
 
   const deleteField = (collName, fieldName) => {
@@ -479,7 +482,12 @@ export default function DatamodelPage() {
       const entries = Object.entries(c.schema.properties);
       c.schema.properties = {};
       for (const [k, v] of entries) {
-        c.schema.properties[k === oldName ? newName : k] = v;
+        const renamed = k === oldName ? newName : k;
+        c.schema.properties[renamed] = v;
+        // Auto-update title if it matches the old key name
+        if (k === oldName && (v.title === oldName || !v.title)) {
+          v.title = newName.charAt(0).toUpperCase() + newName.slice(1);
+        }
       }
       // Cascade to references
       c.schema.required = (c.schema.required || []).map((r) => r === oldName ? newName : r);
@@ -909,6 +917,7 @@ export default function DatamodelPage() {
                   </summary>
                   <OptionsEditor
                     config={config}
+                    collectionName={collName}
                     fieldNames={fieldNames}
                     readOnly={!isEditing}
                     allCollections={allCollectionNames}
@@ -924,6 +933,11 @@ export default function DatamodelPage() {
                           coll.relatedCollections = updated.relatedCollections;
                         } else {
                           delete coll.relatedCollections;
+                        }
+                        if (updated.treeView) {
+                          coll.treeView = updated.treeView;
+                        } else {
+                          delete coll.treeView;
                         }
                         return next;
                       });

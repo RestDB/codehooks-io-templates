@@ -24,6 +24,7 @@ import {
   Trash2,
   Filter,
   GripVertical,
+  GitBranch,
 } from 'lucide-react';
 
 function SortableBadge({ id, onRemove }) {
@@ -72,7 +73,7 @@ function CommaInput({ value = [], onChange, ...props }) {
   );
 }
 
-export default function OptionsEditor({ config, fieldNames, onChange, readOnly, allCollections, collectionsData }) {
+export default function OptionsEditor({ config, collectionName, fieldNames, onChange, readOnly, allCollections, collectionsData }) {
   const listFields = config.listFields || [];
   const searchFields = config.searchFields || [];
   const defaultSort = config.defaultSort || {};
@@ -123,6 +124,21 @@ export default function OptionsEditor({ config, fieldNames, onChange, readOnly, 
   };
   const toggleSortDir = () => {
     if (sortField) update('defaultSort', { [sortField]: sortDir === 1 ? -1 : 1 });
+  };
+
+  // Tree view: find self-referencing lookup fields
+  const selfRefFields = fieldNames.filter((f) => {
+    const prop = config.schema?.properties?.[f];
+    return prop?.type === 'object' && prop['x-lookup']?.collection === collectionName;
+  });
+  const treeView = config.treeView || null;
+
+  const setTreeView = (parentField) => {
+    if (!parentField) {
+      update('treeView', undefined);
+    } else {
+      update('treeView', { parentField });
+    }
   };
 
   const relatedCollections = config.relatedCollections || [];
@@ -203,6 +219,20 @@ export default function OptionsEditor({ config, fieldNames, onChange, readOnly, 
                   {k} {v === 1 ? '\u2191' : '\u2193'}
                 </Badge>
               ))}
+            </div>
+          </>
+        )}
+
+        {treeView && (
+          <>
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <GitBranch className="h-3.5 w-3.5" />
+              <span className="text-xs font-medium">Tree view</span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              <Badge variant="secondary" className="text-[11px] font-normal font-mono">
+                parent: {treeView.parentField}
+              </Badge>
             </div>
           </>
         )}
@@ -329,6 +359,35 @@ export default function OptionsEditor({ config, fieldNames, onChange, readOnly, 
           </Button>
         )}
       </div>
+
+      {/* Tree view */}
+      {selfRefFields.length > 0 && (
+        <>
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <GitBranch className="h-3.5 w-3.5" />
+            <span className="text-xs font-medium">Tree view</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select
+              value={treeView?.parentField || '_none'}
+              onValueChange={(v) => setTreeView(v === '_none' ? null : v)}
+            >
+              <SelectTrigger className="h-7 text-xs w-auto">
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">None (flat list)</SelectItem>
+                {selfRefFields.map((f) => (
+                  <SelectItem key={f} value={f}>{f}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {treeView && (
+              <span className="text-xs text-muted-foreground">Hierarchical list with expand/collapse</span>
+            )}
+          </div>
+        </>
+      )}
 
       {/* Related collections */}
       <div className="flex items-center gap-1.5 text-muted-foreground col-span-2 pt-2">

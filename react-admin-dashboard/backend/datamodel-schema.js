@@ -76,6 +76,14 @@ export const datamodelSchema = {
           listFields: { type: 'array', items: { type: 'string' }, minItems: 1 },
           searchFields: { type: 'array', items: { type: 'string' } },
           defaultSort: { type: 'object' },
+          treeView: {
+            type: 'object',
+            properties: {
+              parentField: { type: 'string', minLength: 1 },
+            },
+            required: ['parentField'],
+            additionalProperties: false,
+          },
           relatedCollections: {
             type: 'array',
             items: {

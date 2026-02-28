@@ -972,6 +972,7 @@ The root object has a single key \`collections\`, which is an object where each 
 | \`listFields\` | Yes | Array of field names shown in the list/table view (min 1) |
 | \`searchFields\` | Yes | Array of field names to search. Use dot notation for lookup fields (e.g. \`customer.name\`) |
 | \`defaultSort\` | No | Sort object, e.g. \`{ "name": 1 }\` (1 = asc, -1 = desc) |
+| \`treeView\` | No | Tree/hierarchy config, e.g. \`{ "parentField": "parent" }\` — enables expandable tree view |
 | \`relatedCollections\` | No | Array of related collection configs (see below) |
 
 ### Field types (\`schema.properties\`)
@@ -1032,6 +1033,45 @@ Each field needs at minimum \`type\` and \`title\`.
 
 - \`foreignKey\`: the field path in the related collection that references this collection (e.g. \`customer._id\`)
 - \`filters\`: optional predefined filter buttons. \`exclude: true\` inverts the filter. \`active: false\` means not enabled by default.
+
+### Tree view (hierarchical data)
+
+To enable a tree/hierarchy view for a collection (e.g. tasks with subtasks, categories with subcategories), add a \`treeView\` property to the collection definition and a self-referencing lookup field:
+
+\`\`\`json
+{
+  "tasks": {
+    "label": "Tasks",
+    "icon": "check-square",
+    "treeView": {
+      "parentField": "parent"
+    },
+    "schema": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "title": "Name", "minLength": 1 },
+        "parent": {
+          "type": "object",
+          "title": "Parent Task",
+          "properties": { "_id": { "type": "string" } },
+          "x-lookup": {
+            "collection": "tasks",
+            "displayField": "name",
+            "searchFields": ["name"]
+          }
+        }
+      },
+      "required": ["name"]
+    },
+    "listFields": ["name"],
+    "searchFields": ["name"]
+  }
+}
+\`\`\`
+
+- \`treeView.parentField\`: the field name containing the parent reference (must be an \`x-lookup\` pointing to the same collection)
+- The list view renders as an expandable tree with indentation
+- The detail view shows sub-items as a nested tree with "+" buttons to add children
 `;
 
   if (hasCollections) {

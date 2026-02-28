@@ -332,6 +332,9 @@
     "tasks": {
       "label": "Tasks",
       "icon": "check-square",
+      "treeView": {
+        "parentField": "parent"
+      },
       "schema": {
         "type": "object",
         "required": [
@@ -350,6 +353,22 @@
             "type": "string",
             "title": "Description",
             "format": "textarea"
+          },
+          "parent": {
+            "type": "object",
+            "title": "Parent Task",
+            "properties": {
+              "_id": {
+                "type": "string"
+              }
+            },
+            "x-lookup": {
+              "collection": "tasks",
+              "displayField": "title",
+              "searchFields": [
+                "title"
+              ]
+            }
           },
           "type": {
             "type": "string",

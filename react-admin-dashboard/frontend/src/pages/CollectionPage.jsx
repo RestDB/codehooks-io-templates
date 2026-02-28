@@ -3,7 +3,12 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { fetchDatamodel, fetchCollection, deleteDocument } from '../api/collectionApi.js';
 import MasterList from '../components/MasterList.jsx';
+import TreeList from '../components/TreeList.jsx';
 import DetailPanel from '../components/DetailPanel.jsx';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
 
 export default function CollectionPage() {
@@ -52,20 +57,25 @@ export default function CollectionPage() {
     setSelectedId(null);
     setSearch('');
     setOffset(0);
-    // Check if arriving from a related list "+ New" navigation
+    setIsCreating(false);
+    setPrefill(null);
+  }, [collection]);
+
+  // Handle "+ New" navigation (from related lists, tree children, etc.)
+  useEffect(() => {
     if (location.state?.creating) {
       setIsCreating(true);
+      setSelectedId(null);
       setPrefill(location.state.prefill || null);
-    } else {
-      setIsCreating(false);
-      setPrefill(null);
     }
-  }, [collection]);
+  }, [location.key]);
 
   // Sync selectedId with URL
   useEffect(() => {
     setSelectedId(id || null);
   }, [id]);
+
+  const isTreeMode = !!config?.treeView;
 
   // Load items
   const loadItems = useCallback(async () => {
@@ -85,20 +95,30 @@ export default function CollectionPage() {
         return field;
       });
 
-      const data = await fetchCollection(collection, {
-        search,
-        searchFields,
-        sort,
-        limit: LIMIT,
-        offset,
-      });
-      setItems(data);
+      if (isTreeMode) {
+        // Tree mode: fetch all items (no pagination, no server-side search)
+        const data = await fetchCollection(collection, {
+          sort,
+          limit: 1000,
+          offset: 0,
+        });
+        setItems(data);
+      } else {
+        const data = await fetchCollection(collection, {
+          search,
+          searchFields,
+          sort,
+          limit: LIMIT,
+          offset,
+        });
+        setItems(data);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [collection, config, search, sortField, sortDir, offset]);
+  }, [collection, config, search, sortField, sortDir, offset, isTreeMode]);
 
   useEffect(() => {
     loadItems();
@@ -115,6 +135,32 @@ export default function CollectionPage() {
     setSelectedId(null);
     setPrefill(null);
     navigate(`/${collection}`);
+  };
+
+  // Tree mode: create a child under a specific parent node
+  const handleCreateChild = (parentItem) => {
+    const parentField = config.treeView.parentField;
+    const displayField = config.schema.properties[parentField]?.['x-lookup']?.displayField || 'name';
+    const primaryField = Array.isArray(displayField) ? displayField[0] : displayField;
+    setIsCreating(true);
+    setSelectedId(null);
+    setPrefill({
+      foreignKey: `${parentField}._id`,
+      parentId: parentItem._id,
+      parentLabel: parentItem[primaryField] || parentItem.name || parentItem.title || parentItem._id,
+      parentCollection: collection,
+    });
+    navigate(`/${collection}`, {
+      state: {
+        creating: true,
+        prefill: {
+          foreignKey: `${parentField}._id`,
+          parentId: parentItem._id,
+          parentLabel: parentItem[primaryField] || parentItem.name || parentItem.title || parentItem._id,
+          parentCollection: collection,
+        },
+      },
+    });
   };
 
   const handleBack = () => {
@@ -189,6 +235,51 @@ export default function CollectionPage() {
           onBack={handleBack}
           onCancel={handleBack}
         />
+      </div>
+    );
+  }
+
+  if (isTreeMode) {
+    return (
+      <div className="bg-card border rounded-lg shadow-sm flex-1 min-h-0 flex flex-col overflow-hidden">
+        {/* Tree header */}
+        <div className="p-3 border-b flex gap-2 items-center shrink-0">
+          <Input
+            type="text"
+            placeholder={`Search ${config.label}...`}
+            className="flex-1"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <Button size="sm" onClick={handleCreate}>
+            + New
+          </Button>
+        </div>
+
+        {error && (
+          <Alert variant="destructive" className="m-2">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {loading ? (
+          <div className="flex-1 min-h-0 p-3 flex flex-col gap-2">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-8 w-full" />
+            ))}
+          </div>
+        ) : (
+          <TreeList
+            items={items}
+            parentField={config.treeView.parentField}
+            listFields={config.listFields || Object.keys(config.schema.properties).slice(0, 4)}
+            config={config}
+            selectedId={selectedId}
+            onSelect={handleSelect}
+            onCreate={handleCreateChild}
+            search={search}
+          />
+        )}
       </div>
     );
   }

@@ -1,0 +1,198 @@
+{
+  "app": {
+    "title": "CRM",
+    "subtitle": "Customers, deals and contacts",
+    "icon": "handshake"
+  },
+  "collections": {
+    "companies": {
+      "label": "Companies",
+      "icon": "building-2",
+      "schema": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "title": "Company Name", "minLength": 1 },
+          "website": { "type": "string", "title": "Website", "format": "url" },
+          "industry": {
+            "type": "string",
+            "title": "Industry",
+            "enum": ["Technology", "Finance", "Healthcare", "Retail", "Manufacturing", "Education", "Other"]
+          },
+          "size": {
+            "type": "string",
+            "title": "Company Size",
+            "enum": ["1-10", "11-50", "51-200", "201-1000", "1000+"]
+          },
+          "address": { "type": "string", "title": "Address" },
+          "notes": { "type": "string", "title": "Notes", "format": "textarea" },
+          "logo": { "type": "string", "title": "Logo", "format": "image", "x-accept": ".jpg,.png,.svg,.webp" }
+        }
+      },
+      "listFields": ["name", "industry", "size", "website"],
+      "searchFields": ["name", "industry"],
+      "defaultSort": { "name": 1 },
+      "relatedCollections": [
+        {
+          "collection": "contacts",
+          "foreignKey": "company._id",
+          "title": "Contacts",
+          "displayFields": ["name", "title", "email", "phone"],
+          "sort": { "name": 1 },
+          "allowCreate": true
+        },
+        {
+          "collection": "deals",
+          "foreignKey": "company._id",
+          "title": "Deals",
+          "displayFields": ["name", "stage", "value", "closeDate"],
+          "sort": { "closeDate": -1 },
+          "allowCreate": true,
+          "filters": [
+            { "field": "stage", "value": "Won", "label": "Won", "active": false },
+            { "field": "stage", "value": "Lost", "label": "Exclude Lost", "exclude": true, "active": false }
+          ]
+        }
+      ]
+    },
+    "contacts": {
+      "label": "Contacts",
+      "icon": "user",
+      "schema": {
+        "type": "object",
+        "required": ["name", "email"],
+        "properties": {
+          "name": { "type": "string", "title": "Full Name", "minLength": 1 },
+          "email": { "type": "string", "title": "Email", "format": "email" },
+          "phone": { "type": "string", "title": "Phone" },
+          "title": { "type": "string", "title": "Job Title" },
+          "company": {
+            "type": "object",
+            "title": "Company",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": { "collection": "companies", "displayField": "name", "searchFields": ["name"] }
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "enum": ["Lead", "Customer", "Partner", "Vendor"],
+            "default": "Lead"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "enum": ["Website", "Referral", "LinkedIn", "Conference", "Cold Outreach", "Other"]
+          },
+          "notes": { "type": "string", "title": "Notes", "format": "textarea" },
+          "avatar": { "type": "string", "title": "Photo", "format": "image", "x-accept": ".jpg,.png,.webp" }
+        }
+      },
+      "listFields": ["name", "email", "company", "title", "type"],
+      "searchFields": ["name", "email", "company.name"],
+      "defaultSort": { "name": 1 },
+      "relatedCollections": [
+        {
+          "collection": "deals",
+          "foreignKey": "contact._id",
+          "title": "Deals",
+          "displayFields": ["name", "stage", "value", "closeDate"],
+          "sort": { "closeDate": -1 },
+          "allowCreate": true
+        },
+        {
+          "collection": "activities",
+          "foreignKey": "contact._id",
+          "title": "Activities",
+          "displayFields": ["type", "subject", "date", "owner"],
+          "sort": { "date": -1 },
+          "allowCreate": true
+        }
+      ]
+    },
+    "deals": {
+      "label": "Deals",
+      "icon": "dollar-sign",
+      "schema": {
+        "type": "object",
+        "required": ["name", "company", "stage"],
+        "properties": {
+          "name": { "type": "string", "title": "Deal Name", "minLength": 1 },
+          "company": {
+            "type": "object",
+            "title": "Company",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": { "collection": "companies", "displayField": "name", "searchFields": ["name"] }
+          },
+          "contact": {
+            "type": "object",
+            "title": "Primary Contact",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": { "collection": "contacts", "displayField": "name", "searchFields": ["name", "email"] }
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage",
+            "enum": ["Prospecting", "Qualification", "Proposal", "Negotiation", "Won", "Lost"],
+            "default": "Prospecting"
+          },
+          "value": { "type": "number", "title": "Value", "minimum": 0 },
+          "probability": { "type": "integer", "title": "Probability %", "minimum": 0, "maximum": 100 },
+          "closeDate": { "type": "string", "title": "Expected Close", "format": "date" },
+          "description": { "type": "string", "title": "Description", "format": "textarea" }
+        }
+      },
+      "listFields": ["name", "company", "stage", "value", "probability", "closeDate"],
+      "searchFields": ["name", "company.name", "contact.name"],
+      "defaultSort": { "closeDate": 1 },
+      "relatedCollections": [
+        {
+          "collection": "activities",
+          "foreignKey": "deal._id",
+          "title": "Activities",
+          "displayFields": ["type", "subject", "date", "owner"],
+          "sort": { "date": -1 },
+          "allowCreate": true
+        }
+      ]
+    },
+    "activities": {
+      "label": "Activities",
+      "icon": "calendar",
+      "schema": {
+        "type": "object",
+        "required": ["type", "subject", "date"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "enum": ["Call", "Email", "Meeting", "Note", "Task"],
+            "default": "Note"
+          },
+          "subject": { "type": "string", "title": "Subject", "minLength": 1 },
+          "description": { "type": "string", "title": "Details", "format": "textarea" },
+          "date": { "type": "string", "title": "Date", "format": "date" },
+          "contact": {
+            "type": "object",
+            "title": "Contact",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": { "collection": "contacts", "displayField": "name", "searchFields": ["name"] }
+          },
+          "deal": {
+            "type": "object",
+            "title": "Deal",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": { "collection": "deals", "displayField": "name", "searchFields": ["name"] }
+          },
+          "owner": {
+            "type": "string",
+            "title": "Owner"
+          },
+          "completed": { "type": "boolean", "title": "Completed", "default": false }
+        }
+      },
+      "listFields": ["type", "subject", "contact", "deal", "date", "completed"],
+      "searchFields": ["subject", "description", "contact.name"],
+      "defaultSort": { "date": -1 }
+    }
+  }
+}

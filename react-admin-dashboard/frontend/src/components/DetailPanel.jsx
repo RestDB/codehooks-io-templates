@@ -8,6 +8,7 @@ import {
 } from '../api/collectionApi.js';
 import FormField from './FormField.jsx';
 import RelatedList from './RelatedList.jsx';
+import ChildrenTree from './ChildrenTree.jsx';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -350,6 +351,16 @@ export default function DetailPanel({
                 />
               ))}
             </div>
+
+            {/* Children tree (self-referencing hierarchy) */}
+            {formData._id && config.treeView && (
+              <ChildrenTree
+                collection={collection}
+                config={config}
+                parentId={formData._id}
+                parentLabel={formData.name || formData.title || formData._id}
+              />
+            )}
 
             {/* Related collections (reverse lookups) */}
             {formData._id && config.relatedCollections?.map((rel) => (

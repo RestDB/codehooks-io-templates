@@ -1,0 +1,115 @@
+{
+  "app": {
+    "title": "Product CMS",
+    "subtitle": "Pages, products and features",
+    "icon": "globe"
+  },
+  "collections": {
+    "pages": {
+      "label": "Pages",
+      "icon": "file-text",
+      "treeView": {
+        "parentField": "parent"
+      },
+      "schema": {
+        "type": "object",
+        "required": ["title", "status"],
+        "properties": {
+          "title": { "type": "string", "title": "Title", "minLength": 1 },
+          "slug": { "type": "string", "title": "Slug" },
+          "parent": {
+            "type": "object",
+            "title": "Parent Page",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": {
+              "collection": "pages",
+              "displayField": "title",
+              "searchFields": ["title"]
+            }
+          },
+          "content": { "type": "string", "title": "Content", "format": "textarea" },
+          "image": { "type": "string", "title": "Featured Image", "format": "image", "x-accept": ".jpg,.png,.webp" },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "enum": ["Draft", "Published", "Archived"],
+            "default": "Draft"
+          },
+          "sortOrder": { "type": "integer", "title": "Sort Order", "default": 0, "minimum": 0 }
+        }
+      },
+      "listFields": ["title", "slug", "status", "sortOrder"],
+      "searchFields": ["title", "slug", "content"],
+      "defaultSort": { "sortOrder": 1 }
+    },
+    "products": {
+      "label": "Products",
+      "icon": "package",
+      "schema": {
+        "type": "object",
+        "required": ["name", "status"],
+        "properties": {
+          "name": { "type": "string", "title": "Product Name", "minLength": 1 },
+          "tagline": { "type": "string", "title": "Tagline" },
+          "description": { "type": "string", "title": "Description", "format": "textarea" },
+          "image": { "type": "string", "title": "Product Image", "format": "image", "x-accept": ".jpg,.png,.webp" },
+          "page": {
+            "type": "object",
+            "title": "Product Page",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": { "collection": "pages", "displayField": "title", "searchFields": ["title"] }
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "enum": ["Draft", "Active", "Discontinued"],
+            "default": "Draft"
+          },
+          "price": { "type": "number", "title": "Price", "minimum": 0 },
+          "sortOrder": { "type": "integer", "title": "Sort Order", "default": 0, "minimum": 0 }
+        }
+      },
+      "listFields": ["name", "tagline", "status", "price"],
+      "searchFields": ["name", "tagline", "description"],
+      "defaultSort": { "sortOrder": 1 },
+      "relatedCollections": [
+        {
+          "collection": "features",
+          "foreignKey": "product._id",
+          "title": "Features",
+          "displayFields": ["title", "category", "highlighted"],
+          "sort": { "sortOrder": 1 },
+          "allowCreate": true
+        }
+      ]
+    },
+    "features": {
+      "label": "Features",
+      "icon": "sparkles",
+      "schema": {
+        "type": "object",
+        "required": ["title", "product"],
+        "properties": {
+          "title": { "type": "string", "title": "Title", "minLength": 1 },
+          "description": { "type": "string", "title": "Description", "format": "textarea" },
+          "product": {
+            "type": "object",
+            "title": "Product",
+            "properties": { "_id": { "type": "string" } },
+            "x-lookup": { "collection": "products", "displayField": "name", "searchFields": ["name"] }
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "enum": ["Core", "Analytics", "Integration", "Security", "Performance", "UX"]
+          },
+          "highlighted": { "type": "boolean", "title": "Highlighted", "default": false },
+          "sortOrder": { "type": "integer", "title": "Sort Order", "default": 0, "minimum": 0 }
+        }
+      },
+      "listFields": ["title", "product", "category", "highlighted"],
+      "searchFields": ["title", "description", "product.name"],
+      "defaultSort": { "sortOrder": 1 }
+    }
+  }
+}

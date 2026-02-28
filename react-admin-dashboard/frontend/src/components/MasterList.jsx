@@ -174,7 +174,7 @@ export default function MasterList({
   );
 }
 
-function CellValue({ value, propDef }) {
+export function CellValue({ value, propDef }) {
   if (value === undefined || value === null) {
     return <span className="text-muted-foreground/50">--</span>;
   }
