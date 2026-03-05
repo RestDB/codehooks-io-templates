@@ -1,4 +1,5 @@
 import { Outlet, Link, useParams, useLocation } from 'react-router-dom';
+import { useTreeBreadcrumb } from '../contexts/BreadcrumbContext.jsx';
 import { Toaster } from 'sonner';
 import { AppSidebar } from './AppSidebar.jsx';
 import { ThemeToggle } from './ThemeToggle.jsx';
@@ -16,6 +17,7 @@ import {
 export default function Layout() {
   const { collection, id } = useParams();
   const location = useLocation();
+  const { treePath } = useTreeBreadcrumb();
   const isSubPage = collection || location.pathname !== '/';
 
   return (
@@ -76,14 +78,29 @@ export default function Layout() {
                       </BreadcrumbPage>
                     )}
                   </BreadcrumbItem>
-                  {id && (
+                  {id && treePath.length > 0 ? (
+                    treePath.map((node, i) => (
+                      <span key={node._id} className="contents">
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                          {i < treePath.length - 1 ? (
+                            <BreadcrumbLink asChild>
+                              <Link to={`/${collection}/${node._id}`}>{node.label}</Link>
+                            </BreadcrumbLink>
+                          ) : (
+                            <BreadcrumbPage>{node.label}</BreadcrumbPage>
+                          )}
+                        </BreadcrumbItem>
+                      </span>
+                    ))
+                  ) : id ? (
                     <>
                       <BreadcrumbSeparator />
                       <BreadcrumbItem>
                         <BreadcrumbPage>Detail</BreadcrumbPage>
                       </BreadcrumbItem>
                     </>
-                  )}
+                  ) : null}
                 </>
               )}
             </BreadcrumbList>

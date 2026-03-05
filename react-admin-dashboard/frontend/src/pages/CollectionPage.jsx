@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { fetchDatamodel, fetchCollection, deleteDocument } from '../api/collectionApi.js';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
+import { useTreeBreadcrumb } from '../contexts/BreadcrumbContext.jsx';
 
 export default function CollectionPage() {
   const { collection, id } = useParams();
@@ -76,6 +77,31 @@ export default function CollectionPage() {
   }, [id]);
 
   const isTreeMode = !!config?.treeView;
+  const { setTreePath } = useTreeBreadcrumb();
+
+  // Build ancestor breadcrumb path for tree views
+  const treePath = useMemo(() => {
+    if (!isTreeMode || !selectedId || !items.length) return [];
+    const parentField = config.treeView.parentField;
+    const lookup = config.schema?.properties?.[parentField]?.['x-lookup'];
+    const displayField = lookup?.displayField || 'name';
+    const labelKey = Array.isArray(displayField) ? displayField[0] : displayField;
+    const itemsById = new Map(items.map((i) => [i._id, i]));
+    const path = [];
+    let current = itemsById.get(selectedId);
+    while (current) {
+      path.unshift({ _id: current._id, label: current[labelKey] || current.name || current.title || current._id });
+      const parentRef = current[parentField];
+      current = parentRef?._id ? itemsById.get(parentRef._id) : null;
+    }
+    return path;
+  }, [isTreeMode, selectedId, items, config]);
+
+  // Push tree path to breadcrumb context
+  useEffect(() => {
+    setTreePath(isTreeMode && selectedId ? treePath : []);
+    return () => setTreePath([]);
+  }, [treePath, isTreeMode, selectedId, setTreePath]);
 
   // Load items
   const loadItems = useCallback(async () => {
