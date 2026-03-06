@@ -81,14 +81,15 @@ coho login
 #### 2. Create a new project with this template
 
 ```bash
-coho create my-admin --template react-admin-dashboard
-cd my-admin
+coho create myadmin --template react-admin-dashboard
+mv config.json backend
+cd myadmin
 ```
 
 Or install into an existing directory:
 
 ```bash
-mkdir my-admin && cd my-admin
+mkdir myadmin && cd myadmin
 coho install react-admin-dashboard
 ```
 
