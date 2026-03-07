@@ -191,7 +191,15 @@ export default function FormField({
 
   // Date-time
   if (format === 'date-time') {
-    const localValue = value ? value.slice(0, 16) : '';
+    // Convert UTC ISO string to local datetime-local format for display
+    let localValue = '';
+    if (value) {
+      const d = new Date(value);
+      if (!isNaN(d.getTime())) {
+        const pad = (n) => String(n).padStart(2, '0');
+        localValue = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      }
+    }
     return (
       <div className="space-y-2">
         <Label className="font-medium">
@@ -202,7 +210,15 @@ export default function FormField({
           type="datetime-local"
           className={error ? 'border-destructive' : ''}
           value={localValue}
-          onChange={(e) => onChange(e.target.value ? new Date(e.target.value).toISOString() : '')}
+          onChange={(e) => {
+            if (!e.target.value) return onChange('');
+            // datetime-local value is local time — construct Date from local parts
+            const [datePart, timePart] = e.target.value.split('T');
+            const [y, m, d] = datePart.split('-').map(Number);
+            const [hh, mm] = timePart.split(':').map(Number);
+            const dt = new Date(y, m - 1, d, hh, mm);
+            onChange(dt.toISOString());
+          }}
         />
         <FieldError error={error} />
       </div>
