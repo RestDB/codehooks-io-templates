@@ -558,6 +558,27 @@ const iconMap = {
 };
 ```
 
+## Updating the Template
+
+If you created your project with `coho create --template react-admin-dashboard` and haven't modified the template code (only changed the datamodel), you can pull in the latest bugfixes and features by re-installing:
+
+```bash
+cd your-project
+coho install react-admin-dashboard
+npm run deploy
+```
+
+This overwrites the template files (`backend/index.js`, `frontend/src/*`, etc.) with the latest version. Your data, datamodel, and users are safe — they live in the Codehooks datastore, not in files. The `datamodel.json` file is only used for the initial seed; after first deploy, the database is the source of truth.
+
+**When this works:**
+- You've only customized the datamodel (via the visual editor or JSON)
+- You haven't modified `backend/index.js`, frontend components, or other template files
+
+**When it doesn't work:**
+- You've added custom backend endpoints or changed auth logic
+- You've modified frontend components or added new pages
+- In those cases, review the [commit history](https://github.com/RestDB/codehooks-io-templates/commits/main/react-admin-dashboard) and apply specific changes manually
+
 ## Resources
 
 - [Codehooks.io Documentation](https://codehooks.io/docs)
