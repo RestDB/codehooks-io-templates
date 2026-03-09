@@ -5,6 +5,7 @@ import { createHash, randomBytes } from 'crypto';
 import Ajv from 'ajv';
 import datamodel from '../datamodel.json' assert { type: 'json' };
 import { datamodelSchema } from './datamodel-schema.js';
+import { getCalculatedFields, applyCalculations, hasCalcChanges, evaluate, enrichLookups, validateAllFormulas } from './calculate.js';
 
 const JWT_SECRET = process.env.JWT_ACCESS_TOKEN_SECRET;
 
@@ -212,9 +213,18 @@ app.put('/api/datamodel',
     if (!validateDatamodel(req.body)) {
       return res.status(400).json({ error: 'Invalid datamodel', details: validateDatamodel.errors });
     }
+    // Validate all x-calculate formula syntax
+    const formulaErrors = validateAllFormulas(req.body);
+    if (formulaErrors.length > 0) {
+      const msg = formulaErrors.map((e) => `${e.collection}.${e.field}: ${e.error}`).join('; ');
+      return res.status(400).json({ error: `Invalid formula: ${msg}` });
+    }
     const savedBy = getRequestUser(req).username;
 
     const conn = await Datastore.open();
+    // Get old datamodel for calc field comparison
+    const oldDm = await getDatamodelFromDB();
+
     // Save version snapshot
     await conn.insertOne('datamodel_versions', {
       type: 'datamodel_version',
@@ -229,6 +239,24 @@ app.put('/api/datamodel',
     } else {
       await conn.insertOne('datamodel_config', { type: 'datamodel', data: req.body });
     }
+
+    // Recalculate collections where x-calculate formulas changed
+    const newDm = req.body;
+    for (const [collName, newCollConfig] of Object.entries(newDm.collections || {})) {
+      const oldCalcFields = getCalculatedFields(oldDm.collections?.[collName]);
+      const newCalcFields = getCalculatedFields(newCollConfig);
+      if (newCalcFields.length > 0 && hasCalcChanges(oldCalcFields, newCalcFields)) {
+        // Enqueue all docs in this collection for recalculation
+        console.log(`RECALCULATE triggered for ${collName} (formula changed)`);
+        try {
+          const result = await conn.enqueueFromQuery(collName, {}, 'recalculate');
+          console.log(`RECALCULATE enqueued ${result.count} docs for ${collName}`);
+        } catch (err) {
+          console.error(`RECALCULATE enqueue error for ${collName}: ${err.message}`);
+        }
+      }
+    }
+
     res.json(req.body);
   } catch (error) {
     console.error('Datamodel update error:', error.message);
@@ -574,12 +602,23 @@ async function handleCreate(collectionName, req, res) {
   const user = getRequestUser(req).username;
   console.log(`POST /api/${collectionName} user=${user} body=${JSON.stringify(req.body)}`);
   try {
-    const errors = await validateBody(collectionName, req.body);
-    if (errors) {
-      console.log(`POST /api/${collectionName} VALIDATION FAILED: ${JSON.stringify(errors)}`);
-      return res.status(400).json(errors);
-    }
+    // Compute calculated fields before validation/save
+    const dm = await getDatamodelFromDB();
+    const collConfig = dm.collections[collectionName];
+    const calcFields = collConfig ? getCalculatedFields(collConfig) : [];
+    // Strip any client-sent calculated fields, then compute
+    for (const { field } of calcFields) delete req.body[field];
     const conn = await Datastore.open();
+    if (calcFields.length > 0) {
+      // Enrich lookup fields so formulas like "product.price" resolve
+      const enriched = await enrichLookups(req.body, collConfig, conn);
+      applyCalculations(enriched, calcFields);
+      for (const { field } of calcFields) {
+        if (enriched[field] != null) req.body[field] = enriched[field];
+      }
+    }
+
+    const errors = await validateBody(collectionName, req.body);
     const doc = await conn.insertOne(collectionName, req.body);
     console.log(`POST /api/${collectionName} => created ${doc._id}`);
     if (collectionName !== 'activitylog') {
@@ -600,6 +639,12 @@ async function handleUpdate(collectionName, req, res) {
   const user = getRequestUser(req).username;
   console.log(`PATCH /api/${collectionName}/${req.params.id} user=${user} body=${JSON.stringify(req.body)}`);
   try {
+    // Strip calculated fields from input, then recompute after merge
+    const dm = await getDatamodelFromDB();
+    const collConfig = dm.collections[collectionName];
+    const calcFields = collConfig ? getCalculatedFields(collConfig) : [];
+    for (const { field } of calcFields) delete req.body[field];
+
     const errors = await validateBody(collectionName, req.body, true);
     if (errors) {
       console.log(`PATCH /api/${collectionName}/${req.params.id} VALIDATION FAILED: ${JSON.stringify(errors)}`);
@@ -611,6 +656,17 @@ async function handleUpdate(collectionName, req, res) {
       console.log(`PATCH /api/${collectionName}/${req.params.id} => no changes`);
       const doc = await conn.findOne(collectionName, req.params.id);
       return res.json(doc);
+    }
+    // Recompute calculated fields using full document (merge existing + changes)
+    if (calcFields.length > 0) {
+      const existing = await conn.findOne(collectionName, req.params.id);
+      const merged = { ...existing, ...req.body };
+      // Enrich lookup fields so formulas like "product.price" resolve
+      const enriched = await enrichLookups(merged, collConfig, conn);
+      applyCalculations(enriched, calcFields);
+      for (const { field } of calcFields) {
+        if (enriched[field] != null) req.body[field] = enriched[field];
+      }
     }
     const doc = await conn.updateOne(collectionName, req.params.id, { $set: req.body });
     console.log(`PATCH /api/${collectionName}/${req.params.id} => updated`);
@@ -813,7 +869,46 @@ app.get('/docs', (req, res) => {
 </html>`);
 });
 
-// ---- 12. Generic CRUD routes (handles all collections including those added at runtime) ----
+// ---- 12. Recalculate worker (processes x-calculate fields when formulas change) ----
+app.worker('recalculate', async (req, res) => {
+  try {
+    const doc = req.body.payload;
+    if (!doc?._id) { return res.end(); }
+
+    const dm = await getDatamodelFromDB();
+    const conn = await Datastore.open();
+
+    // Find which collection this document belongs to by checking collections with calc fields
+    for (const [collName, collConfig] of Object.entries(dm.collections || {})) {
+      const calcFields = getCalculatedFields(collConfig);
+      if (calcFields.length === 0) continue;
+      try {
+        const existing = await conn.findOne(collName, doc._id);
+        // Enrich lookups so formulas referencing lookup fields resolve
+        const enriched = await enrichLookups(existing, collConfig, conn);
+        // Found it — compute and update
+        const updates = {};
+        for (const { field, expression } of calcFields) {
+          const value = evaluate(expression, enriched);
+          if (value != null) updates[field] = value;
+        }
+        if (Object.keys(updates).length > 0) {
+          await conn.updateOne(collName, doc._id, { $set: updates });
+          console.log(`RECALCULATE ${collName}/${doc._id} => ${JSON.stringify(updates)}`);
+        }
+        break;
+      } catch {
+        continue; // Not in this collection
+      }
+    }
+    res.end();
+  } catch (error) {
+    console.error(`RECALCULATE ERROR: ${error.message}`);
+    res.end();
+  }
+});
+
+// ---- 13. Generic CRUD routes (handles all collections including those added at runtime) ----
 app.get('/api/:collection', (req, res) => handleList(req.params.collection, req, res));
 app.get('/api/:collection/:id', (req, res) => handleGetOne(req.params.collection, req, res));
 app.post('/api/:collection', (req, res) => handleCreate(req.params.collection, req, res));

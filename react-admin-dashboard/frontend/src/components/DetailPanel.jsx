@@ -115,6 +115,9 @@ export default function DetailPanel({
     const required = config.schema.required || [];
 
     for (const [fieldName, propDef] of Object.entries(properties)) {
+      // Skip calculated fields — they are computed server-side
+      if (propDef['x-calculate']) continue;
+
       const val = formData[fieldName];
       const isEmpty = val === undefined || val === null || val === '';
 
@@ -180,6 +183,7 @@ export default function DetailPanel({
     const errors = validateForm();
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
+      toast.error('Please fix the highlighted fields');
       return;
     }
 
@@ -188,13 +192,19 @@ export default function DetailPanel({
     setFieldErrors({});
     try {
       let result;
+      // Strip calculated fields — backend computes these
+      const calcFieldNames = new Set(
+        Object.entries(properties).filter(([, p]) => p['x-calculate']).map(([k]) => k)
+      );
       if (isCreating) {
-        result = await createDocument(collection, formData);
+        const data = { ...formData };
+        for (const f of calcFieldNames) delete data[f];
+        result = await createDocument(collection, data);
         toast.success('Record created');
       } else {
         const changes = {};
         for (const [key, value] of Object.entries(formData)) {
-          if (key === '_id') continue;
+          if (key === '_id' || calcFieldNames.has(key)) continue;
           if (JSON.stringify(value) !== JSON.stringify(originalData[key])) {
             changes[key] = value;
           }
@@ -206,6 +216,11 @@ export default function DetailPanel({
         }
         result = await updateDocument(collection, selectedId, changes);
         toast.success('Record updated');
+      }
+      // Refresh form with server response (includes recalculated fields)
+      if (result) {
+        setFormData(result);
+        setOriginalData(result);
       }
       setIsEditing(false);
       onSaved(result);
@@ -220,6 +235,19 @@ export default function DetailPanel({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleFormKeyDown = (e) => {
+    if (e.key !== 'Enter') return;
+    if (!(isEditing || isCreating) || saving) return;
+    // Don't intercept Enter in textareas, lookup dropdowns, or multi-line editors
+    const tag = e.target.tagName;
+    if (tag === 'TEXTAREA') return;
+    if (tag === 'BUTTON') return;
+    // Check if a lookup dropdown is open (the input is inside a dropdown ref container)
+    if (e.target.closest('[data-lookup-open]')) return;
+    e.preventDefault();
+    handleSave();
   };
 
   const handleCancel = () => {
@@ -307,7 +335,7 @@ export default function DetailPanel({
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-auto min-h-0 p-4">
+      <div className="flex-1 overflow-auto min-h-0 p-4" onKeyDown={handleFormKeyDown}>
         {loading ? (
           <div className="flex flex-col gap-4">
             <Skeleton className="h-7 w-48" />
@@ -345,7 +373,7 @@ export default function DetailPanel({
                   schema={propDef}
                   value={formData[fieldName]}
                   onChange={(val) => handleFieldChange(fieldName, val)}
-                  readOnly={!isEditing && !isCreating}
+                  readOnly={!isEditing && !isCreating || !!propDef['x-calculate']}
                   required={requiredFields.includes(fieldName)}
                   error={fieldErrors[fieldName]}
                 />

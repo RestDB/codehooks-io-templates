@@ -29,6 +29,7 @@ export default function MultiLookupField({
   const [results, setResults] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const dropdownRef = useRef(null);
   const debounceRef = useRef(null);
 
@@ -71,9 +72,12 @@ export default function MultiLookupField({
           searchFields: fields.length > 0 ? fields : displayFields,
           limit: 10,
         });
-        setResults(Array.isArray(data) ? data : []);
+        const list = Array.isArray(data) ? data : [];
+        setResults(list);
+        setSelectedIndex(0);
       } catch {
         setResults([]);
+        setSelectedIndex(0);
       } finally {
         setSearching(false);
       }
@@ -125,7 +129,7 @@ export default function MultiLookupField({
   }
 
   return (
-    <div className="space-y-2" ref={dropdownRef}>
+    <div className="space-y-2" ref={dropdownRef} {...(showDropdown && results.length > 0 ? { 'data-lookup-open': '' } : {})}>
       <Label className="font-medium">
         {label}
         {required && <span className="text-destructive ml-1">*</span>}
@@ -161,6 +165,22 @@ export default function MultiLookupField({
           onFocus={() => {
             if (searchText.trim()) setShowDropdown(true);
           }}
+          onKeyDown={(e) => {
+            if (!showDropdown || results.length === 0) return;
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setSelectedIndex((i) => Math.min(i + 1, results.length - 1));
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setSelectedIndex((i) => Math.max(i - 1, 0));
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              if (results[selectedIndex]) handleSelect(results[selectedIndex]);
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              setShowDropdown(false);
+            }
+          }}
         />
         {searching && (
           <Loader2 className="h-4 w-4 animate-spin absolute right-3 top-2.5 text-muted-foreground" />
@@ -171,14 +191,15 @@ export default function MultiLookupField({
             {results.length === 0 && !searching ? (
               <div className="px-3 py-2 text-sm text-muted-foreground">No results</div>
             ) : (
-              results.map((item) => {
-                const alreadySelected = items.some((i) => i._id === item._id);
+              results.map((item, i) => {
+                const alreadySelected = items.some((s) => s._id === item._id);
                 return (
                   <button
                     key={item._id}
                     type="button"
-                    className={`w-full text-left px-3 py-2 text-sm cursor-pointer ${alreadySelected ? 'opacity-40' : 'hover:bg-accent hover:text-accent-foreground'}`}
+                    className={`w-full text-left px-3 py-2 text-sm cursor-pointer ${alreadySelected ? 'opacity-40' : 'hover:bg-accent hover:text-accent-foreground'} ${i === selectedIndex && !alreadySelected ? 'bg-accent text-accent-foreground' : ''}`}
                     onClick={() => handleSelect(item)}
+                    onMouseEnter={() => setSelectedIndex(i)}
                     disabled={alreadySelected}
                   >
                     {resolveDisplay(item)}

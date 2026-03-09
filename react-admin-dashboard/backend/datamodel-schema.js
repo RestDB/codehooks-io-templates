@@ -50,6 +50,7 @@ export const datamodelSchema = {
                     properties: { type: 'object' },
                     items: { type: 'object' },
                     'x-accept': { type: 'string' },
+                    'x-calculate': { type: 'string' },
                     'x-lookup': {
                       type: 'object',
                       required: ['collection', 'displayField', 'searchFields'],

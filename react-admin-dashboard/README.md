@@ -25,6 +25,7 @@ A monorepo with a React frontend and a Codehooks.io serverless backend that work
 - **Visual Datamodel Editor** — Add/remove collections and fields, configure relationships, edit as JSON with syntax highlighting, version history with rollback
 - **AI-Powered Design** — Copy the built-in prompt to ChatGPT, Claude, or any AI agent, describe what you need, paste the generated datamodel JSON back into the editor, hit Save — and your new app is live instantly
 - **Lookup Fields** — Reference fields across collections with live search (single and multi-select)
+- **Calculated Fields** — Server-computed formula fields (`price * quantity`) with autocomplete editor, dependency ordering, and automatic recalculation
 - **Tree View** — Hierarchical data with expandable tree lists, nested sub-items in detail view, and inline child creation
 - **Related Collections** — Show linked records with configurable filters and inline create
 - **Activity Log** — Audit trail for all create, update, and delete operations
@@ -242,6 +243,7 @@ The top-level datamodel object:
 | `items` | object | No | Item schema (required for `array` type) |
 | `x-accept` | string | No | Accepted file extensions, e.g. `".jpg,.png,.webp"` |
 | `x-lookup` | object | No | Lookup configuration for reference fields |
+| `x-calculate` | string | No | Formula expression for calculated fields (see [Calculated Fields](#calculated-fields)) |
 
 **`x-lookup`** object (for reference fields):
 
@@ -419,6 +421,70 @@ The `parent` field is a standard `x-lookup` that points to the same collection. 
 
 **Visual editor** — In the Model Editor's Options section, a **Tree view** dropdown appears automatically when a collection has a self-referencing lookup field. Select the parent field to enable, or "None" to disable.
 
+### Calculated Fields
+
+Add server-computed fields to `number` or `integer` fields using the `x-calculate` property. Formulas are evaluated on the backend when records are created or updated, and the result is stored in the database — making calculated fields searchable and sortable like any other field.
+
+```json
+{
+  "schema": {
+    "type": "object",
+    "properties": {
+      "price": { "type": "number", "title": "Unit Price" },
+      "quantity": { "type": "integer", "title": "Quantity" },
+      "subtotal": {
+        "type": "number",
+        "title": "Subtotal",
+        "x-calculate": "price * quantity"
+      },
+      "tax": {
+        "type": "number",
+        "title": "Tax (25%)",
+        "x-calculate": "subtotal * 0.25"
+      },
+      "total": {
+        "type": "number",
+        "title": "Total",
+        "x-calculate": "subtotal + tax"
+      }
+    }
+  }
+}
+```
+
+**Supported formula syntax:**
+
+| Feature | Example | Description |
+|---------|---------|-------------|
+| Field references | `price` | Any numeric field in the same collection |
+| Lookup field references | `product.price` | Numeric fields from referenced (lookup) documents |
+| Numbers | `0.25`, `100` | Integer and decimal literals |
+| Arithmetic operators | `+`, `-`, `*`, `/`, `%` | Addition, subtraction, multiplication, division, modulo |
+| Parentheses | `(price + tax) * quantity` | Grouping for operator precedence |
+| Unary minus | `-discount` | Negation |
+| Chained calculations | `subtotal + tax` | A calculated field can reference other calculated fields |
+
+**Not supported:**
+
+- Functions (e.g., `Math.round()`, `SUM()`, `IF()`)
+- String operations or concatenation
+- Comparison operators (`>`, `<`, `==`)
+- Conditional logic (`if`/`else`, ternary)
+- Variables or assignments
+- Aggregation across multiple records
+
+**How it works:**
+
+- **Computed on write** — Formulas run server-side on every create and update. The result is stored in the database, so you can search, sort, and filter on calculated fields just like regular fields.
+- **Dependency ordering** — When multiple calculated fields reference each other (e.g., `tax` depends on `subtotal`), they are automatically evaluated in the correct order using topological sorting. Circular dependencies are detected and logged.
+- **Lookup resolution** — Formulas can reference fields from lookup documents using dot notation (e.g., `product.price`). The full referenced document is fetched from the database before evaluation.
+- **Recalculation on schema change** — When a formula is added, modified, or removed in the datamodel editor, all existing records in that collection are automatically recalculated via a background worker.
+- **Read-only in forms** — Calculated fields are displayed with an "fx" indicator and cannot be edited manually.
+- **Precision** — Results are rounded to 10 significant decimal places to avoid floating-point artifacts.
+- **Null propagation** — If any referenced field is missing or not a number, the formula returns `null` (the field is not set).
+
+**Datamodel Editor** — The visual editor provides a formula input with autocomplete for `number` and `integer` fields. Start typing to see suggestions for available field names and lookup subfields. Use `Ctrl+Space` to trigger suggestions manually.
+
 ## Design with AI
 
 The Datamodel Editor includes a **Copy Prompt** button that generates a context-rich prompt describing the current datamodel format, field types, and conventions. Use it with any AI agent to design new applications or modify existing ones:
@@ -505,6 +571,7 @@ Example: `/api/customers?q={"status":"active"}&h={"$sort":{"name":1},"$limit":25
 │
 ├── backend/
 │   ├── index.js                # Auth, CRUD API, user management, activity log
+│   ├── calculate.js            # Safe expression evaluator for calculated fields
 │   ├── schema-builder.js       # JSON Schema validation builder
 │   ├── datamodel-schema.js     # Validation schema for datamodel updates
 │   ├── hooks.js                # Placeholder for before/after CRUD hooks
@@ -537,6 +604,7 @@ Example: `/api/customers?q={"status":"active"}&h={"$sort":{"name":1},"$limit":25
         │   ├── TreeList         # Hierarchical tree table view
         │   ├── ChildrenTree     # Sub-items tree in detail view
         │   ├── RelatedList      # Related collection records
+        │   ├── FormulaEditor    # Formula input with autocomplete
         │   ├── OptionsEditor    # Datamodel options editor
         │   └── FieldEditorDrawer# Field type/validation editor
         └── lib/

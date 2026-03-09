@@ -75,9 +75,15 @@ export default function FormField({
 
   // Read-only display
   if (readOnly) {
+    const isCalculated = !!schema['x-calculate'];
     return (
       <div className={`space-y-2 ${format === 'textarea' ? 'md:col-span-2' : ''}`}>
-        <Label className="font-medium">{label}</Label>
+        <Label className="font-medium">
+          {label}
+          {isCalculated && (
+            <span className="ml-2 text-xs text-muted-foreground font-normal italic" title={`= ${schema['x-calculate']}`}>fx</span>
+          )}
+        </Label>
         <div className="px-3 py-2 bg-muted rounded-md min-h-[2.5rem]">
           <DisplayValue value={value} schema={schema} />
         </div>

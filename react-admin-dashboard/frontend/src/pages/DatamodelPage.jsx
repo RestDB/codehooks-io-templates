@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { fetchDatamodel, updateDatamodel, fetchDatamodelPrompt, fetchDatamodelVersions, fetchDatamodelVersion } from '../api/collectionApi.js';
 import FieldEditorDrawer from '../components/FieldEditorDrawer.jsx';
 import OptionsEditor from '../components/OptionsEditor.jsx';
+import { validateFormula } from '../components/FormulaEditor.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -200,6 +201,20 @@ export default function DatamodelPage() {
               }
               return f;
             });
+          }
+        }
+      }
+
+      // Validate all x-calculate formulas before saving
+      for (const [collName, coll] of Object.entries(dataToSave.collections)) {
+        for (const [fieldName, prop] of Object.entries(coll.schema?.properties || {})) {
+          if (prop['x-calculate']) {
+            const err = validateFormula(prop['x-calculate']);
+            if (err) {
+              toast.error(`Invalid formula in ${collName}.${fieldName}`, { description: err });
+              setSaving(false);
+              return;
+            }
           }
         }
       }
@@ -428,7 +443,7 @@ export default function DatamodelPage() {
       def.type = newType;
       // Clean up incompatible properties
       if (newType !== 'string') { delete def.minLength; delete def.maxLength; delete def.format; delete def.enum; }
-      if (newType !== 'number' && newType !== 'integer') { delete def.minimum; delete def.maximum; }
+      if (newType !== 'number' && newType !== 'integer') { delete def.minimum; delete def.maximum; delete def['x-calculate']; }
       if (newType !== 'object') { delete def['x-lookup']; }
       if (newType !== 'array') { delete def.items; }
       if (newType === 'array') { def.items = { type: 'string' }; }
@@ -842,6 +857,11 @@ export default function DatamodelPage() {
                                   <Badge variant="outline" className="text-[11px] font-normal gap-1 shrink-0">
                                     <ArrowRight className="h-3 w-3" />
                                     {prop['x-lookup'].collection}
+                                  </Badge>
+                                )}
+                                {prop['x-calculate'] && (
+                                  <Badge variant="outline" className="text-[11px] font-normal shrink-0 italic">
+                                    fx: {prop['x-calculate']}
                                   </Badge>
                                 )}
                                 {prop.format && FORMAT_LABELS[prop.format] && (

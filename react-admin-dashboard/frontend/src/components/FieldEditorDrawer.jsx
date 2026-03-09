@@ -20,6 +20,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
 import { X, Plus } from 'lucide-react';
+import FormulaEditor from './FormulaEditor.jsx';
 
 const FORMAT_OPTIONS = {
   string: [
@@ -171,8 +172,8 @@ export default function FieldEditorDrawer({ open, onClose, field, onUpdate, allC
             </>
           )}
 
-          {/* Default value */}
-          {!isObject && (
+          {/* Default value (hidden when calculated) */}
+          {!isObject && !definition['x-calculate'] && (
             <div className="space-y-1.5">
               <Label>Default value</Label>
               <Input
@@ -241,6 +242,40 @@ export default function FieldEditorDrawer({ open, onClose, field, onUpdate, allC
                     onChange={(e) => update('maximum', e.target.value !== '' ? Number(e.target.value) : undefined)}
                   />
                 </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Calculation formula</Label>
+                {(() => {
+                  const collName = field?.collection;
+                  const collProps = collName && collectionsData?.[collName]
+                    ? collectionsData[collName].schema.properties
+                    : {};
+                  const formulaFields = Object.entries(collProps)
+                    .filter(([n]) => n !== name)
+                    .map(([n, d]) => ({
+                      name: n,
+                      type: d.type,
+                      lookup: d['x-lookup'] ? {
+                        collection: d['x-lookup'].collection,
+                        subfields: Object.entries(
+                          collectionsData?.[d['x-lookup'].collection]?.schema?.properties || {}
+                        ).map(([sn, sd]) => ({ name: sn, type: sd.type })),
+                      } : null,
+                    }));
+                  return (
+                    <FormulaEditor
+                      value={definition['x-calculate'] || ''}
+                      onChange={(val) => update('x-calculate', val)}
+                      fields={formulaFields}
+                      placeholder="e.g., price * quantity"
+                    />
+                  );
+                })()}
+                {definition['x-calculate'] && (
+                  <p className="text-xs text-muted-foreground italic">
+                    Calculated fields are read-only and recomputed on every save.
+                  </p>
+                )}
               </div>
             </>
           )}
