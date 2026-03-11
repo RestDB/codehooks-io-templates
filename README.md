@@ -117,6 +117,15 @@ coho create my-metering --template saas-metering-webhook
 
 **Testing:** The `test-aggregation.js` script verifies all aggregation operators. Requires `systemconfig.json` with all 7 test event types (`api.calls`, `storage.bytes`, `response.time.ms`, `test.min`, `test.count`, `test.first`, `test.last`). The default config includes these.
 
+### Developer Tools
+
+#### Webhook Inspector
+Catch, inspect, and replay webhooks — a self-hosted RequestBin alternative. Dark mode UI with Tailwind CSS, real-time polling, cURL export with raw body preservation, and webhook replay with full header forwarding.
+
+```bash
+coho create myinspector --template webhook-inspector
+```
+
 ### Minimal Webhook Templates
 
 These templates provide minimal, educational implementations of webhook handlers for popular services. Each includes proper signature verification, basic event handling, and comprehensive documentation. Perfect for learning or as a starting point for your own integrations.
