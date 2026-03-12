@@ -1,0 +1,14 @@
+{
+  "name": "webhook-inspector",
+  "version": "1.0.0",
+  "description": "Webhook inspector — catch, inspect, and replay webhooks",
+  "main": "index.js",
+  "scripts": {
+    "deploy": "codehooks deploy && codehooks logs --follow"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "codehooks-js": "latest"
+  }
+}

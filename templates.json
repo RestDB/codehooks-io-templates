@@ -67,6 +67,10 @@
       {
         "name": "react-admin-dashboard",
         "description": "Data-driven admin dashboard with React frontend, dynamic CRUD from a JSON datamodel, role-based auth, and a visual datamodel editor"
+      },
+      {
+        "name": "webhook-inspector",
+        "description": "Catch, inspect, and replay webhooks — a self-hosted RequestBin alternative with dark mode UI"
       }
     ]
   }
