@@ -61,6 +61,10 @@
         "description": "3-step drip email campaign with SendGrid/Mailgun, subscriber management, and scheduled delivery"
       },
       {
+        "name": "email-newsletter",
+        "description": "Self-hosted newsletter & waitlist service with double opt-in, list management, Markdown campaigns, and a brandable admin UI"
+      },
+      {
         "name": "saas-metering-webhook",
         "description": "Usage metering system with multi-tenant event capture, batch aggregation, and HMAC-signed webhook delivery"
       },

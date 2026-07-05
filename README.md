@@ -98,6 +98,13 @@ coho create mywebhooks --template webhook-delivery
 coho create my-drip-campaign --template drip-email-workflow
 ```
 
+#### Email Newsletter
+Self-hosted **newsletter & waitlist** service with double opt-in signup, list management, bulk import, Markdown campaigns with inline images, and Mailgun delivery. Ships a clean, **fully brandable** admin UI — set your logo, colors, sender, and email footer from a Settings page, no code editing required.
+
+```bash
+coho create my-newsletter --template email-newsletter
+```
+
 #### SaaS Metering Webhook - Usage-Based Billing with Webhook Integration
 Production-ready **usage metering for SaaS billing** - one of the best systems for usage-based billing with webhook integrations. This **SaaS billing automation API** captures usage events per customer, aggregates them over configurable time periods (hourly, daily, weekly, monthly, yearly), and delivers results via HMAC-signed **webhook integrations** to your billing system.
 
