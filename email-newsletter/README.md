@@ -40,6 +40,19 @@ coho info
 
 See [`.env.example`](.env.example) for the full list of variables (including optional `FROM_EMAIL`, `FROM_NAME`, `BASE_URL`).
 
+## Your first campaign
+
+Once deployed, open `https://<your-app>.codehooks.io/admin.html` and:
+
+1. **Log in** with your `ADMIN_PASSWORD`.
+2. **Settings** → set your app name, upload a logo, pick colors, choose the email-brand placement, and fill in the **footer** (company name + a physical mailing address — required for CAN-SPAM). Set **Base URL** to your deploy URL (needed so campaign links work). **Save.**
+3. **Lists** → create a list (e.g. `newsletter`).
+4. **Collect signups** — point a form at `POST /subscribe` (see [Collecting signups](#collecting-signups)). Each signup gets a confirmation email and is only `confirmed` after clicking the link. (To test, subscribe yourself and confirm.)
+5. **Compose** → write your email in Markdown, hit **Preview**, then **Send** to your list.
+6. Watch the campaign's sent/failed counts on the **Campaigns** page. Large sends pace automatically at your hourly cap (Settings → Sending).
+
+> **Before a large real send**, read [Deliverability & sending limits](#️-deliverability--sending-limits--read-before-your-first-big-send) — new sending domains are rate-limited and can get suspended if you blast too fast.
+
 ## Email provider
 
 Sending is pluggable — choose one provider with the `EMAIL_PROVIDER` env var (default `mailgun`). Set only that provider's variables.
@@ -103,6 +116,37 @@ curl -X POST https://<your-app>.codehooks.io/subscribe \
 ```
 
 The `list` must already exist (create it in the admin under **Lists**). The subscriber receives a confirmation email and is only marked `confirmed` after clicking the link.
+
+Drop-in HTML form for your own site (replace the URL and list name):
+
+```html
+<form id="signup">
+  <input type="email" name="email" placeholder="you@example.com" required />
+  <button type="submit">Subscribe</button>
+  <p id="signup-msg"></p>
+</form>
+
+<script>
+  document.getElementById('signup').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = e.target.email.value;
+    const msg = document.getElementById('signup-msg');
+    try {
+      const res = await fetch('https://<your-app>.codehooks.io/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, list: 'newsletter' }),
+      });
+      const data = await res.json();
+      msg.textContent = data.message || (data.ok ? 'Check your inbox to confirm!' : data.error);
+    } catch {
+      msg.textContent = 'Something went wrong. Please try again.';
+    }
+  });
+</script>
+```
+
+The endpoint is CORS-enabled and rate-limited per IP. On success it returns `{ ok: true, message }`; on error, `{ ok: false, error }`.
 
 ## API reference
 
