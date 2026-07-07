@@ -5,7 +5,7 @@ import type { EmailProvider, EmailMessage, SendResult } from './types';
 // Note: free/low tiers cap sends PER DAY (e.g. 300/day) — large lists pace over
 // multiple days under the hourly cap. Prices by emails sent, not by contact count.
 export const brevoProvider: EmailProvider = {
-  async send({ to, subject, html, unsubscribeUrl, fromEmail, fromName }: EmailMessage): Promise<SendResult> {
+  async send({ to, subject, html, text, unsubscribeUrl, fromEmail, fromName }: EmailMessage): Promise<SendResult> {
     const apiKey = process.env.BREVO_API_KEY;
     const from = fromEmail || process.env.FROM_EMAIL;
     const name = fromName || process.env.FROM_NAME || 'Newsletter';
@@ -14,8 +14,11 @@ export const brevoProvider: EmailProvider = {
       sender: { email: from, name },
       to: [{ email: to }],
       subject,
-      htmlContent: html,
     };
+    // Send whichever parts are present. A text-only campaign sets textContent only,
+    // so Brevo delivers a text/plain message with no HTML alternative.
+    if (html) body.htmlContent = html;
+    if (text) body.textContent = text;
     if (unsubscribeUrl) {
       body.headers = {
         'List-Unsubscribe': `<${unsubscribeUrl}>`,

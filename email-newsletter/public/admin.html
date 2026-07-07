@@ -637,8 +637,23 @@
         </div>
 
         <div>
+          <label class="block text-sm font-medium mb-1">Format</label>
+          <div class="inline-flex rounded-lg border border-cream overflow-hidden text-sm">
+            <label class="cursor-pointer">
+              <input type="radio" name="compose-format" value="html" class="sr-only peer" checked />
+              <span class="block px-4 py-2 peer-checked:bg-primary peer-checked:text-white transition">HTML template</span>
+            </label>
+            <label class="cursor-pointer border-l border-cream">
+              <input type="radio" name="compose-format" value="text" class="sr-only peer" />
+              <span class="block px-4 py-2 peer-checked:bg-primary peer-checked:text-white transition">Text only</span>
+            </label>
+          </div>
+          <p class="text-xs text-body-text/50 mt-1">Text only sends a plain-text email — no branding or images, reads like a personal note. Better for 1:1-style messages and inbox placement.</p>
+        </div>
+
+        <div>
           <div class="flex items-center justify-between mb-1">
-            <label class="block text-sm font-medium">Body (Markdown)</label>
+            <label id="compose-body-label" class="block text-sm font-medium">Body (Markdown)</label>
             <div class="flex gap-2">
               <button type="button" id="insert-image-toggle" class="text-xs font-medium px-3 py-1 rounded-lg border border-cream hover:bg-cream/50 transition flex items-center gap-1">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
@@ -1725,6 +1740,9 @@
       renderComposeListCheckboxes();
       document.getElementById('compose-subject').value = currentCampaign.subject;
       document.getElementById('compose-body').value = currentCampaign.bodyMarkdown || currentCampaign.body;
+      const dupFormat = currentCampaign.format === 'text' ? 'text' : 'html';
+      document.querySelector(`#compose-form input[name="compose-format"][value="${dupFormat}"]`).checked = true;
+      applyComposeFormat();
       // Check matching list checkboxes
       document.querySelectorAll('#compose-lists input[type="checkbox"]').forEach((cb) => {
         cb.checked = (currentCampaign.lists || []).includes(cb.value);
@@ -1851,6 +1869,52 @@
 </body></html>`;
     }
 
+    // ---- Plain-text preview (mirrors lib/templates.ts newsletterText) ----
+    function textTemplate(rawText) {
+      const s = appSettings || {};
+      const footer = [];
+      if (s.footerText) footer.push(s.footerText.trim());
+      if (s.footerCompanyName || s.footerAddress) {
+        const addr = (s.footerAddress || '').split('\n').map((x) => x.replace(/,\s*$/, '').trim()).filter(Boolean).join(', ');
+        footer.push([s.footerCompanyName, addr].filter(Boolean).join(' · '));
+      }
+      footer.push('Unsubscribe: ' + ((s.baseUrl || '').replace(/\/+$/, '') + '/unsubscribe/…'));
+      const clean = (rawText || '').replace(/\r\n/g, '\n').replace(/\s+$/, '');
+      const full = clean + '\n\n—\n' + footer.join('\n') + '\n';
+      return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;background:#F4F4F5;padding:24px;font-family:'Helvetica Neue',Arial,sans-serif;">
+  <pre style="white-space:pre-wrap;word-wrap:break-word;font-family:'SFMono-Regular',Menlo,Consolas,monospace;font-size:14px;line-height:1.6;color:#3F3F46;background:#ffffff;border:1px solid #E4E4E7;border-radius:8px;padding:20px;margin:0;">${escapeHtml(full)}</pre>
+</body></html>`;
+    }
+
+    // ---- Format (HTML template vs plain text) ----
+    function getComposeFormat() {
+      const el = document.querySelector('#compose-form input[name="compose-format"]:checked');
+      return el ? el.value : 'html';
+    }
+
+    // Reflect the selected format in the editor: hide branding-only affordances and relabel
+    // for text mode, and reset any open preview (its rendering depends on the format).
+    function applyComposeFormat() {
+      const isText = getComposeFormat() === 'text';
+      document.getElementById('compose-body-label').textContent = isText ? 'Body (plain text)' : 'Body (Markdown)';
+      document.getElementById('insert-image-toggle').classList.toggle('hidden', isText);
+      const textarea = document.getElementById('compose-body');
+      textarea.placeholder = isText
+        ? 'Hi there,\n\nWrite a plain-text message here — no Markdown, no formatting.\nIt sends exactly as typed.'
+        : '# Hello!\n\nWrite your email in **Markdown**. Use headings, lists, bold, links, etc.';
+      // Close the image picker if it was open; hide any stale preview.
+      document.getElementById('image-picker').classList.add('hidden');
+      if (previewVisible) {
+        previewVisible = false;
+        document.getElementById('preview-container').classList.add('hidden');
+        document.getElementById('preview-toggle').textContent = 'Preview';
+      }
+    }
+    document.querySelectorAll('#compose-form input[name="compose-format"]').forEach((r) => {
+      r.addEventListener('change', applyComposeFormat);
+    });
+
     // ---- Preview toggle ----
     let previewVisible = false;
     document.getElementById('preview-toggle').addEventListener('click', () => {
@@ -1860,10 +1924,10 @@
       const textarea = document.getElementById('compose-body');
 
       if (previewVisible) {
-        const md = textarea.value || '';
-        const bodyHtml = marked.parse(md);
         const frame = document.getElementById('preview-frame');
-        frame.srcdoc = emailTemplate(bodyHtml);
+        frame.srcdoc = getComposeFormat() === 'text'
+          ? textTemplate(textarea.value || '')
+          : emailTemplate(marked.parse(textarea.value || ''));
         container.classList.remove('hidden');
         btn.textContent = 'Edit';
       } else {
@@ -1878,6 +1942,8 @@
       previewVisible = false;
       document.getElementById('preview-container').classList.add('hidden');
       document.getElementById('preview-toggle').textContent = 'Preview';
+      document.querySelector('#compose-form input[name="compose-format"][value="html"]').checked = true;
+      applyComposeFormat();
       await loadLists();
       renderComposeListCheckboxes();
       showView('compose');
@@ -1896,7 +1962,9 @@
 
       const subject = document.getElementById('compose-subject').value.trim();
       const rawBody = document.getElementById('compose-body').value.trim();
-      const body = marked.parse(rawBody);
+      const format = getComposeFormat();
+      // Text campaigns send the raw text verbatim; HTML campaigns render Markdown.
+      const body = format === 'text' ? rawBody : marked.parse(rawBody);
       const checkboxes = document.querySelectorAll('#compose-lists input[type="checkbox"]:checked');
       const lists = Array.from(checkboxes).map((cb) => cb.value);
 
@@ -1906,7 +1974,7 @@
         const data = await api('/admin/api/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subject, body, bodyMarkdown: rawBody, lists }),
+          body: JSON.stringify({ subject, body, bodyMarkdown: rawBody, format, lists }),
         });
 
         if (data.ok) {

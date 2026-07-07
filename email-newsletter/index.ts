@@ -6,7 +6,7 @@ import { generateToken, generateTokenExpiry, isTokenExpired } from './lib/tokens
 import { checkIpRateLimit, checkEmailResendLimit, checkLoginRateLimit } from './lib/rate-limit';
 import { createHash, timingSafeEqual } from 'crypto';
 import { sendEmail } from './lib/providers';
-import { confirmationEmail, newsletterEmail } from './lib/templates';
+import { confirmationEmail, newsletterEmail, newsletterText } from './lib/templates';
 import { confirmedPage, unsubscribedPage, errorPage } from './lib/pages';
 import { getSettings, updateSettings, AppSettings } from './lib/settings';
 
@@ -614,6 +614,8 @@ app.post('/admin/api/campaigns/:id/cancel', async (req, res) => {
 // --- POST /admin/api/send ---
 app.post('/admin/api/send', async (req, res) => {
   const { subject, body, bodyMarkdown, lists } = req.body;
+  // 'html' (branded template, default) or 'text' (plain-text-only, personal-note style).
+  const format: 'html' | 'text' = req.body.format === 'text' ? 'text' : 'html';
 
   if (!subject || !body || !lists || !Array.isArray(lists) || lists.length === 0) {
     return res.status(400).json({ ok: false, error: 'Subject, body, and lists are required' });
@@ -621,11 +623,13 @@ app.post('/admin/api/send', async (req, res) => {
 
   const conn = await Datastore.open();
 
-  // Create campaign
+  // Create campaign. For text campaigns `body` is the raw plain text; for html it's the
+  // rendered HTML (with bodyMarkdown as the editable source).
   const campaign: any = await conn.insertOne('campaigns', {
     subject,
     body,
     bodyMarkdown: bodyMarkdown || body,
+    format,
     lists,
     status: 'sending',
     queued: 0,
@@ -750,8 +754,11 @@ app.worker('sendEmail', async (req, res) => {
 
   const base = settings.baseUrl.replace(/\/+$/, '');
   const unsubscribeUrl = `${base}/unsubscribe/${unsubscribeToken}`;
-  const html = newsletterEmail({ subject: campaign.subject, body: campaign.body, unsubscribeUrl, settings });
-  const result = await sendEmail({ to, subject: campaign.subject, html, unsubscribeUrl, fromEmail: settings.fromEmail, fromName: settings.fromName });
+  // Text campaigns send a plain-text-only message; html campaigns use the branded template.
+  const msg = campaign.format === 'text'
+    ? { text: newsletterText({ body: campaign.body, unsubscribeUrl, settings }) }
+    : { html: newsletterEmail({ subject: campaign.subject, body: campaign.body, unsubscribeUrl, settings }) };
+  const result = await sendEmail({ to, subject: campaign.subject, ...msg, unsubscribeUrl, fromEmail: settings.fromEmail, fromName: settings.fromName });
 
   // Provider rate-limit (429 / 420 / 403-probation) → set a global cooldown from its own "try again"
   // signal and keep this message pending WITHOUT burning an attempt (not the recipient's fault).
