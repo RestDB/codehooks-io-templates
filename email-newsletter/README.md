@@ -7,6 +7,7 @@ A self-hosted **newsletter & waitlist** email service on [Codehooks.io](https://
 - **Double opt-in signup** — `POST /subscribe` with email + list, sends a confirmation email, confirms via tokenized link
 - **List management** — create lists, import existing subscribers in bulk, cascade-delete
 - **Campaigns** — compose in Markdown, preview, send to one or more lists; queued delivery with per-campaign sent/failed counts
+- **HTML or plain text** — per-campaign format toggle: send the branded HTML template, or a genuine `text/plain` email that reads like a personal note (better for 1:1-style messages and inbox placement)
 - **Image uploads** — drag images into campaigns; served from Codehooks filestore
 - **Brandable** — app name, logo, primary/heading colors, sender, links, and a customizable email footer (company, mailing address, free text), all editable at runtime in **Settings**
 - **Deliverability** — `List-Unsubscribe` headers, one-click unsubscribe, footer address for CAN-SPAM

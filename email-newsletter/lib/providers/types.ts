@@ -5,7 +5,8 @@
 export interface EmailMessage {
   to: string;
   subject: string;
-  html: string;
+  html?: string;   // HTML body (branded template). Omit for a plain-text-only send.
+  text?: string;   // plain-text body. When set without html, the email is sent as text/plain only.
   fromEmail: string;
   fromName: string;
   unsubscribeUrl?: string;

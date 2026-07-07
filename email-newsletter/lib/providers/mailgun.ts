@@ -3,7 +3,7 @@ import type { EmailProvider, EmailMessage, SendResult } from './types';
 // Mailgun (https://documentation.mailgun.com) — form-encoded REST API, Basic auth.
 // Env: MAILGUN_API_KEY, MAILGUN_DOMAIN, MAILGUN_EU ("true" for the EU region).
 export const mailgunProvider: EmailProvider = {
-  async send({ to, subject, html, unsubscribeUrl, fromEmail, fromName }: EmailMessage): Promise<SendResult> {
+  async send({ to, subject, html, text, unsubscribeUrl, fromEmail, fromName }: EmailMessage): Promise<SendResult> {
     const apiKey = process.env.MAILGUN_API_KEY;
     const domain = process.env.MAILGUN_DOMAIN;
     const isEU = process.env.MAILGUN_EU === 'true';
@@ -18,7 +18,10 @@ export const mailgunProvider: EmailProvider = {
     form.append('from', `"${displayName}" <${from}>`);
     form.append('to', to);
     form.append('subject', subject);
-    form.append('html', html);
+    // Send whichever parts are present. A text-only campaign has no html, so Mailgun
+    // delivers a genuine text/plain message (reads like a personal note, not a template).
+    if (html) form.append('html', html);
+    if (text) form.append('text', text);
     if (unsubscribeUrl) {
       form.append('h:List-Unsubscribe', `<${unsubscribeUrl}>`);
       form.append('h:List-Unsubscribe-Post', 'List-Unsubscribe=One-Click');

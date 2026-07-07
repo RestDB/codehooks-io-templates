@@ -124,3 +124,27 @@ export function newsletterEmail({ body, unsubscribeUrl, settings }: NewsletterEm
   const content = `<div style="color:${BODY_TEXT};font-size:16px;line-height:1.6;">${body.replace(/<img /g, '<img style="max-width:100%;height:auto;border-radius:8px;" ')}</div>`;
   return emailShell(settings, content, unsubscribeUrl);
 }
+
+interface NewsletterTextParams {
+  body: string;
+  unsubscribeUrl: string;
+  settings: AppSettings;
+}
+
+// Plain-text campaign body. The admin types plain text (no Markdown) and it is sent
+// verbatim as text/plain — reads like a personal note. We still append the compliance
+// footer: optional footer text, the CAN-SPAM company/mailing address, and a bare
+// unsubscribe URL (the one-click List-Unsubscribe header is set separately by the provider).
+export function newsletterText({ body, unsubscribeUrl, settings }: NewsletterTextParams): string {
+  const footer: string[] = [];
+  if (settings.footerText) footer.push(settings.footerText.trim());
+  if (settings.footerCompanyName || settings.footerAddress) {
+    const addr = (settings.footerAddress || '').split('\n').map((s) => s.replace(/,\s*$/, '').trim()).filter(Boolean).join(', ');
+    footer.push([settings.footerCompanyName, addr].filter(Boolean).join(' · '));
+  }
+  footer.push(`Unsubscribe: ${unsubscribeUrl}`);
+
+  // Normalize the body's line endings, trim trailing whitespace, then a divider + footer.
+  const cleanBody = body.replace(/\r\n/g, '\n').replace(/\s+$/, '');
+  return `${cleanBody}\n\n—\n${footer.join('\n')}\n`;
+}
