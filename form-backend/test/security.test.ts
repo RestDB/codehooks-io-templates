@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { originOf, corsHeaders, safeRedirect } from '#lib/security';
-import { safeName } from '#lib/files';
+import { originOf, corsHeaders, safeRedirect, safeName } from '#lib/security';
 
 // --- safeRedirect -----------------------------------------------------
 

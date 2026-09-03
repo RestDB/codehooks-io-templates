@@ -2,6 +2,7 @@ import { filestore } from 'codehooks-js';
 import { PassThrough } from 'stream';
 import { randomUUID } from 'crypto';
 import type { MultipartFile } from '#lib/multipart';
+import { safeName } from '#lib/security';
 
 export type StoredFile = {
   id: string;
@@ -11,19 +12,6 @@ export type StoredFile = {
   size: number;
   path: string;
 };
-
-// Uploads are attacker-supplied, so filenames are never used as storage paths.
-// Exported so its traversal-safety can be unit tested directly.
-export function safeName(name: string): string {
-  const cleaned = String(name || 'file')
-    .toLowerCase()
-    .replace(/[^a-z0-9.-]/g, '-')
-    // Collapse runs of 2+ dots so no ".." traversal token can survive even
-    // when every individual character is otherwise in the allowed set.
-    .replace(/\.{2,}/g, '-')
-    .slice(0, 80);
-  return cleaned || 'file';
-}
 
 export async function saveUploads(
   formId: string,
