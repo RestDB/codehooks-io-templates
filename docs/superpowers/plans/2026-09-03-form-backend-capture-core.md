@@ -1457,8 +1457,17 @@ Expected: FAIL — cannot find module `../lib/csv.ts`.
 ```ts
 // A leading =, +, - or @ makes spreadsheet software treat a cell as a formula.
 // Submissions are untrusted, so prefix those with an apostrophe.
+//
+// Two subtleties:
+//  - Leading whitespace does NOT protect: Excel still parses "\t=1+1" as a formula,
+//    so test the first NON-whitespace character (a known CSV-injection bypass).
+//  - Genuine numbers are exempt. "-5" starts with '-' but is data, and prefixing it
+//    would import a legitimate negative number as text.
 function neutralise(value: string): string {
-  return /^[=+\-@]/.test(value) ? `'${value}` : value;
+  const trimmed = value.trimStart();
+  if (!/^[=+\-@]/.test(trimmed)) return value;
+  if (trimmed !== '' && Number.isFinite(Number(trimmed))) return value;
+  return `'${value}`;
 }
 
 function escapeCell(value: unknown): string {
@@ -1507,6 +1516,10 @@ import { app, Datastore, filestore } from 'codehooks-js';
 Add these routes before `export default app.init();`:
 
 ```ts
+// Upper bound on rows scanned for an in-memory search, so a large collection cannot
+// turn one request into an unbounded read.
+const SEARCH_SCAN_CAP = 1000;
+
 app.get('/admin/api/forms/:formId/submissions', async (req, res) => {
   const conn = await Datastore.open();
   const { search, status, from, to, limit = '50', offset = '0' } = req.query as any;
@@ -1529,11 +1542,27 @@ app.get('/admin/api/forms/:formId/submissions', async (req, res) => {
 
   // Full-text search across values happens in memory: submission data is a free-form
   // map, so there is no fixed field to index on.
+  //
+  // It must NOT filter the already-paginated page. Doing so makes a match beyond the
+  // page boundary vanish, and the empty result is indistinguishable from "no matches"
+  // — a silently wrong answer. Instead scan up to SEARCH_SCAN_CAP rows, filter, then
+  // paginate the filtered set, reporting `truncated` when the cap was reached.
   if (search) {
     const needle = String(search).toLowerCase();
-    rows = rows.filter((r: any) =>
+    const scanned = await conn
+      .getMany('submissions', query, { sort: { created: -1 }, limit: SEARCH_SCAN_CAP })
+      .toArray();
+    const matched = (scanned as any[]).filter((r) =>
       Object.values(r.data || {}).some((v) => String(v).toLowerCase().includes(needle))
     );
+    const off = parseInt(offset as string, 10);
+    const lim = parseInt(limit as string, 10);
+    return res.json({
+      ok: true,
+      data: matched.slice(off, off + lim),
+      total: matched.length,
+      truncated: scanned.length === SEARCH_SCAN_CAP,
+    });
   }
 
   res.json({ ok: true, data: rows });
@@ -1575,7 +1604,13 @@ app.delete('/admin/api/submissions/:id', async (req, res) => {
   const row: any = await conn.findOneOrNull('submissions', req.params.id);
   if (!row) return res.status(404).json({ ok: false, error: 'Submission not found' });
   for (const f of row.files || []) {
-    try { await filestore.deleteFile(f.path); } catch {}
+    // Log rather than swallow: the row is deleted either way, so a silent failure
+    // would leak an orphaned file in storage with no operator visibility.
+    try {
+      await filestore.deleteFile(f.path);
+    } catch (err: any) {
+      console.error('Failed to delete uploaded file', f.path, err.message);
+    }
   }
   await conn.removeOne('submissions', req.params.id);
   res.json({ ok: true, deleted: true });
