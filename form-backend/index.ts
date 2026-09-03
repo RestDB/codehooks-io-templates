@@ -206,6 +206,10 @@ app.get('/thanks/:formId', async (req, res) => {
   );
 });
 
+// Upper bound on rows scanned for an in-memory search, so a large collection cannot
+// turn one request into an unbounded read.
+const SEARCH_SCAN_CAP = 1000;
+
 app.get('/admin/api/forms/:formId/submissions', async (req, res) => {
   const conn = await Datastore.open();
   const { search, status, from, to, limit = '50', offset = '0' } = req.query as any;
@@ -218,22 +222,34 @@ app.get('/admin/api/forms/:formId/submissions', async (req, res) => {
     if (to) query.created.$lte = to;
   }
 
-  let rows = await conn
+  // Search scans a bounded window from the DB, then filters and pages in memory
+  // BEFORE the response is built — filtering an already-paginated page would make
+  // a match beyond the first page look like a genuine zero-match.
+  if (search) {
+    const needle = String(search).toLowerCase();
+    const scanned = await conn
+      .getMany('submissions', query, { sort: { created: -1 }, limit: SEARCH_SCAN_CAP })
+      .toArray();
+    const matched = (scanned as any[]).filter((r) =>
+      Object.values(r.data || {}).some((v) => String(v).toLowerCase().includes(needle))
+    );
+    const off = parseInt(offset as string, 10);
+    const lim = parseInt(limit as string, 10);
+    return res.json({
+      ok: true,
+      data: matched.slice(off, off + lim),
+      total: matched.length,
+      truncated: scanned.length === SEARCH_SCAN_CAP,
+    });
+  }
+
+  const rows = await conn
     .getMany('submissions', query, {
       sort: { created: -1 },
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
     })
     .toArray();
-
-  // Full-text search across values happens in memory: submission data is a free-form
-  // map, so there is no fixed field to index on.
-  if (search) {
-    const needle = String(search).toLowerCase();
-    rows = rows.filter((r: any) =>
-      Object.values(r.data || {}).some((v) => String(v).toLowerCase().includes(needle))
-    );
-  }
 
   res.json({ ok: true, data: rows });
 });
@@ -274,7 +290,13 @@ app.delete('/admin/api/submissions/:id', async (req, res) => {
   const row: any = await conn.findOneOrNull('submissions', req.params.id);
   if (!row) return res.status(404).json({ ok: false, error: 'Submission not found' });
   for (const f of row.files || []) {
-    try { await filestore.deleteFile(f.path); } catch {}
+    // Log rather than swallow: the row is deleted either way, so a silent failure
+    // would leak an orphaned file in storage with no operator visibility.
+    try {
+      await filestore.deleteFile(f.path);
+    } catch (err: any) {
+      console.error('Failed to delete uploaded file', f.path, err.message);
+    }
   }
   await conn.removeOne('submissions', req.params.id);
   res.json({ ok: true, deleted: true });

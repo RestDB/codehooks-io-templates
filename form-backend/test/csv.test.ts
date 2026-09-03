@@ -29,3 +29,13 @@ test('toCsv neutralises formula injection', () => {
 test('toCsv emits only a header for no rows', () => {
   assert.equal(toCsv([], ['a', 'b']), 'a,b');
 });
+
+test('toCsv neutralises formula injection hidden behind leading whitespace', () => {
+  const csv = toCsv([{ a: '\t=1+1', b: ' =1+1' }], ['a', 'b']);
+  assert.equal(csv, "a,b\r\n'\t=1+1,' =1+1");
+});
+
+test('toCsv does not mangle genuine negative numbers', () => {
+  const csv = toCsv([{ a: '-5', b: '-5.5' }], ['a', 'b']);
+  assert.equal(csv, 'a,b\r\n-5,-5.5');
+});
