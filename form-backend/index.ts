@@ -1,4 +1,4 @@
-import { app, Datastore } from 'codehooks-js';
+import { app, Datastore, filestore } from 'codehooks-js';
 import { signToken, verifyRequest, passwordMatches } from '#lib/auth';
 import { defaultForm, getFormByUuid } from '#lib/forms';
 import type { FormDoc } from '#lib/forms';
@@ -6,6 +6,7 @@ import { parseBody } from '#lib/body';
 import { validateFields } from '#lib/validation';
 import { saveUploads } from '#lib/files';
 import { originOf, corsHeaders, safeRedirect } from '#lib/security';
+import { toCsv, collectColumns } from '#lib/csv';
 import { randomUUID } from 'crypto';
 
 // Boot-time guard — a missing JWT_SECRET would make admin sessions forgeable.
@@ -203,6 +204,132 @@ app.get('/thanks/:formId', async (req, res) => {
     `<div style="font-family:system-ui;max-width:32rem;margin:20vh auto;text-align:center">` +
     `<h1>Thank you</h1><p>Your submission to ${name.replace(/[<>&]/g, '')} was received.</p></div>`
   );
+});
+
+app.get('/admin/api/forms/:formId/submissions', async (req, res) => {
+  const conn = await Datastore.open();
+  const { search, status, from, to, limit = '50', offset = '0' } = req.query as any;
+
+  const query: any = { formId: req.params.formId };
+  if (status) query.status = status;
+  if (from || to) {
+    query.created = {};
+    if (from) query.created.$gte = from;
+    if (to) query.created.$lte = to;
+  }
+
+  let rows = await conn
+    .getMany('submissions', query, {
+      sort: { created: -1 },
+      limit: parseInt(limit, 10),
+      offset: parseInt(offset, 10),
+    })
+    .toArray();
+
+  // Full-text search across values happens in memory: submission data is a free-form
+  // map, so there is no fixed field to index on.
+  if (search) {
+    const needle = String(search).toLowerCase();
+    rows = rows.filter((r: any) =>
+      Object.values(r.data || {}).some((v) => String(v).toLowerCase().includes(needle))
+    );
+  }
+
+  res.json({ ok: true, data: rows });
+});
+
+app.get('/admin/api/submissions/:id', async (req, res) => {
+  const conn = await Datastore.open();
+  const row = await conn.findOneOrNull('submissions', req.params.id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Submission not found' });
+  res.json({ ok: true, data: row });
+});
+
+app.patch('/admin/api/submissions/:id', async (req, res) => {
+  const conn = await Datastore.open();
+  const existing = await conn.findOneOrNull('submissions', req.params.id);
+  if (!existing) return res.status(404).json({ ok: false, error: 'Submission not found' });
+
+  const patch: any = {};
+  if (req.body?.status && ['new', 'read', 'archived', 'spam'].includes(req.body.status)) {
+    patch.status = req.body.status;
+  }
+  if (typeof req.body?.starred === 'boolean') patch.starred = req.body.starred;
+
+  const update: any = {};
+  if (Object.keys(patch).length) update.$set = patch;
+  if (req.body?.note) {
+    update.$push = { notes: { text: String(req.body.note).slice(0, 2000), at: new Date().toISOString() } };
+  }
+  if (!Object.keys(update).length) {
+    return res.status(400).json({ ok: false, error: 'Nothing to update' });
+  }
+
+  const updated = await conn.updateOne('submissions', req.params.id, update);
+  res.json({ ok: true, data: updated });
+});
+
+app.delete('/admin/api/submissions/:id', async (req, res) => {
+  const conn = await Datastore.open();
+  const row: any = await conn.findOneOrNull('submissions', req.params.id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Submission not found' });
+  for (const f of row.files || []) {
+    try { await filestore.deleteFile(f.path); } catch {}
+  }
+  await conn.removeOne('submissions', req.params.id);
+  res.json({ ok: true, deleted: true });
+});
+
+// Uploads are attacker-supplied, so they are served only to an authenticated
+// admin and never through a public app.storage() route.
+app.get('/admin/api/submissions/:id/files/:fileId', async (req, res) => {
+  const conn = await Datastore.open();
+  const row: any = await conn.findOneOrNull('submissions', req.params.id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Submission not found' });
+  const file = (row.files || []).find((f: any) => f.id === req.params.fileId);
+  if (!file) return res.status(404).json({ ok: false, error: 'File not found' });
+
+  // Obtain the stream BEFORE writing headers: once they are flushed, a failure here
+  // would reach the client as a misleading 200 with an error body instead of a 404.
+  let stream: any;
+  try {
+    stream = await filestore.getReadStream(file.path);
+  } catch (err: any) {
+    console.error('File download error:', err.message);
+    return res.status(404).json({ ok: false, error: 'File not found' });
+  }
+
+  res.set('content-type', file.contentType || 'application/octet-stream');
+  res.set('content-disposition', `attachment; filename="${file.filename.replace(/"/g, '')}"`);
+
+  // The platform's stream has no .pipe(); codehooks-js serves its own static files
+  // with this listener pattern (webserver.mjs), so match it.
+  stream
+    .on('data', (buf: any) => res.write(buf, 'buffer'))
+    .on('end', () => res.end())
+    .on('error', (err: any) => {
+      console.error('File stream error:', err.message);
+      res.end();
+    });
+});
+
+app.get('/admin/api/forms/:formId/export.csv', async (req, res) => {
+  const conn = await Datastore.open();
+  const rows = await conn
+    .getMany('submissions', { formId: req.params.formId }, { sort: { created: -1 } })
+    .toArray();
+
+  const dataColumns = collectColumns(rows as any);
+  const columns = ['created', 'status', ...dataColumns];
+  const flat = (rows as any[]).map((r) => ({
+    created: r.created,
+    status: r.status,
+    ...r.data,
+  }));
+
+  res.set('content-type', 'text/csv; charset=utf-8');
+  res.set('content-disposition', `attachment; filename="submissions-${req.params.formId}.csv"`);
+  res.send(toCsv(flat, columns));
 });
 
 export default app.init();
