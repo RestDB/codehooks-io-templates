@@ -13,8 +13,16 @@ export type StoredFile = {
 };
 
 // Uploads are attacker-supplied, so filenames are never used as storage paths.
-function safeName(name: string): string {
-  return String(name || 'file').toLowerCase().replace(/[^a-z0-9.-]/g, '-').slice(0, 80);
+// Exported so its traversal-safety can be unit tested directly.
+export function safeName(name: string): string {
+  const cleaned = String(name || 'file')
+    .toLowerCase()
+    .replace(/[^a-z0-9.-]/g, '-')
+    // Collapse runs of 2+ dots so no ".." traversal token can survive even
+    // when every individual character is otherwise in the allowed set.
+    .replace(/\.{2,}/g, '-')
+    .slice(0, 80);
+  return cleaned || 'file';
 }
 
 export async function saveUploads(

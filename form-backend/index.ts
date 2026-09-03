@@ -5,6 +5,7 @@ import type { FormDoc } from '#lib/forms';
 import { parseBody } from '#lib/body';
 import { validateFields } from '#lib/validation';
 import { saveUploads } from '#lib/files';
+import { originOf, corsHeaders, safeRedirect } from '#lib/security';
 import { randomUUID } from 'crypto';
 
 // Boot-time guard — a missing JWT_SECRET would make admin sessions forgeable.
@@ -95,41 +96,6 @@ app.delete('/admin/api/forms/:id', async (req, res) => {
 
 function maxUploadBytes(): number {
   return (Number(process.env.MAX_UPLOAD_MB) || 5) * 1024 * 1024;
-}
-
-function originOf(req: any): string {
-  const raw = req.headers?.origin || req.headers?.referer || '';
-  try {
-    return raw ? new URL(raw).hostname : '';
-  } catch {
-    return '';
-  }
-}
-
-function corsHeaders(form: any, req: any): Record<string, string> {
-  const list: string[] = form.allowedDomains || [];
-  const host = originOf(req);
-  const allowed = list.length === 0 || list.includes(host);
-  return {
-    'Access-Control-Allow-Origin': list.length === 0 ? '*' : allowed ? req.headers.origin : 'null',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  };
-}
-
-// Only same-origin-ish redirects are honoured — an open redirect would let an
-// attacker use the form endpoint as a link launderer.
-function safeRedirect(form: any, requested: string): string | null {
-  if (!requested) return null;
-  if (!form.allowRedirectOverride) return null;
-  if (requested.startsWith('/')) return requested;
-  try {
-    const host = new URL(requested).hostname;
-    const list: string[] = form.allowedDomains || [];
-    return list.includes(host) ? requested : null;
-  } catch {
-    return null;
-  }
 }
 
 // codehooks-js exposes get/post/put/patch/delete/all — there is no app.options —
