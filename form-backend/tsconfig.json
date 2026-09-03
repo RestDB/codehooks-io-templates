@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "lib": ["es2020", "dom"],
+    "types": ["node"],
+    "resolveJsonModule": true,
+    "esModuleInterop": true
+  },
+  "include": ["index.ts", "lib/**/*.ts"]
+}
