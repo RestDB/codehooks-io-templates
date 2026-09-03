@@ -31,6 +31,17 @@ function checkOne(def: FieldDef, raw: string): string | null {
     return def.required ? `${def.label || def.name} is required` : null;
   }
 
+  // `max` is a length cap for every string-typed field. Numbers reinterpret it as
+  // an upper bound below, so they are the only types excluded here.
+  if (
+    def.max !== undefined &&
+    def.type !== 'number' &&
+    def.type !== 'rating' &&
+    value.length > def.max
+  ) {
+    return `Must be at most ${def.max} characters`;
+  }
+
   switch (def.type) {
     case 'email':
       return EMAIL_RE.test(value) ? null : 'Must be a valid email address';
@@ -58,27 +69,33 @@ function checkOne(def: FieldDef, raw: string): string | null {
       }
       return null;
     }
-    default: {
-      if (def.max !== undefined && value.length > def.max) {
-        return `Must be at most ${def.max} characters`;
-      }
+    default:
       return null;
-    }
   }
 }
 
 export function validateFields(
   defs: FieldDef[],
   data: Record<string, string>,
-  strict = false
+  strict = false,
+  fileFields: string[] = []
 ): ValidationResult {
   const errors: Array<{ field: string; message: string }> = [];
 
   // No schema means accept anything — strict has nothing to measure against.
   if (!defs || defs.length === 0) return { ok: true, errors };
 
+  const uploaded = new Set(fileFields);
+
   for (const def of defs) {
-    if (def.type === 'file') continue; // files are validated during persistence
+    // File fields carry no value in `data` — presence is decided by the uploads
+    // that came with the request, so `required` is checked against those.
+    if (def.type === 'file') {
+      if (def.required && !uploaded.has(def.name)) {
+        errors.push({ field: def.name, message: `${def.label || def.name} is required` });
+      }
+      continue;
+    }
     const message = checkOne(def, data[def.name]);
     if (message) errors.push({ field: def.name, message });
   }

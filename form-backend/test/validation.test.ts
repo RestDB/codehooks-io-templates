@@ -100,3 +100,51 @@ test('optional select with no options accepts blank value', () => {
   const defs: FieldDef[] = [{ name: 'category', type: 'select' }];
   assert.equal(validateFields(defs, { category: '' }).ok, true);
 });
+
+test('a required file field passes when the file was uploaded', () => {
+  const defs: FieldDef[] = [{ name: 'cv', type: 'file', required: true }];
+  assert.equal(validateFields(defs, {}, false, ['cv']).ok, true);
+});
+
+test('a required file field fails when no file was uploaded', () => {
+  const defs: FieldDef[] = [{ name: 'cv', type: 'file', required: true, label: 'Your CV' }];
+  const r = validateFields(defs, {}, false, []);
+  assert.equal(r.ok, false);
+  assert.equal(r.errors[0].field, 'cv');
+  assert.match(r.errors[0].message, /Your CV is required/);
+});
+
+test('a required file field is not satisfied by a different upload', () => {
+  const defs: FieldDef[] = [{ name: 'cv', type: 'file', required: true }];
+  assert.equal(validateFields(defs, {}, false, ['photo']).ok, false);
+});
+
+test('an optional file field passes with no upload', () => {
+  const defs: FieldDef[] = [{ name: 'cv', type: 'file' }];
+  assert.equal(validateFields(defs, {}, false, []).ok, true);
+});
+
+test('max is applied as a length cap to email, url, phone and date', () => {
+  const cases: FieldDef[] = [
+    { name: 'email', type: 'email', max: 10 },
+    { name: 'url', type: 'url', max: 10 },
+    { name: 'phone', type: 'phone', max: 6 },
+    { name: 'date', type: 'date', max: 5 },
+  ];
+  const data = {
+    email: 'averylongaddress@example.com',
+    url: 'https://example.com/very/long',
+    phone: '+47 123 456 789',
+    date: '2026-09-03',
+  };
+  for (const def of cases) {
+    const r = validateFields([def], data);
+    assert.equal(r.ok, false, `${def.name} should fail its max`);
+    assert.match(r.errors[0].message, /at most \d+ characters/);
+  }
+});
+
+test('max still leaves a value within the cap valid', () => {
+  const defs: FieldDef[] = [{ name: 'email', type: 'email', max: 40 }];
+  assert.equal(validateFields(defs, { email: 'ada@example.com' }).ok, true);
+});

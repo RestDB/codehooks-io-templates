@@ -117,3 +117,18 @@ test('parseMultipart survives --boundary in file content (no preceding CRLF)', (
   assert.ok(out.files[0].content.equals(maliciousContent), 'Content must be byte-identical');
   assert.equal(out.fields.name, 'Ada', 'Text field after the file must be preserved');
 });
+
+test('parseMultipart keeps every value for a repeated field name', () => {
+  const buf = buildBody([
+    { name: 'topics', value: 'sales' },
+    { name: 'topics', value: 'support' },
+    { name: 'topics', value: 'billing' },
+  ]);
+  const out = parseMultipart(buf, B);
+  assert.deepEqual(out.fields.topics, ['sales', 'support', 'billing']);
+});
+
+test('parseMultipart leaves a single occurrence as a plain string', () => {
+  const out = parseMultipart(buildBody([{ name: 'topics', value: 'sales' }]), B);
+  assert.equal(out.fields.topics, 'sales');
+});

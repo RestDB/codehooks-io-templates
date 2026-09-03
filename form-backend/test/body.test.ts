@@ -65,3 +65,48 @@ test('parseBody returns empty for a body-less request', async () => {
   assert.deepEqual(out.fields, {});
   assert.equal(out.files.length, 0);
 });
+
+test('parseBody joins repeated multipart names exactly like urlencoded', async () => {
+  const B = 'zzz';
+  const req: any = new EventEmitter();
+  req.headers = { 'content-type': `multipart/form-data; boundary=${B}` };
+  req.body = {};
+  const p = parseBody(req, 1024 * 1024);
+  const part = (v: string) =>
+    `--${B}\r\nContent-Disposition: form-data; name="topics"\r\n\r\n${v}\r\n`;
+  req.emit('data', Buffer.from(part('sales') + part('support') + part('billing') + `--${B}--\r\n`, 'utf8'));
+  req.emit('end');
+  const multipart = await p;
+
+  const urlencoded = await parseBody(
+    {
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: { topics: ['sales', 'support', 'billing'] },
+    } as any,
+    1024
+  );
+
+  assert.equal(multipart.fields.topics, 'sales, support, billing');
+  assert.deepEqual(multipart.fields, urlencoded.fields);
+});
+
+test('parseBody leaves a single multipart occurrence unchanged', async () => {
+  const B = 'zzz';
+  const req: any = new EventEmitter();
+  req.headers = { 'content-type': `multipart/form-data; boundary=${B}` };
+  req.body = {};
+  const p = parseBody(req, 1024 * 1024);
+  req.emit(
+    'data',
+    Buffer.from(`--${B}\r\nContent-Disposition: form-data; name="topics"\r\n\r\nsales\r\n--${B}--\r\n`, 'utf8')
+  );
+  req.emit('end');
+  assert.deepEqual((await p).fields, { topics: 'sales' });
+});
+
+test('parseBody throws MALFORMED_BODY when the multipart boundary is missing', async () => {
+  const req: any = new EventEmitter();
+  req.headers = { 'content-type': 'multipart/form-data' };
+  req.body = {};
+  await assert.rejects(() => parseBody(req, 1024), /MALFORMED_BODY/);
+});

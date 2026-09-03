@@ -1,12 +1,14 @@
 import { app, Datastore, filestore } from 'codehooks-js';
 import { signToken, verifyRequest, passwordMatches } from '#lib/auth';
-import { defaultForm, getFormByUuid } from '#lib/forms';
+import { defaultForm, getFormByUuid, resolveForm } from '#lib/forms';
 import type { FormDoc } from '#lib/forms';
 import { parseBody } from '#lib/body';
 import { validateFields } from '#lib/validation';
 import { saveUploads } from '#lib/files';
 import { originOf, corsHeaders, safeRedirect } from '#lib/security';
 import { toCsv, collectColumns } from '#lib/csv';
+import { thanksPage, errorPage } from '#lib/pages';
+import { filterAndPaginate, clampInt } from '#lib/search';
 import { randomUUID } from 'crypto';
 
 // Boot-time guard — a missing JWT_SECRET would make admin sessions forgeable.
@@ -40,6 +42,13 @@ app.post('/admin/login', (req, res) => {
   if (!passwordMatches(req.body?.password)) {
     return res.status(401).json({ ok: false, error: 'Invalid password' });
   }
+  // SameSite=Strict is a SECURITY CONTROL here, not a preference. The platform
+  // injects `Access-Control-Allow-Origin: <echoed origin>` together with
+  // `Access-Control-Allow-Credentials: true` on every response and our code
+  // cannot override it, so SameSite=Strict is the ONLY thing stopping any web
+  // page from reading /admin/api/* with the admin's cookie. Relaxing it to Lax
+  // (the usual fix when a login link in an email stops working) would expose
+  // every submission and allow PATCH/DELETE. Do not relax it.
   res.set('Set-Cookie', `token=${signToken()}; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=604800`);
   res.json({ ok: true });
 });
@@ -74,9 +83,13 @@ app.patch('/admin/api/forms/:id', async (req, res) => {
   if (!existing) return res.status(404).json({ ok: false, error: 'Form not found' });
 
   // uuid, created and stats are server-owned and never client-writable.
+  // `honeypot` is deliberately NOT editable yet: the submit endpoint and
+  // lib/validation still hardcode `_gotcha`, so changing it here would store and
+  // export bot values and, under strict, reject real users with "Unknown field".
+  // It becomes editable when the plan that enforces the honeypot lands.
   const allowed: Array<keyof FormDoc> = [
     'name', 'enabled', 'fields', 'strict', 'redirectUrl',
-    'allowRedirectOverride', 'allowedDomains', 'honeypot', 'retentionDays',
+    'allowRedirectOverride', 'allowedDomains', 'retentionDays',
   ];
   const patch: any = { updated: new Date().toISOString() };
   for (const key of allowed) {
@@ -90,6 +103,20 @@ app.delete('/admin/api/forms/:id', async (req, res) => {
   const conn = await Datastore.open();
   const form: any = await conn.findOneOrNull('forms', req.params.id);
   if (!form) return res.status(404).json({ ok: false, error: 'Form not found' });
+  // Delete the uploads before the rows that point at them: dropping the
+  // submissions first would leave every stored file unreachable forever.
+  const rows = await conn.getMany('submissions', { formId: form.uuid }).toArray();
+  for (const row of rows as any[]) {
+    for (const f of row.files || []) {
+      // Log rather than swallow, exactly as the submission delete does — the
+      // rows go either way, so a silent failure leaks an orphan invisibly.
+      try {
+        await filestore.deleteFile(f.path);
+      } catch (err: any) {
+        console.error('Failed to delete uploaded file', f.path, err.message);
+      }
+    }
+  }
   await conn.removeMany('submissions', { formId: form.uuid });
   await conn.removeOne('forms', req.params.id);
   res.json({ ok: true, deleted: true });
@@ -130,30 +157,56 @@ app.all('/f/:formId', async (req, res) => {
       return res.status(405).json({ ok: false, error: 'Method not allowed' });
     }
 
+    // A browser form post must not land on a white page of JSON. JSON clients
+    // keep byte-identical bodies; everything else gets the branded error page.
+    const wantsJson = String(req.headers['content-type'] || '').includes('application/json');
+    const fail = (
+      status: number,
+      message: string,
+      errors: Array<{ field: string; message: string }> = []
+    ) => {
+      if (wantsJson) {
+        const body: any = { ok: false, error: message };
+        if (errors.length) body.errors = errors;
+        return res.status(status).json(body);
+      }
+      res.set('content-type', 'text/html');
+      return res.status(status).send(errorPage(message, errors));
+    };
+
     if (!form.enabled) {
-      return res.status(403).json({ ok: false, error: 'This form is not accepting submissions' });
+      return fail(403, 'This form is not accepting submissions');
     }
 
     const list: string[] = form.allowedDomains || [];
     if (list.length > 0 && !list.includes(originOf(req))) {
-      return res.status(403).json({ ok: false, error: 'Origin not allowed' });
+      return fail(403, 'Origin not allowed');
     }
 
     if (parseErr) {
       if (parseErr.message === 'PAYLOAD_TOO_LARGE') {
-        return res.status(413).json({ ok: false, error: 'Submission too large' });
+        return fail(413, 'Submission too large');
+      }
+      if (parseErr.message === 'MALFORMED_BODY') {
+        // An unparseable multipart body would otherwise store a blank
+        // submission and redirect to the thank-you page — silent data loss.
+        return fail(400, 'Could not read the submitted form data');
       }
       throw parseErr;
     }
 
-    const wantsJson = String(req.headers['content-type'] || '').includes('application/json');
     const data = { ...parsed.fields };
     const requestedRedirect = data._redirect || '';
     for (const key of ['_gotcha', '_redirect', '_subject', '_next']) delete data[key];
 
-    const check = validateFields(form.fields || [], parsed.fields, form.strict);
+    const check = validateFields(
+      form.fields || [],
+      parsed.fields,
+      form.strict,
+      parsed.files.map((f) => f.field)
+    );
     if (!check.ok) {
-      return res.status(400).json({ ok: false, error: 'Validation failed', errors: check.errors });
+      return fail(400, 'Validation failed', check.errors);
     }
 
     const conn = await Datastore.open();
@@ -179,10 +232,17 @@ app.all('/f/:formId', async (req, res) => {
       ai: null,
     });
 
-    await conn.updateOne('forms', form._id as string, {
-      $inc: { 'stats.total': 1 },
-      $set: { 'stats.lastSubmissionAt': new Date().toISOString() },
-    });
+    // The submission is already durable at this point. A stats failure must not
+    // 500 the request — the visitor would hit back and resubmit, creating
+    // duplicates with no explanation.
+    try {
+      await conn.updateOne('forms', form._id as string, {
+        $inc: { 'stats.total': 1 },
+        $set: { 'stats.lastSubmissionAt': new Date().toISOString() },
+      });
+    } catch (err: any) {
+      console.error('Failed to update form stats for', form.uuid, err.message);
+    }
 
     if (wantsJson) {
       return res.json({ ok: true, id: (submission as any)._id, submissionId });
@@ -199,11 +259,7 @@ app.get('/thanks/:formId', async (req, res) => {
   const form = await getFormByUuid(req.params.formId);
   const name = form ? form.name : 'the form';
   res.set('content-type', 'text/html');
-  res.send(
-    `<!doctype html><meta charset="utf-8"><title>Thank you</title>` +
-    `<div style="font-family:system-ui;max-width:32rem;margin:20vh auto;text-align:center">` +
-    `<h1>Thank you</h1><p>Your submission to ${name.replace(/[<>&]/g, '')} was received.</p></div>`
-  );
+  res.send(thanksPage(name));
 });
 
 // Upper bound on rows scanned for an in-memory search, so a large collection cannot
@@ -211,10 +267,16 @@ app.get('/thanks/:formId', async (req, res) => {
 const SEARCH_SCAN_CAP = 1000;
 
 app.get('/admin/api/forms/:formId/submissions', async (req, res) => {
-  const conn = await Datastore.open();
-  const { search, status, from, to, limit = '50', offset = '0' } = req.query as any;
+  // Accepts either the _id used by /admin/api/forms/:id or the uuid.
+  const form = await resolveForm(req.params.formId);
+  if (!form) return res.status(404).json({ ok: false, error: 'Form not found' });
 
-  const query: any = { formId: req.params.formId };
+  const conn = await Datastore.open();
+  const { search, status, from, to, limit, offset } = req.query as any;
+  const lim = clampInt(limit, 50, 1, 500);
+  const off = clampInt(offset, 0, 0, 1000000);
+
+  const query: any = { formId: form.uuid };
   if (status) query.status = status;
   if (from || to) {
     query.created = {};
@@ -222,33 +284,18 @@ app.get('/admin/api/forms/:formId/submissions', async (req, res) => {
     if (to) query.created.$lte = to;
   }
 
-  // Search scans a bounded window from the DB, then filters and pages in memory
-  // BEFORE the response is built — filtering an already-paginated page would make
-  // a match beyond the first page look like a genuine zero-match.
+  // Search scans a bounded window from the DB, then filters and pages it in
+  // lib/search.ts. One row beyond the cap is fetched so `truncated` is exact.
   if (search) {
-    const needle = String(search).toLowerCase();
     const scanned = await conn
-      .getMany('submissions', query, { sort: { created: -1 }, limit: SEARCH_SCAN_CAP })
+      .getMany('submissions', query, { sort: { created: -1 }, limit: SEARCH_SCAN_CAP + 1 })
       .toArray();
-    const matched = (scanned as any[]).filter((r) =>
-      Object.values(r.data || {}).some((v) => String(v).toLowerCase().includes(needle))
-    );
-    const off = parseInt(offset as string, 10);
-    const lim = parseInt(limit as string, 10);
-    return res.json({
-      ok: true,
-      data: matched.slice(off, off + lim),
-      total: matched.length,
-      truncated: scanned.length === SEARCH_SCAN_CAP,
-    });
+    const page = filterAndPaginate(scanned as any[], String(search), off, lim, SEARCH_SCAN_CAP);
+    return res.json({ ok: true, ...page });
   }
 
   const rows = await conn
-    .getMany('submissions', query, {
-      sort: { created: -1 },
-      limit: parseInt(limit, 10),
-      offset: parseInt(offset, 10),
-    })
+    .getMany('submissions', query, { sort: { created: -1 }, limit: lim, offset: off })
     .toArray();
 
   res.json({ ok: true, data: rows });
@@ -321,8 +368,15 @@ app.get('/admin/api/submissions/:id/files/:fileId', async (req, res) => {
     return res.status(404).json({ ok: false, error: 'File not found' });
   }
 
+  // file.contentType is attacker-supplied and echoed back, so forbid sniffing:
+  // without it, serving an uploaded SVG inline (which the admin UI will want for
+  // image previews) would let it run script on the admin origin.
+  res.set('x-content-type-options', 'nosniff');
   res.set('content-type', file.contentType || 'application/octet-stream');
-  res.set('content-disposition', `attachment; filename="${file.filename.replace(/"/g, '')}"`);
+  // Quotes AND CR/LF: the multipart parser's filename="[^"]*" permits newlines,
+  // which would let a filename inject extra response headers.
+  const downloadName = String(file.filename || 'download').replace(/["\r\n]/g, '');
+  res.set('content-disposition', `attachment; filename="${downloadName}"`);
 
   // The platform's stream has no .pipe(); codehooks-js serves its own static files
   // with this listener pattern (webserver.mjs), so match it.
@@ -336,9 +390,13 @@ app.get('/admin/api/submissions/:id/files/:fileId', async (req, res) => {
 });
 
 app.get('/admin/api/forms/:formId/export.csv', async (req, res) => {
+  // Accepts either the _id used by /admin/api/forms/:id or the uuid.
+  const form = await resolveForm(req.params.formId);
+  if (!form) return res.status(404).json({ ok: false, error: 'Form not found' });
+
   const conn = await Datastore.open();
   const rows = await conn
-    .getMany('submissions', { formId: req.params.formId }, { sort: { created: -1 } })
+    .getMany('submissions', { formId: form.uuid }, { sort: { created: -1 } })
     .toArray();
 
   const dataColumns = collectColumns(rows as any);
@@ -350,7 +408,9 @@ app.get('/admin/api/forms/:formId/export.csv', async (req, res) => {
   }));
 
   res.set('content-type', 'text/csv; charset=utf-8');
-  res.set('content-disposition', `attachment; filename="submissions-${req.params.formId}.csv"`);
+  // Neutralise the interpolated identifier — never trust a path param in a header.
+  const slug = String(form.uuid).replace(/[^A-Za-z0-9._-]/g, '');
+  res.set('content-disposition', `attachment; filename="submissions-${slug}.csv"`);
   res.send(toCsv(flat, columns));
 });
 

@@ -43,3 +43,21 @@ export async function getFormByUuid(uuid: string): Promise<FormDoc | null> {
   const rows = await conn.getMany('forms', { uuid }).toArray();
   return rows.length ? (rows[0] as FormDoc) : null;
 }
+
+// `/admin/api/forms/:id` addresses a form by its Mongo _id while
+// `/:formId/submissions` addresses it by uuid. Passing the wrong one was not an
+// error — it returned an empty inbox for a form with a thousand submissions —
+// so the inbox routes accept EITHER identifier through this one lookup.
+export async function resolveForm(idOrUuid: string): Promise<FormDoc | null> {
+  if (!idOrUuid) return null;
+  const byUuid = await getFormByUuid(idOrUuid);
+  if (byUuid) return byUuid;
+  try {
+    const conn = await Datastore.open();
+    const byId = await conn.findOneOrNull('forms', idOrUuid);
+    return (byId as FormDoc) || null;
+  } catch {
+    // A malformed _id makes the driver throw rather than return null.
+    return null;
+  }
+}

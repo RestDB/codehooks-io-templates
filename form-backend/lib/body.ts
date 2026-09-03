@@ -20,24 +20,32 @@ export function flattenValue(v: unknown): string {
   return JSON.stringify(v);
 }
 
+function flattenFields(raw: Record<string, unknown>): Record<string, string> {
+  const fields: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) fields[k] = flattenValue(v);
+  return fields;
+}
+
 export async function parseBody(req: any, maxBytes: number): Promise<ParsedBody> {
   const contentType = String(req.headers?.['content-type'] || '');
 
   // Codehooks does not parse multipart — stream the raw bytes and parse them ourselves.
   if (contentType.toLowerCase().startsWith('multipart/form-data')) {
     const boundary = boundaryFromContentType(contentType);
-    if (!boundary) return { fields: {}, files: [] };
+    // Returning an empty body here would store a blank submission and report
+    // success — silent data loss. Signal the failure so the caller can 400.
+    if (!boundary) throw new Error('MALFORMED_BODY');
     const raw = await readRequestBody(req, maxBytes);
-    return parseMultipart(raw, boundary);
+    const parsed = parseMultipart(raw, boundary);
+    // Multipart fields go through the SAME flattenValue as every other content
+    // type, so a repeated name produces one joined string either way.
+    return { fields: flattenFields(parsed.fields), files: parsed.files };
   }
 
   // JSON and urlencoded arrive pre-parsed on req.body.
-  const fields: Record<string, string> = {};
   const body = req.body;
   if (body && typeof body === 'object') {
-    for (const [k, v] of Object.entries(body)) {
-      fields[k] = flattenValue(v);
-    }
+    return { fields: flattenFields(body as Record<string, unknown>), files: [] };
   }
-  return { fields, files: [] };
+  return { fields: {}, files: [] };
 }

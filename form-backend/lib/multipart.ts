@@ -5,8 +5,11 @@ export type MultipartFile = {
   content: Buffer;
 };
 
+// A repeated field name (checkbox group, multi-select) keeps every value, so the
+// multipart path produces the same shape the platform gives us for urlencoded
+// bodies. body.ts collapses both through the one flattenValue().
 export type MultipartResult = {
-  fields: Record<string, string>;
+  fields: Record<string, string | string[]>;
   files: MultipartFile[];
 };
 
@@ -71,7 +74,15 @@ export function parseMultipart(buf: Buffer, boundary: string): MultipartResult {
           content,
         });
       } else if (!fileMatch) {
-        result.fields[field] = content.toString('utf8');
+        const value = content.toString('utf8');
+        const existing = result.fields[field];
+        if (existing === undefined) {
+          result.fields[field] = value;
+        } else if (Array.isArray(existing)) {
+          existing.push(value);
+        } else {
+          result.fields[field] = [existing, value];
+        }
       }
       // filename="" is an empty file input — ignore it entirely
     }
