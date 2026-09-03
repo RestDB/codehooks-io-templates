@@ -144,12 +144,20 @@ Expected: `OK 🙌`. If you see `TS1192`, the `tsconfig.json` from Step 2 is mis
 
 - [ ] **Step 7: Link the space and deploy**
 
-Run:
-```bash
-cd form-backend && coho init formify-05tc dev && coho deploy
-```
+Do **not** run `coho init` here. It restores the space's currently-deployed code into
+the directory, which would overwrite the `index.ts` and `package.json` you just wrote.
+Linking only needs `config.json`, which `.gitignore` already excludes:
 
-Note: `coho init` overwrites `package.json` with a default and drops an `index.js`. Restore the Step 1 `package.json` and delete `index.js` before deploying, then re-run `coho deploy`.
+```bash
+cd form-backend
+cat > config.json <<'JSON'
+{
+  "name": "formify-05tc",
+  "space": "dev"
+}
+JSON
+coho deploy
+```
 
 - [ ] **Step 8: Verify the deployment answers**
 
