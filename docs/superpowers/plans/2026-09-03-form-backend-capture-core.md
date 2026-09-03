@@ -1091,7 +1091,12 @@ curl -s -c /tmp/fb-cookies -X POST "$U/admin/login" -H 'content-type: applicatio
 curl -s -b /tmp/fb-cookies -X POST "$U/admin/api/forms" -H 'content-type: application/json' -d '{"name":"Contact"}'
 curl -s -b /tmp/fb-cookies "$U/admin/api/forms"
 ```
-Expected: `{"error":"Not authenticated"}`, then `{"ok":false,...}`, then `{"ok":true}`, then a created form with a `uuid`, then a list containing it.
+Expected: a **401** for the unauthenticated call, then `{"ok":false,...}`, then `{"ok":true}`, then a created form with a `uuid`, then a list containing it.
+
+Note on the 401 body: with no credentials at all, the platform's own auth layer answers first and returns
+`{"error":"Authentication failed"}` rather than our handler's `{"error":"Not authenticated"}`. Both are 401
+and both deny access; only the text differs. Accept either. Our handler's message appears once a request
+carries credentials but no valid admin JWT cookie.
 
 - [ ] **Step 6: Commit**
 
