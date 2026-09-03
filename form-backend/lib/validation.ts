@@ -49,11 +49,15 @@ function checkOne(def: FieldDef, raw: string): string | null {
       if (def.max !== undefined && n > def.max) return `Must be at most ${def.max}`;
       return null;
     }
-    case 'select':
-      if (def.options && def.options.length && !def.options.includes(value)) {
+    case 'select': {
+      if (!def.options || def.options.length === 0) {
+        return 'This field is misconfigured: no options defined';
+      }
+      if (!def.options.includes(value)) {
         return `Must be one of: ${def.options.join(', ')}`;
       }
       return null;
+    }
     default: {
       if (def.max !== undefined && value.length > def.max) {
         return `Must be at most ${def.max} characters`;

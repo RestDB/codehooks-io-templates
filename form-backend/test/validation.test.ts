@@ -90,3 +90,13 @@ test('all failures are reported, not just the first', () => {
   const r = validateFields(defs, { qty: 'abc' });
   assert.equal(r.errors.length, 2);
 });
+
+test('select with no options rejects non-empty value', () => {
+  const defs: FieldDef[] = [{ name: 'category', type: 'select' }];
+  assert.equal(validateFields(defs, { category: 'any' }).ok, false);
+});
+
+test('optional select with no options accepts blank value', () => {
+  const defs: FieldDef[] = [{ name: 'category', type: 'select' }];
+  assert.equal(validateFields(defs, { category: '' }).ok, true);
+});
