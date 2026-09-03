@@ -39,6 +39,7 @@ These apply to every task; they are not repeated per-task.
 - **Import `crypto` by name**: `import { createHash, randomUUID } from 'crypto'`. Never `import crypto from 'crypto'`.
 - **`app.options` does not exist.** codehooks-js registers `get`, `post`, `put`, `patch`, `delete`, and `all`. Handle CORS preflight inside an `app.all()` handler that switches on `req.method`.
 - **`filestore.getReadStream(path)` returns a Promise**, not a stream — `await` it before calling `.pipe()`.
+- **Drain the request body before any other `await`.** The platform finishes consuming the request stream as soon as a handler yields to the event loop, so `req.on('data', ...)` attached after an `await` never fires and multipart bodies silently arrive EMPTY. Call `parseBody` as the first awaited operation in any handler that accepts uploads. Confirmed in the deployed runtime: 0/3 multipart submissions survived the old ordering, 20/20 with the fix.
 - **No `fs`, `path`, or `os`** — Codehooks has no filesystem. Uploads go to the filestore.
 - **`conn.getMany()` returns a stream** — call `.toArray()` before sorting, filtering, or mapping.
 - **Deploy target:** project `formify-05tc`, space `dev`. Deploy with `coho deploy` from the `form-backend/` directory.
@@ -1238,6 +1239,21 @@ function safeRedirect(form: any, requested: string): string | null {
 // so the CORS preflight is handled inside one app.all() dispatcher.
 app.all('/f/:formId', async (req, res) => {
   try {
+    // The raw body MUST be drained before any other `await`. Once this handler yields
+    // to the event loop, the platform has already finished consuming the request
+    // stream, so a later `req.on('data', ...)` never fires and multipart submissions
+    // silently arrive empty. Parsing is deferred-error rather than throw-here so that
+    // an unknown form still 404s and CORS headers are still set before a 413.
+    let parsed;
+    let parseErr: any = null;
+    if (req.method === 'POST') {
+      try {
+        parsed = await parseBody(req, maxUploadBytes());
+      } catch (err: any) {
+        parseErr = err;
+      }
+    }
+
     const form = await getFormByUuid(req.params.formId);
     if (!form) return res.status(404).json({ ok: false, error: 'Form not found' });
 
@@ -1257,14 +1273,11 @@ app.all('/f/:formId', async (req, res) => {
       return res.status(403).json({ ok: false, error: 'Origin not allowed' });
     }
 
-    let parsed;
-    try {
-      parsed = await parseBody(req, maxUploadBytes());
-    } catch (err: any) {
-      if (err.message === 'PAYLOAD_TOO_LARGE') {
+    if (parseErr) {
+      if (parseErr.message === 'PAYLOAD_TOO_LARGE') {
         return res.status(413).json({ ok: false, error: 'Submission too large' });
       }
-      throw err;
+      throw parseErr;
     }
 
     const wantsJson = String(req.headers['content-type'] || '').includes('application/json');
