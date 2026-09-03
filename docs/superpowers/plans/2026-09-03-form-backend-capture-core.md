@@ -1209,30 +1209,53 @@ function originOf(req: any): string {
   }
 }
 
+// Never emit the literal string 'null' for a disallowed origin: a sandboxed iframe
+// or data: URL serialises its origin as exactly "null", so that value would grant
+// read access to the very contexts the allowlist is meant to exclude. Omit the
+// header instead — absent means "no cross-origin reader authorised".
 function corsHeaders(form: any, req: any): Record<string, string> {
   const list: string[] = form.allowedDomains || [];
-  const host = originOf(req);
-  const allowed = list.length === 0 || list.includes(host);
-  return {
-    'Access-Control-Allow-Origin': list.length === 0 ? '*' : allowed ? req.headers.origin : 'null',
+  const origin = req.headers?.origin;
+  const headers: Record<string, string> = {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
+  if (list.length === 0) {
+    headers['Access-Control-Allow-Origin'] = '*';
+  } else if (origin && list.includes(originOf(req))) {
+    headers['Access-Control-Allow-Origin'] = origin;
+    headers['Vary'] = 'Origin';
+  }
+  return headers;
 }
 
 // Only same-origin-ish redirects are honoured — an open redirect would let an
 // attacker use the form endpoint as a link launderer.
+//
+// A naive `requested.startsWith('/')` check is NOT sufficient: browsers resolve
+// "//evil.com" and "/\evil.com" to a different HOST, so those must be resolved
+// before any decision is made. Resolving against a placeholder origin makes a
+// genuinely relative path keep the placeholder hostname, while a disguised
+// absolute URL reveals its real one.
 function safeRedirect(form: any, requested: string): string | null {
   if (!requested) return null;
   if (!form.allowRedirectOverride) return null;
-  if (requested.startsWith('/')) return requested;
+
+  let resolved: URL;
   try {
-    const host = new URL(requested).hostname;
-    const list: string[] = form.allowedDomains || [];
-    return list.includes(host) ? requested : null;
+    resolved = new URL(requested, 'https://placeholder.invalid');
   } catch {
     return null;
   }
+
+  // Same-site path: hostname stayed the placeholder, so nothing escaped.
+  if (resolved.hostname === 'placeholder.invalid') {
+    return resolved.pathname + resolved.search + resolved.hash;
+  }
+
+  if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return null;
+  const list: string[] = form.allowedDomains || [];
+  return list.includes(resolved.hostname) ? resolved.toString() : null;
 }
 
 // codehooks-js exposes get/post/put/patch/delete/all — there is no app.options —
