@@ -20,12 +20,21 @@ These apply to every task; they are not repeated per-task.
 - **Node type-stripping compatible.** Unit tests run via `node --test test/*.test.ts` with no build step, so the code must avoid `enum`, `namespace`, parameter properties (`constructor(private x)`), and decorators. Use plain `type`/`interface` declarations only.
 - **Ship our own `tsconfig.json`** with `"esModuleInterop": true`. The CLI generates one only when absent, so ours takes precedence. Without it, CommonJS default imports fail to compile (see RestDB/ndb-cli#96).
 - **`@types/node` is a required devDependency** — without it `Buffer` is undefined to the type checker.
-- **Import specifiers are asymmetric, and deliberately so.** Verified against both toolchains:
-  - Source files (`index.ts`, `lib/*.ts`) import **without** an extension — `from './lib/body'`. A `.ts` specifier fails ts-loader with `TS5097` during `coho deploy`.
-  - Test files import **with** the `.ts` extension — `from '../lib/body.ts'`. Node's ESM resolver raises `ERR_MODULE_NOT_FOUND` without it.
-  - `tsconfig.json` sets `"include": ["index.ts", "lib/**/*.ts"]` so ts-loader never type-checks `test/`; without it the tests' `.ts` imports trip `TS5097` even though the source is correct.
+- **Every internal module is imported through the `#lib/*` subpath map** — from source and tests alike, e.g. `from '#lib/multipart'`. `package.json` declares `"imports": { "#lib/*": "./lib/*.ts" }` and `tsconfig.json` sets `"module": "esnext"` + `"moduleResolution": "bundler"` so TypeScript honours it.
 
-  Do not "normalise" these to match each other — each side breaks the other's toolchain.
+  This is the only style that satisfies both toolchains at once, which was established by testing all four candidates:
+
+  | Style | `coho verify` (ts-loader) | `node --test` |
+  |---|---|---|
+  | `'./multipart'` (extensionless) | OK | `ERR_MODULE_NOT_FOUND` |
+  | `'./multipart.ts'` | `TS5097` | passes |
+  | `'./multipart.ts'` + `allowImportingTsExtensions` | `TS5096` (needs `noEmit`) | passes |
+  | `'./multipart.js'` | OK | `ERR_MODULE_NOT_FOUND` |
+  | **`'#lib/multipart'` (imports map)** | **OK** | **passes** |
+
+  The map was also confirmed at runtime, not just at compile time — a deployed endpoint using a mapped import returned correctly, proving webpack resolves it into a working bundle.
+
+  `tsconfig.json` still sets `"include": ["index.ts", "lib/**/*.ts"]` to keep `test/` out of the compile graph.
 - **Import `crypto` by name**: `import { createHash, randomUUID } from 'crypto'`. Never `import crypto from 'crypto'`.
 - **`app.options` does not exist.** codehooks-js registers `get`, `post`, `put`, `patch`, `delete`, and `all`. Handle CORS preflight inside an `app.all()` handler that switches on `req.method`.
 - **`filestore.getReadStream(path)` returns a Promise**, not a stream — `await` it before calling `.pipe()`.
@@ -70,6 +79,9 @@ These apply to every task; they are not repeated per-task.
   "version": "1.0.0",
   "description": "Headless form backend — collect submissions, validate, store files, and notify",
   "main": "index.ts",
+  "imports": {
+    "#lib/*": "./lib/*.ts"
+  },
   "scripts": {
     "deploy": "coho deploy",
     "test": "node --test test/*.test.ts"
@@ -95,7 +107,9 @@ These apply to every task; they are not repeated per-task.
     "lib": ["es2020", "dom"],
     "types": ["node"],
     "resolveJsonModule": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler"
   },
   "include": ["index.ts", "lib/**/*.ts"]
 }
@@ -201,7 +215,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
-import { boundaryFromContentType, parseMultipart, readRequestBody } from '../lib/multipart.ts';
+import { boundaryFromContentType, parseMultipart, readRequestBody } from '#lib/multipart';
 
 const B = 'xBoundary123';
 
@@ -435,6 +449,46 @@ git commit -m "feat(form-backend): multipart/form-data parser with binary integr
 
 Nested JSON values are flattened to strings so submissions stay a flat key/value map — the inbox, CSV export, and notification templates all assume that shape.
 
+- [ ] **Step 0: Adopt the `#lib/*` imports map**
+
+This task is the first where one source module imports another, which is what forced the
+imports map (see Global Constraints). Retrofit it before writing any new code.
+
+Add the map to `form-backend/package.json`, directly after `"main"`:
+
+```json
+  "imports": {
+    "#lib/*": "./lib/*.ts"
+  },
+```
+
+Add the two resolution options to `form-backend/tsconfig.json`'s `compilerOptions`:
+
+```json
+    "module": "esnext",
+    "moduleResolution": "bundler"
+```
+
+Then migrate the one existing test to the new style, so the codebase has a single
+convention — in `form-backend/test/multipart.test.ts` change:
+
+```ts
+import { boundaryFromContentType, parseMultipart, readRequestBody } from '../lib/multipart.ts';
+```
+
+to:
+
+```ts
+import { boundaryFromContentType, parseMultipart, readRequestBody } from '#lib/multipart';
+```
+
+Verify both toolchains still work before continuing:
+
+```bash
+cd form-backend && node --test test/multipart.test.ts && coho verify
+```
+Expected: 10/10 passing, then `OK 🙌`. If either fails, stop and report — do not proceed to Step 1.
+
 - [ ] **Step 1: Write the failing tests**
 
 Create `form-backend/test/body.test.ts`:
@@ -443,7 +497,7 @@ Create `form-backend/test/body.test.ts`:
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { EventEmitter } from 'node:events';
-import { parseBody, flattenValue } from '../lib/body.ts';
+import { parseBody, flattenValue } from '#lib/body';
 
 test('flattenValue passes strings through', () => {
   assert.equal(flattenValue('hi'), 'hi');
@@ -524,7 +578,7 @@ import {
   parseMultipart,
   readRequestBody,
   MultipartFile,
-} from './multipart';
+} from '#lib/multipart';
 
 export type ParsedBody = {
   fields: Record<string, string>;
@@ -600,7 +654,7 @@ Create `form-backend/test/validation.test.ts`:
 ```ts
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { validateFields, FieldDef } from '../lib/validation.ts';
+import { validateFields, FieldDef } from '#lib/validation';
 
 test('an empty schema accepts anything', () => {
   const r = validateFields([], { anything: 'goes', more: 'fields' });
@@ -871,7 +925,7 @@ export function passwordMatches(candidate: string): boolean {
 ```ts
 import { Datastore } from 'codehooks-js';
 import { randomUUID } from 'crypto';
-import { FieldDef } from './validation';
+import { FieldDef } from '#lib/validation';
 
 export type FormDoc = {
   _id?: string;
@@ -920,8 +974,8 @@ export async function getFormByUuid(uuid: string): Promise<FormDoc | null> {
 
 ```ts
 import { app, Datastore } from 'codehooks-js';
-import { signToken, verifyRequest, passwordMatches } from './lib/auth';
-import { defaultForm, getFormByUuid, FormDoc } from './lib/forms';
+import { signToken, verifyRequest, passwordMatches } from '#lib/auth';
+import { defaultForm, getFormByUuid, FormDoc } from '#lib/forms';
 
 // Boot-time guard — a missing JWT_SECRET would make admin sessions forgeable.
 (function checkConfig() {
@@ -1065,7 +1119,7 @@ Spam checks and notifications are deliberately out of scope here — Plan 3 adds
 import { filestore } from 'codehooks-js';
 import { PassThrough } from 'stream';
 import { randomUUID } from 'crypto';
-import { MultipartFile } from './multipart';
+import { MultipartFile } from '#lib/multipart';
 
 export type StoredFile = {
   id: string;
@@ -1116,9 +1170,9 @@ export async function saveUploads(
 Insert these imports at the top, alongside the existing ones:
 
 ```ts
-import { parseBody } from './lib/body';
-import { validateFields } from './lib/validation';
-import { saveUploads } from './lib/files';
+import { parseBody } from '#lib/body';
+import { validateFields } from '#lib/validation';
+import { saveUploads } from '#lib/files';
 import { randomUUID } from 'crypto';
 ```
 
@@ -1316,7 +1370,7 @@ Create `form-backend/test/csv.test.ts`:
 ```ts
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { toCsv, collectColumns } from '../lib/csv.ts';
+import { toCsv, collectColumns } from '#lib/csv';
 
 test('collectColumns unions keys across rows in first-seen order', () => {
   const rows = [{ data: { name: 'a', email: 'b' } }, { data: { email: 'c', phone: 'd' } }];
@@ -1395,7 +1449,7 @@ Expected: PASS — 6 passing.
 Add the import alongside the others:
 
 ```ts
-import { toCsv, collectColumns } from './lib/csv';
+import { toCsv, collectColumns } from '#lib/csv';
 ```
 
 and extend the existing codehooks-js import rather than adding a second one:
