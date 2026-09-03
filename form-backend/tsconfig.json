@@ -3,7 +3,9 @@
     "lib": ["es2020", "dom"],
     "types": ["node"],
     "resolveJsonModule": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler"
   },
   "include": ["index.ts", "lib/**/*.ts"]
 }

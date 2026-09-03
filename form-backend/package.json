@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Headless form backend — collect submissions, validate, store files, and notify",
   "main": "index.ts",
+  "imports": {
+    "#lib/*": "./lib/*.ts"
+  },
   "scripts": {
     "deploy": "coho deploy",
     "test": "node --test test/*.test.ts"

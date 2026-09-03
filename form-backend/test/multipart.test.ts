@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
-import { boundaryFromContentType, parseMultipart, readRequestBody } from '../lib/multipart.ts';
+import { boundaryFromContentType, parseMultipart, readRequestBody } from '#lib/multipart';
 
 const B = 'xBoundary123';
 
