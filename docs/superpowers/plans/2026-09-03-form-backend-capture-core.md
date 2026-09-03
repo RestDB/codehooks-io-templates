@@ -1008,12 +1008,14 @@ app.post('/admin/login', (req, res) => {
   if (!passwordMatches(req.body?.password)) {
     return res.status(401).json({ ok: false, error: 'Invalid password' });
   }
-  res.set('Set-Cookie', `token=${signToken()}; HttpOnly; Path=/; SameSite=Strict; Max-Age=604800`);
+  // Secure is safe unconditionally — Codehooks serves HTTPS only, and this cookie
+  // is the session for the entire admin surface.
+  res.set('Set-Cookie', `token=${signToken()}; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=604800`);
   res.json({ ok: true });
 });
 
 app.post('/admin/logout', (req, res) => {
-  res.set('Set-Cookie', 'token=; HttpOnly; Path=/; SameSite=Strict; Max-Age=0');
+  res.set('Set-Cookie', 'token=; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=0');
   res.json({ ok: true });
 });
 
