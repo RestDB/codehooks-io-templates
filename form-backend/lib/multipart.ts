@@ -20,7 +20,9 @@ export function boundaryFromContentType(contentType: string): string | null {
 export function parseMultipart(buf: Buffer, boundary: string): MultipartResult {
   const result: MultipartResult = { fields: {}, files: [] };
   const delim = Buffer.from('--' + boundary);
+  const delimWithCRLF = Buffer.from('\r\n--' + boundary);
 
+  // Find the first boundary (no preceding CRLF, appears at offset 0)
   let start = buf.indexOf(delim);
   if (start < 0) return result;
   start += delim.length;
@@ -35,11 +37,25 @@ export function parseMultipart(buf: Buffer, boundary: string): MultipartResult {
     const headers = buf.slice(start, headerEnd).toString('utf8');
 
     const bodyStart = headerEnd + 4;
-    let next = buf.indexOf(delim, bodyStart);
-    if (next < 0) next = buf.length;
+    // Search for subsequent boundaries with CRLF prefix (RFC 2046 compliance).
+    // Binary content cannot contain \r\n--boundary without these being actual delimiters.
+    let next = buf.indexOf(delimWithCRLF, bodyStart);
 
-    // -2 strips the CRLF that precedes the next boundary
-    const content = buf.slice(bodyStart, Math.max(bodyStart, next - 2));
+    let endPos: number;
+    if (next < 0) {
+      // No boundary found; must be the last part.
+      // Content goes to end of buffer, minus any trailing CRLF before closing delimiter.
+      endPos = buf.length;
+      if (endPos >= 2 && buf[endPos - 2] === 0x0d && buf[endPos - 1] === 0x0a) {
+        endPos -= 2;
+      }
+    } else {
+      // Boundary found at position next (which points to \r in \r\n--boundary).
+      // Content ends before the CRLF.
+      endPos = next;
+    }
+
+    const content = buf.slice(bodyStart, Math.max(bodyStart, endPos));
 
     const nameMatch = /name="([^"]*)"/.exec(headers);
     const fileMatch = /filename="([^"]*)"/.exec(headers);
@@ -60,7 +76,8 @@ export function parseMultipart(buf: Buffer, boundary: string): MultipartResult {
       // filename="" is an empty file input — ignore it entirely
     }
 
-    start = next + delim.length;
+    if (next < 0) break;
+    start = next + 2 + delim.length; // Skip \r\n and then --boundary
   }
 
   return result;

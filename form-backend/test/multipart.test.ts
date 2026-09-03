@@ -101,3 +101,19 @@ test('readRequestBody rejects a body over the cap', async () => {
   req.emit('data', Buffer.from('toolong'));
   await assert.rejects(p, /PAYLOAD_TOO_LARGE/);
 });
+
+test('parseMultipart survives --boundary in file content (no preceding CRLF)', () => {
+  // File content containing the literal boundary bytes WITHOUT preceding CRLF.
+  // The old parser would incorrectly treat this as a delimiter and truncate.
+  // The fixed parser must identify that \r\n is NOT before it and treat it as data.
+  const maliciousContent = Buffer.from('start--xBoundary123end');
+  const buf = buildBody([
+    { name: 'f', filename: 'tricky.bin', contentType: 'application/octet-stream', content: maliciousContent },
+    { name: 'name', value: 'Ada' },
+  ]);
+  const out = parseMultipart(buf, B);
+  assert.equal(out.files.length, 1, 'Must preserve the file with boundary-like content');
+  assert.equal(out.files[0].content.length, maliciousContent.length, 'Content length must match exactly');
+  assert.ok(out.files[0].content.equals(maliciousContent), 'Content must be byte-identical');
+  assert.equal(out.fields.name, 'Ada', 'Text field after the file must be preserved');
+});
