@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>form-backend — live example</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ─── config ───────────────────────────────────────────────────────────────
+   Point this at your own deploy. These two lines are the only thing to change.
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --paper:      #FAF9F5;
+  --carbon:     #E9E4D4;
+  --carbon-ink: #3D4048;
+  --ink:        #16181D;
+  --ink-soft:   #5C6068;
+  --rule:       #CFC9BB;
+  --stamp:      #B4342A;
+  --blue:       #23407E;
+  --ok:         #2F6B4F;
+
+  --display: 'Bricolage Grotesque', system-ui, sans-serif;
+  --body:    'Inter', system-ui, sans-serif;
+  --mono:    'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.5;
+  /* faint blue ruling, like a paper form */
+  background-image: linear-gradient(transparent 27px, rgba(35,64,126,.05) 27px, rgba(35,64,126,.05) 28px, transparent 28px);
+  background-size: 100% 28px;
+}
+
+/* ─── masthead ─── */
+.masthead {
+  display: flex; flex-wrap: wrap; gap: .5rem 1.5rem;
+  align-items: baseline; justify-content: space-between;
+  padding: 1.25rem clamp(1rem, 4vw, 3rem);
+  border-bottom: 1px solid var(--ink);
+}
+.wordmark {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(1.15rem, 2.5vw, 1.5rem);
+  letter-spacing: -.02em;
+  margin: 0;
+}
+.wordmark span { color: var(--ink-soft); font-weight: 400; }
+.endpoint {
+  font-family: var(--mono);
+  font-size: .8rem;
+  color: var(--ink-soft);
+  word-break: break-all;
+}
+.endpoint b { color: var(--blue); font-weight: 500; }
+
+/* ─── the two sheets ─── */
+.sheets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: calc(100vh - 72px);
+}
+@media (max-width: 860px) { .sheets { grid-template-columns: 1fr; } }
+
+.sheet { padding: clamp(1.25rem, 3.5vw, 2.5rem); }
+.sheet--original { border-right: 1px solid var(--rule); }
+@media (max-width: 860px) {
+  .sheet--original { border-right: 0; border-bottom: 1px solid var(--rule); }
+}
+
+.sheet--copy {
+  background: var(--carbon);
+  color: var(--carbon-ink);
+  font-family: var(--mono);
+  position: relative;
+}
+/* the stacked-copies edge */
+.sheet--copy::before {
+  content: '';
+  position: absolute; inset: 0 auto 0 0; width: 3px;
+  background: repeating-linear-gradient(180deg, var(--rule) 0 6px, transparent 6px 12px);
+}
+
+.sheet-label {
+  font-family: var(--mono);
+  font-size: .68rem;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 0 0 1.5rem;
+}
+
+/* ─── form ─── */
+h1 {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  line-height: 1.05;
+  letter-spacing: -.03em;
+  margin: 0 0 .4rem;
+}
+.lede { color: var(--ink-soft); margin: 0 0 2rem; max-width: 34ch; }
+
+.field { margin-bottom: 1.25rem; }
+label {
+  display: block;
+  font-size: .8rem;
+  font-weight: 500;
+  margin-bottom: .3rem;
+}
+.req { color: var(--stamp); }
+
+input[type=text], input[type=email], textarea, input[type=file] {
+  width: 100%;
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ink);
+  border-radius: 0;
+  padding: .45rem .1rem;
+}
+textarea { resize: vertical; min-height: 4.5rem; border: 1px solid var(--ink); padding: .5rem; }
+input[type=file] { font-family: var(--mono); font-size: .82rem; padding-left: 0; }
+input:focus-visible, textarea:focus-visible, button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.checks { display: flex; flex-wrap: wrap; gap: .35rem .75rem; }
+.check {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: .88rem; cursor: pointer;
+  padding: .2rem .5rem .2rem .2rem;
+}
+.check input { accent-color: var(--blue); }
+
+button[type=submit] {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: -.01em;
+  background: var(--ink);
+  color: var(--paper);
+  border: 0;
+  padding: .7rem 1.6rem;
+  cursor: pointer;
+  margin-top: .5rem;
+}
+button[type=submit]:hover { background: var(--blue); }
+button[type=submit][disabled] { opacity: .5; cursor: progress; }
+
+/* ─── carbon copy ─── */
+.wire { font-size: .82rem; line-height: 1.75; }
+.wire-head { color: var(--ink-soft); }
+.wire-head b { color: var(--carbon-ink); font-weight: 600; }
+.wire-rule {
+  border: 0; border-top: 1px dashed var(--rule);
+  margin: 1.1rem 0;
+}
+.row { display: flex; gap: .75rem; }
+.row dt {
+  min-width: 7.5rem; flex-shrink: 0;
+  color: var(--ink-soft);
+}
+.row dd {
+  margin: 0; word-break: break-word;
+  /* values arrive "pressed through" */
+  animation: press .18s ease-out;
+}
+.row dd:empty::after { content: '—'; color: var(--rule); }
+@keyframes press { from { opacity: .25; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .row dd { animation: none; } }
+dl { margin: 0; }
+
+.hint { color: var(--ink-soft); font-size: .78rem; }
+
+/* ─── the stamp (the one bold thing) ─── */
+.stamp {
+  margin-top: 1.75rem;
+  display: none;
+  border: 3px double currentColor;
+  color: var(--stamp);
+  padding: .5rem 1rem;
+  transform: rotate(-3.5deg);
+  mix-blend-mode: multiply;
+  width: fit-content;
+  font-family: var(--display);
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  opacity: .88;
+}
+.stamp.show { display: block; animation: thud .22s cubic-bezier(.2,1.5,.4,1); }
+.stamp.ok { color: var(--ok); }
+.stamp small {
+  display: block;
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: .68rem;
+  letter-spacing: .04em;
+  text-transform: none;
+  opacity: .85;
+}
+@keyframes thud { from { transform: rotate(-3.5deg) scale(1.35); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .stamp.show { animation: none; } }
+
+.errors { margin: .9rem 0 0; padding: 0; list-style: none; color: var(--stamp); font-size: .8rem; }
+.errors li::before { content: '✗ '; }
+
+/* ─── the markup, i.e. the docs ─── */
+.docs {
+  border-top: 1px solid var(--ink);
+  padding: clamp(1.25rem, 3.5vw, 2.5rem);
+}
+.docs summary {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 1.05rem;
+  cursor: pointer;
+}
+.docs p { color: var(--ink-soft); max-width: 62ch; }
+pre {
+  font-family: var(--mono);
+  font-size: .8rem;
+  line-height: 1.65;
+  background: var(--carbon);
+  color: var(--carbon-ink);
+  padding: 1rem 1.15rem;
+  overflow-x: auto;
+  border-left: 3px solid var(--blue);
+}
+code { font-family: var(--mono); }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <p class="wordmark">form-backend <span>/ live example</span></p>
+  <p class="endpoint">posting to <b id="endpoint-label">—</b></p>
+</header>
+
+<main class="sheets">
+
+  <!-- ── original ───────────────────────────────────────────── -->
+  <section class="sheet sheet--original">
+    <p class="sheet-label">Original</p>
+    <h1>Fill this in.</h1>
+    <p class="lede">An ordinary HTML form, posted to a backend on a different origin. Nothing here is special — that is the point.</p>
+
+    <form id="demo" novalidate>
+      <div class="field">
+        <label for="name">Name <span class="req" aria-hidden="true">*</span></label>
+        <input type="text" id="name" name="name" required autocomplete="name">
+      </div>
+
+      <div class="field">
+        <label for="email">Email <span class="req" aria-hidden="true">*</span></label>
+        <input type="email" id="email" name="email" required autocomplete="email">
+      </div>
+
+      <fieldset class="field" style="border:0;padding:0;margin-inline:0">
+        <legend style="font-size:.8rem;font-weight:500;padding:0;margin-bottom:.3rem">What is this about?</legend>
+        <div class="checks">
+          <label class="check"><input type="checkbox" name="topics" value="sales"> Sales</label>
+          <label class="check"><input type="checkbox" name="topics" value="support"> Support</label>
+          <label class="check"><input type="checkbox" name="topics" value="billing"> Billing</label>
+          <label class="check"><input type="checkbox" name="topics" value="other"> Other</label>
+        </div>
+      </fieldset>
+
+      <div class="field">
+        <label for="message">Message</label>
+        <textarea id="message" name="message" rows="3"></textarea>
+      </div>
+
+      <div class="field">
+        <label for="attachment">Attachment</label>
+        <input type="file" id="attachment" name="attachment">
+        <p class="hint">Adding a file switches the request to multipart/form-data.</p>
+      </div>
+
+      <button type="submit" id="send">Send it</button>
+    </form>
+  </section>
+
+  <!-- ── carbon copy ────────────────────────────────────────── -->
+  <section class="sheet sheet--copy" aria-live="polite">
+    <p class="sheet-label">Carbon copy — what the server receives</p>
+
+    <div class="wire">
+      <p class="wire-head" style="margin:0 0 1rem">
+        <b>POST</b> <span id="wire-path">/f/…</span><br>
+        content-type: <span id="wire-ct">application/json</span>
+      </p>
+
+      <dl id="wire-fields">
+        <div class="row"><dt>name</dt><dd data-for="name"></dd></div>
+        <div class="row"><dt>email</dt><dd data-for="email"></dd></div>
+        <div class="row"><dt>topics</dt><dd data-for="topics"></dd></div>
+        <div class="row"><dt>message</dt><dd data-for="message"></dd></div>
+        <div class="row"><dt>attachment</dt><dd data-for="attachment"></dd></div>
+      </dl>
+
+      <hr class="wire-rule">
+      <p class="wire-head" style="margin:0"><b>Response</b></p>
+      <div id="response" class="hint" style="margin-top:.5rem">Not sent yet.</div>
+      <ul class="errors" id="errors"></ul>
+
+      <div class="stamp" id="stamp"></div>
+    </div>
+  </section>
+</main>
+
+<details class="docs">
+  <summary>The markup that did this</summary>
+  <p>
+    This page uses <code>fetch</code> so it can show you the response. It does not have to —
+    the same form works with no JavaScript at all. Set <code>action</code> to your endpoint and the
+    backend redirects to your thank-you page on success:
+  </p>
+<pre><code>&lt;form action="https://api.example.com/f/YOUR_FORM_ID" method="POST"
+      enctype="multipart/form-data"&gt;
+  &lt;input name="name" required&gt;
+  &lt;input name="email" type="email" required&gt;
+  &lt;input name="topics" type="checkbox" value="sales"&gt;
+  &lt;input name="topics" type="checkbox" value="support"&gt;
+  &lt;textarea name="message"&gt;&lt;/textarea&gt;
+  &lt;input name="attachment" type="file"&gt;
+
+  &lt;!-- bots fill this in; people never see it --&gt;
+  &lt;input name="_gotcha" style="display:none" tabindex="-1" autocomplete="off"&gt;
+
+  &lt;button&gt;Send it&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+  <p>
+    Send <code>content-type: application/json</code> and you get JSON back
+    (<code>{"ok":true,"id":"…"}</code>). Post it as a form and you get a 302 to your
+    <code>redirectUrl</code>, or to the hosted thank-you page if you have not set one.
+  </p>
+</details>
+
+<script>
+// ─── config ────────────────────────────────────────────────────────────────
+// The only two lines to change when pointing this at your own deploy.
+const API     = 'https://api.formbackend.dev';
+const FORM_ID = '3324297f-f6eb-4ca6-a7a7-07424d655432';
+// ───────────────────────────────────────────────────────────────────────────
+
+const form     = document.getElementById('demo');
+const stamp    = document.getElementById('stamp');
+const errorsEl = document.getElementById('errors');
+const respEl   = document.getElementById('response');
+const ctEl     = document.getElementById('wire-ct');
+const sendBtn  = document.getElementById('send');
+
+document.getElementById('endpoint-label').textContent = new URL(API).host;
+document.getElementById('wire-path').textContent = '/f/' + FORM_ID;
+
+const cell = (name) => document.querySelector(`[data-for="${name}"]`);
+
+// Mirror the form onto the carbon copy as it is filled in.
+function mirror() {
+  const data = new FormData(form);
+  cell('name').textContent    = data.get('name') || '';
+  cell('email').textContent   = data.get('email') || '';
+  cell('message').textContent = data.get('message') || '';
+  // Repeated names are a list — the backend joins them into one value.
+  cell('topics').textContent  = data.getAll('topics').join(', ');
+
+  const file = form.attachment.files[0];
+  cell('attachment').textContent = file
+    ? `${file.name} (${Math.max(1, Math.round(file.size / 1024))} kB)`
+    : '';
+  ctEl.textContent = file ? 'multipart/form-data' : 'application/json';
+}
+form.addEventListener('input', mirror);
+form.addEventListener('change', mirror);
+mirror();
+
+function setStamp(text, detail, ok) {
+  stamp.className = 'stamp show' + (ok ? ' ok' : '');
+  stamp.innerHTML = '';
+  stamp.append(text);
+  if (detail) {
+    const small = document.createElement('small');
+    small.textContent = detail;
+    stamp.append(small);
+  }
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  errorsEl.innerHTML = '';
+  stamp.className = 'stamp';
+  respEl.textContent = 'Sending…';
+  sendBtn.disabled = true;
+
+  const data = new FormData(form);
+  const file = form.attachment.files[0];
+  const url  = `${API}/f/${FORM_ID}`;
+
+  try {
+    let res;
+    if (file) {
+      // Multipart: the backend answers a browser-style post with a redirect.
+      res = await fetch(url, { method: 'POST', body: data });
+    } else {
+      // JSON: the backend answers with JSON. Repeated names are sent as an array.
+      const body = {};
+      for (const [k, v] of data.entries()) {
+        if (k === 'attachment') continue;
+        if (k in body) body[k] = [].concat(body[k], v);
+        else body[k] = v;
+      }
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
+
+    const text = await res.text();
+    let payload = null;
+    try { payload = JSON.parse(text); } catch { /* HTML page, not JSON */ }
+
+    if (res.redirected) {
+      respEl.textContent = `302 → ${new URL(res.url).pathname}`;
+      setStamp('Received', 'redirected to the thank-you page', true);
+    } else if (res.ok && payload?.ok) {
+      respEl.textContent = `${res.status} · id ${payload.id}`;
+      setStamp('Received', `${res.status} · stored`, true);
+    } else {
+      respEl.textContent = `${res.status} ${payload?.error || 'Rejected'}`;
+      for (const err of payload?.errors || []) {
+        const li = document.createElement('li');
+        li.textContent = `${err.field} — ${err.message}`;
+        errorsEl.append(li);
+      }
+      setStamp('Rejected', `${res.status}`, false);
+    }
+  } catch (err) {
+    // A network-level failure here usually means the origin is not on the
+    // form's allowed-domains list, or the endpoint is unreachable.
+    respEl.textContent = 'Request blocked before it reached the server.';
+    setStamp('Blocked', err.message.slice(0, 40), false);
+  } finally {
+    sendBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

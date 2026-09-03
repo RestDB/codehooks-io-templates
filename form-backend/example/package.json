@@ -1,0 +1,16 @@
+{
+  "name": "form-backend-example",
+  "version": "1.0.0",
+  "description": "Live example client for the form-backend template — a working form posted cross-origin",
+  "main": "index.ts",
+  "scripts": {
+    "deploy": "coho deploy"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "codehooks-js": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0"
+  }
+}
