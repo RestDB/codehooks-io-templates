@@ -35,6 +35,7 @@ These apply to every task; they are not repeated per-task.
   The map was also confirmed at runtime, not just at compile time — a deployed endpoint using a mapped import returned correctly, proving webpack resolves it into a working bundle.
 
   `tsconfig.json` still sets `"include": ["index.ts", "lib/**/*.ts"]` to keep `test/` out of the compile graph.
+- **Types are imported with `import type`.** Node strips types without a build step, so a type pulled in through a value import (`import { MultipartFile } from '#lib/multipart'`) throws `SyntaxError: does not provide an export named ...` at runtime. Split them: `import type { MultipartFile } from '#lib/multipart'`.
 - **Import `crypto` by name**: `import { createHash, randomUUID } from 'crypto'`. Never `import crypto from 'crypto'`.
 - **`app.options` does not exist.** codehooks-js registers `get`, `post`, `put`, `patch`, `delete`, and `all`. Handle CORS preflight inside an `app.all()` handler that switches on `req.method`.
 - **`filestore.getReadStream(path)` returns a Promise**, not a stream — `await` it before calling `.pipe()`.
@@ -925,7 +926,7 @@ export function passwordMatches(candidate: string): boolean {
 ```ts
 import { Datastore } from 'codehooks-js';
 import { randomUUID } from 'crypto';
-import { FieldDef } from '#lib/validation';
+import type { FieldDef } from '#lib/validation';
 
 export type FormDoc = {
   _id?: string;
@@ -975,7 +976,8 @@ export async function getFormByUuid(uuid: string): Promise<FormDoc | null> {
 ```ts
 import { app, Datastore } from 'codehooks-js';
 import { signToken, verifyRequest, passwordMatches } from '#lib/auth';
-import { defaultForm, getFormByUuid, FormDoc } from '#lib/forms';
+import { defaultForm, getFormByUuid } from '#lib/forms';
+import type { FormDoc } from '#lib/forms';
 
 // Boot-time guard — a missing JWT_SECRET would make admin sessions forgeable.
 (function checkConfig() {
@@ -1119,7 +1121,7 @@ Spam checks and notifications are deliberately out of scope here — Plan 3 adds
 import { filestore } from 'codehooks-js';
 import { PassThrough } from 'stream';
 import { randomUUID } from 'crypto';
-import { MultipartFile } from '#lib/multipart';
+import type { MultipartFile } from '#lib/multipart';
 
 export type StoredFile = {
   id: string;
