@@ -38,7 +38,8 @@ These apply to every task; they are not repeated per-task.
 - **Types are imported with `import type`.** Node strips types without a build step, so a type pulled in through a value import (`import { MultipartFile } from '#lib/multipart'`) throws `SyntaxError: does not provide an export named ...` at runtime. Split them: `import type { MultipartFile } from '#lib/multipart'`.
 - **Import `crypto` by name**: `import { createHash, randomUUID } from 'crypto'`. Never `import crypto from 'crypto'`.
 - **`app.options` does not exist.** codehooks-js registers `get`, `post`, `put`, `patch`, `delete`, and `all`. Handle CORS preflight inside an `app.all()` handler that switches on `req.method`.
-- **`filestore.getReadStream(path)` returns a Promise**, not a stream — `await` it before calling `.pipe()`.
+- **`filestore.getReadStream(path)` returns a Promise, and the stream it resolves to has NO `.pipe()`.** `await` it, then consume it with listeners — `.on('data', buf => res.write(buf, 'buffer')).on('end', () => res.end())`. This is how codehooks-js serves its own static files (`node_modules/codehooks-js/webserver.mjs`); `.pipe(` appears nowhere in the SDK. Calling `.pipe()` throws `a.sent(...).pipe is not a function` server-side AFTER headers are flushed, so the client sees a misleading **200** carrying an error body.
+- **Obtain a file stream BEFORE setting response headers.** Once headers are flushed a later failure cannot change the status code, which is what turns a missing file into a fake 200.
 - **Drain the request body before any other `await`.** The platform finishes consuming the request stream as soon as a handler yields to the event loop, so `req.on('data', ...)` attached after an `await` never fires and multipart bodies silently arrive EMPTY. Call `parseBody` as the first awaited operation in any handler that accepts uploads. Confirmed in the deployed runtime: 0/3 multipart submissions survived the old ordering, 20/20 with the fix.
 - **No `fs`, `path`, or `os`** — Codehooks has no filesystem. Uploads go to the filestore.
 - **`conn.getMany()` returns a stream** — call `.toArray()` before sorting, filtering, or mapping.
@@ -1589,11 +1590,28 @@ app.get('/admin/api/submissions/:id/files/:fileId', async (req, res) => {
   const file = (row.files || []).find((f: any) => f.id === req.params.fileId);
   if (!file) return res.status(404).json({ ok: false, error: 'File not found' });
 
+  // Obtain the stream BEFORE writing headers: once they are flushed, a failure here
+  // would reach the client as a misleading 200 with an error body instead of a 404.
+  let stream: any;
+  try {
+    stream = await filestore.getReadStream(file.path);
+  } catch (err: any) {
+    console.error('File download error:', err.message);
+    return res.status(404).json({ ok: false, error: 'File not found' });
+  }
+
   res.set('content-type', file.contentType || 'application/octet-stream');
   res.set('content-disposition', `attachment; filename="${file.filename.replace(/"/g, '')}"`);
-  // getReadStream resolves to the stream — it is not itself one.
-  const stream = await filestore.getReadStream(file.path);
-  stream.pipe(res);
+
+  // The platform's stream has no .pipe(); codehooks-js serves its own static files
+  // with this listener pattern (webserver.mjs), so match it.
+  stream
+    .on('data', (buf: any) => res.write(buf, 'buffer'))
+    .on('end', () => res.end())
+    .on('error', (err: any) => {
+      console.error('File stream error:', err.message);
+      res.end();
+    });
 });
 
 app.get('/admin/api/forms/:formId/export.csv', async (req, res) => {
