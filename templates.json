@@ -1,80 +1,84 @@
 {
-    "templates": [
-      {
-        "name": "crud-api-backend",
-        "description": "Basic CRUD example with events"
-      },
-      {
-        "name": "react-bff",
-        "description": "A complete example with a React frontend app and a Codehooks backend-for-frontend"
-      },
-      {
-        "name": "slack-memory-bot",
-        "description": "A production-ready Slack bot that stores and recalls information using pluggable memory adapters"
-      },
-      {
-        "name": "static-website-tailwindcss",
-        "description": "Get started with development of a simple html web site"
-      },
-      {
-        "name": "stripe-webhook-handler",
-        "description": "A TypeScript webhook handler for Stripe events"
-      },
-      {
-        "name": "webhook-delivery",
-        "description": "Production-ready webhook delivery system with queue-based processing, automatic retries, and HMAC signing"
-      },
-      {
-        "name": "webhook-github-minimal",
-        "description": "Minimal GitHub webhook handler with signature verification"
-      },
-      {
-        "name": "webhook-stripe-minimal",
-        "description": "Minimal Stripe webhook handler for payment events"
-      },
-      {
-        "name": "webhook-discord-minimal",
-        "description": "Minimal Discord interactions webhook for bot commands"
-      },
-      {
-        "name": "webhook-shopify-minimal",
-        "description": "Minimal Shopify webhook handler for e-commerce events"
-      },
-      {
-        "name": "webhook-slack-minimal",
-        "description": "Minimal Slack webhook handler with echo bot"
-      },
-      {
-        "name": "webhook-clerk-minimal",
-        "description": "Minimal Clerk webhook handler for authentication events"
-      },
-      {
-        "name": "webhook-twilio-minimal",
-        "description": "Minimal Twilio webhook handler for SMS and voice calls"
-      },
-      {
-        "name": "webhook-paypal-minimal",
-        "description": "Minimal PayPal webhook handler for payment events"
-      },
-      {
-        "name": "drip-email-workflow",
-        "description": "3-step drip email campaign with SendGrid/Mailgun, subscriber management, and scheduled delivery"
-      },
-      {
-        "name": "email-newsletter",
-        "description": "Self-hosted newsletter & waitlist service with double opt-in, list management, Markdown campaigns, and a brandable admin UI"
-      },
-      {
-        "name": "saas-metering-webhook",
-        "description": "Usage metering system with multi-tenant event capture, batch aggregation, and HMAC-signed webhook delivery"
-      },
-      {
-        "name": "react-admin-dashboard",
-        "description": "Data-driven admin dashboard with React frontend, dynamic CRUD from a JSON datamodel, role-based auth, and a visual datamodel editor"
-      },
-      {
-        "name": "webhook-inspector",
-        "description": "Catch, inspect, and replay webhooks — a self-hosted RequestBin alternative with dark mode UI"
-      }
-    ]
-  }
+  "templates": [
+    {
+      "name": "crud-api-backend",
+      "description": "Basic CRUD example with events"
+    },
+    {
+      "name": "react-bff",
+      "description": "A complete example with a React frontend app and a Codehooks backend-for-frontend"
+    },
+    {
+      "name": "slack-memory-bot",
+      "description": "A production-ready Slack bot that stores and recalls information using pluggable memory adapters"
+    },
+    {
+      "name": "static-website-tailwindcss",
+      "description": "Get started with development of a simple html web site"
+    },
+    {
+      "name": "stripe-webhook-handler",
+      "description": "A TypeScript webhook handler for Stripe events"
+    },
+    {
+      "name": "webhook-delivery",
+      "description": "Production-ready webhook delivery system with queue-based processing, automatic retries, and HMAC signing"
+    },
+    {
+      "name": "webhook-github-minimal",
+      "description": "Minimal GitHub webhook handler with signature verification"
+    },
+    {
+      "name": "webhook-stripe-minimal",
+      "description": "Minimal Stripe webhook handler for payment events"
+    },
+    {
+      "name": "webhook-discord-minimal",
+      "description": "Minimal Discord interactions webhook for bot commands"
+    },
+    {
+      "name": "webhook-shopify-minimal",
+      "description": "Minimal Shopify webhook handler for e-commerce events"
+    },
+    {
+      "name": "webhook-slack-minimal",
+      "description": "Minimal Slack webhook handler with echo bot"
+    },
+    {
+      "name": "webhook-clerk-minimal",
+      "description": "Minimal Clerk webhook handler for authentication events"
+    },
+    {
+      "name": "webhook-twilio-minimal",
+      "description": "Minimal Twilio webhook handler for SMS and voice calls"
+    },
+    {
+      "name": "webhook-paypal-minimal",
+      "description": "Minimal PayPal webhook handler for payment events"
+    },
+    {
+      "name": "drip-email-workflow",
+      "description": "3-step drip email campaign with SendGrid/Mailgun, subscriber management, and scheduled delivery"
+    },
+    {
+      "name": "email-newsletter",
+      "description": "Self-hosted newsletter & waitlist service with double opt-in, list management, Markdown campaigns, and a brandable admin UI"
+    },
+    {
+      "name": "saas-metering-webhook",
+      "description": "Usage metering system with multi-tenant event capture, batch aggregation, and HMAC-signed webhook delivery"
+    },
+    {
+      "name": "react-admin-dashboard",
+      "description": "Data-driven admin dashboard with React frontend, dynamic CRUD from a JSON datamodel, role-based auth, and a visual datamodel editor"
+    },
+    {
+      "name": "webhook-inspector",
+      "description": "Catch, inspect, and replay webhooks — a self-hosted RequestBin alternative with dark mode UI"
+    },
+    {
+      "name": "form-backend",
+      "description": "Headless form backend — one endpoint per form, works without JavaScript, JSON/urlencoded/multipart with file uploads, domain allowlist, submission inbox and CSV export"
+    }
+  ]
+}

@@ -126,6 +126,15 @@ coho create my-metering --template saas-metering-webhook
 
 ### Developer Tools
 
+#### Form Backend
+Headless form backend for HTML forms. One endpoint per form, works without JavaScript, handles JSON, urlencoded and multipart file uploads, with server-side domain allowlist, typed field validation, a submission inbox API and CSV export. Includes a live example client.
+
+[Documentation](form-backend/README.md) | [Live demo](https://demo.formbackend.dev)
+
+```bash
+coho create myforms --template form-backend
+```
+
 #### Webhook Inspector
 Catch, inspect, and replay webhooks — a self-hosted RequestBin alternative. Dark mode UI with Tailwind CSS, real-time polling, cURL export with raw body preservation, and webhook replay with full header forwarding.
 
