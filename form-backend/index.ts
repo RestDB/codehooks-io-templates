@@ -1,6 +1,7 @@
 import { app, Datastore, filestore } from 'codehooks-js';
 import { signToken, verifyRequest, passwordMatches } from '#lib/auth';
 import { defaultForm, getFormByUuid, resolveForm } from '#lib/forms';
+import { checkLoginAttempt, clearLoginAttempts } from '#lib/throttle';
 import type { FormDoc } from '#lib/forms';
 import { parseBody } from '#lib/body';
 import { validateFields } from '#lib/validation';
@@ -38,10 +39,23 @@ app.get('/health', (req, res) => {
   res.json({ ok: true, service: 'form-backend' });
 });
 
-app.post('/admin/login', (req, res) => {
+app.post('/admin/login', async (req, res) => {
+  // Throttle BEFORE checking the password: this endpoint is unauthenticated and
+  // public, so without a limit it is an unlimited password oracle.
+  const conn = await Datastore.open();
+  const throttle = await checkLoginAttempt(conn, req);
+  if (!throttle.allowed) {
+    res.set('Retry-After', String(throttle.retryAfterSeconds));
+    return res.status(429).json({ ok: false, error: 'Too many login attempts. Try again later.' });
+  }
+
   if (!passwordMatches(req.body?.password)) {
     return res.status(401).json({ ok: false, error: 'Invalid password' });
   }
+
+  // Successful login clears the counter so a legitimate admin is not penalised
+  // by earlier typos.
+  await clearLoginAttempts(conn, req);
   // SameSite=Strict is a SECURITY CONTROL here, not a preference. The platform
   // injects `Access-Control-Allow-Origin: <echoed origin>` together with
   // `Access-Control-Allow-Credentials: true` on every response and our code
@@ -87,9 +101,12 @@ app.patch('/admin/api/forms/:id', async (req, res) => {
   // lib/validation still hardcode `_gotcha`, so changing it here would store and
   // export bot values and, under strict, reject real users with "Unknown field".
   // It becomes editable when the plan that enforces the honeypot lands.
+  // `honeypot` and `retentionDays` are deliberately NOT writable: nothing enforces
+  // either one yet, and a knob that silently does nothing is worse than no knob —
+  // someone could set retentionDays expecting deletion that never happens.
   const allowed: Array<keyof FormDoc> = [
     'name', 'enabled', 'fields', 'strict', 'redirectUrl',
-    'allowRedirectOverride', 'allowedDomains', 'retentionDays',
+    'allowRedirectOverride', 'allowedDomains',
   ];
   const patch: any = { updated: new Date().toISOString() };
   for (const key of allowed) {

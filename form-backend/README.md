@@ -166,6 +166,8 @@ Environment variables:
 | `ADMIN_PASSWORD` | yes | Admin login password |
 | `MAX_UPLOAD_MB` | no | Upload cap, default `5` |
 
+Admin login is throttled to 8 attempts per IP per 15 minutes; a successful login clears the counter.
+
 Per-form settings, via `PATCH /admin/api/forms/:id`:
 
 | Field | Meaning |
@@ -177,7 +179,7 @@ Per-form settings, via `PATCH /admin/api/forms/:id`:
 | `allowedDomains` | Origin allowlist; `[]` allows any |
 | `redirectUrl` | Where a browser post lands on success |
 | `allowRedirectOverride` | Honour a `_redirect` field, still allowlist-checked |
-| `retentionDays` | Reserved; no purge job yet |
+| `retentionDays` | Reserved. **Not writable** — no purge job enforces it yet, so the field is deliberately locked rather than silently doing nothing |
 
 Field types: `text`, `textarea`, `email`, `phone`, `url`, `number`, `date`, `rating`, `select`, `file`.
 
@@ -224,7 +226,8 @@ lib/auth.ts           admin JWT
 lib/files.ts          filestore persistence
 lib/search.ts         inbox filter + pagination
 lib/csv.ts            CSV export
+lib/throttle.ts       admin login attempt limiting
 lib/pages.ts          hosted thank-you and error pages
-test/                 103 unit tests, run with node --test, no build step
+test/                 116 unit tests, run with node --test, no build step
 example/              the live demo client
 ```
