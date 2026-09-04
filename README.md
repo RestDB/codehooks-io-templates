@@ -30,6 +30,8 @@ npm install
 coho deploy
 ```
 
+See [CHANGELOG.md](CHANGELOG.md) for what has been added and when.
+
 ## Available Templates
 
 ### Full-Stack Application Templates
