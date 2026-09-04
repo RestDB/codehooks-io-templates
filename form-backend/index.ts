@@ -203,7 +203,9 @@ app.all('/f/:formId', async (req, res) => {
       form.fields || [],
       parsed.fields,
       form.strict,
-      parsed.files.map((f) => f.field)
+      // Empty parts are discarded by saveUploads, so they must not satisfy `required`
+      // either — otherwise an empty upload passes validation and stores files: [].
+      parsed.files.filter((f) => f.content.length > 0).map((f) => f.field)
     );
     if (!check.ok) {
       return fail(400, 'Validation failed', check.errors);

@@ -132,3 +132,20 @@ test('parseMultipart leaves a single occurrence as a plain string', () => {
   const out = parseMultipart(buildBody([{ name: 'topics', value: 'sales' }]), B);
   assert.equal(out.fields.topics, 'sales');
 });
+
+test('parseMultipart stores a field named after an Object.prototype member', () => {
+  // A plain object would return the inherited function here, sending this down the
+  // repeated-name path and corrupting the value.
+  const buf = buildBody([{ name: 'constructor', value: 'Acme Corp' }]);
+  const out = parseMultipart(buf, B);
+  assert.equal(out.fields.constructor, 'Acme Corp');
+});
+
+test('parseMultipart still joins genuinely repeated names', () => {
+  const buf = buildBody([
+    { name: 'topics', value: 'sales' },
+    { name: 'topics', value: 'billing' },
+  ]);
+  const out = parseMultipart(buf, B);
+  assert.deepEqual(out.fields.topics, ['sales', 'billing']);
+});

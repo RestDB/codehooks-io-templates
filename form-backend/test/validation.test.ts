@@ -148,3 +148,11 @@ test('max still leaves a value within the cap valid', () => {
   const defs: FieldDef[] = [{ name: 'email', type: 'email', max: 40 }];
   assert.equal(validateFields(defs, { email: 'ada@example.com' }).ok, true);
 });
+
+test('a zero-byte upload does not satisfy a required file field', () => {
+  const defs: FieldDef[] = [{ name: 'cv', type: 'file', required: true }];
+  // The submit handler filters empty parts out before passing field names, so an
+  // empty upload must present as absent.
+  assert.equal(validateFields(defs, {}, false, []).ok, false);
+  assert.equal(validateFields(defs, {}, false, ['cv']).ok, true);
+});

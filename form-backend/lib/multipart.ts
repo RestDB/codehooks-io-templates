@@ -21,7 +21,10 @@ export function boundaryFromContentType(contentType: string): string | null {
 }
 
 export function parseMultipart(buf: Buffer, boundary: string): MultipartResult {
-  const result: MultipartResult = { fields: {}, files: [] };
+  // Object.create(null): a field literally named `constructor`, `toString` or any other
+  // Object.prototype member would otherwise read the inherited value here, take the
+  // repeated-name branch below, and store a corrupted value while still reporting success.
+  const result: MultipartResult = { fields: Object.create(null), files: [] };
   const delim = Buffer.from('--' + boundary);
   const delimWithCRLF = Buffer.from('\r\n--' + boundary);
 
