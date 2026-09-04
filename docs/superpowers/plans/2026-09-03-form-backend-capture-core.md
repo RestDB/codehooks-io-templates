@@ -1076,7 +1076,7 @@ Run:
 ```bash
 cd form-backend
 coho set-env JWT_SECRET "$(openssl rand -hex 32)" --encrypted
-coho set-env ADMIN_PASSWORD 'test-password-123' --encrypted
+coho set-env ADMIN_PASSWORD "$(openssl rand -hex 20)" --encrypted   # keep this value; the verification steps need it
 coho deploy && sleep 3
 ```
 
@@ -1090,7 +1090,7 @@ curl -s "$U/admin/api/forms"
 # Wrong password is rejected
 curl -s -X POST "$U/admin/login" -H 'content-type: application/json' -d '{"password":"wrong"}'
 # Correct password sets a cookie
-curl -s -c /tmp/fb-cookies -X POST "$U/admin/login" -H 'content-type: application/json' -d '{"password":"test-password-123"}'
+curl -s -c /tmp/fb-cookies -X POST "$U/admin/login" -H 'content-type: application/json' -d "{\"password\":\"$ADMIN_PASSWORD\"}"
 # Authenticated create + list
 curl -s -b /tmp/fb-cookies -X POST "$U/admin/api/forms" -H 'content-type: application/json' -d '{"name":"Contact"}'
 curl -s -b /tmp/fb-cookies "$U/admin/api/forms"
