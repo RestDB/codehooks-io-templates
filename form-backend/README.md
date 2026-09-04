@@ -213,6 +213,22 @@ Field types: `text`, `textarea`, `email`, `phone`, `url`, `number`, `date`, `rat
 - CSV exports neutralise leading `=`, `+`, `-` and `@` so a submitted value cannot execute as a
   spreadsheet formula.
 
+## Verified against
+
+The three platform behaviours documented under **Security notes** and in the source comments are
+version-dependent. This template was built and verified against:
+
+| | Version |
+|---|---|
+| `codehooks-js` | 1.4.10 |
+| `coho` CLI | 1.3.3 |
+| Node.js | 23.7 (type stripping, so tests run on `.ts` with no build step) |
+| `jsonwebtoken` | 9.0.3 |
+
+Dependencies are declared as `latest` so a new project picks up current releases. If a future
+`codehooks-js` changes how the request stream is consumed or how `filestore.getReadStream()` behaves,
+re-check the two workarounds in `index.ts` — they exist because of platform behaviour, not preference.
+
 ## Layout
 
 ```
