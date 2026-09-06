@@ -55,3 +55,56 @@ export async function checkSubmitRate(
     return { allowed: true, retryAfterSeconds: 0 };
   }
 }
+
+
+export type HoneypotCheck = {
+  ok: boolean;
+  /** Set when ok is false. Names the collision so the customer can see the cause. */
+  error?: string;
+};
+
+/**
+ * A honeypot name that collides with a real field is a silent, total outage.
+ *
+ * `isHoneypotFilled()` reads `fields[honeypotName]`, so setting the honeypot to
+ * `email` makes EVERY genuine submission look like a bot: each one is stored as
+ * spam, the `email` value is stripped from `data` as a control field, and no
+ * notification is ever sent — with a 200 returned to the visitor throughout,
+ * because telling a bot it was caught only helps it adapt. Nothing anywhere
+ * reports it.
+ *
+ * Reachable only by curl today (the setup page exposes no honeypot control), but
+ * the field became PATCH-writable this release, so it is now reachable at all.
+ */
+export function checkHoneypotName(
+  honeypotName: unknown,
+  fields: Array<{ name?: string }> | null | undefined
+): HoneypotCheck {
+  if (honeypotName === undefined || honeypotName === null || honeypotName === '') {
+    return { ok: true }; // No honeypot is a valid choice: the check is simply off.
+  }
+  if (typeof honeypotName !== 'string') {
+    return { ok: false, error: 'honeypot must be a field name' };
+  }
+  const name = honeypotName.trim();
+  if (!name) return { ok: true };
+
+  if (BASE_CONTROL_FIELDS.includes(name)) {
+    return {
+      ok: false,
+      error: `honeypot cannot be "${name}": the submit endpoint interprets that name itself`,
+    };
+  }
+
+  const collision = (fields || []).find((f) => f && f.name === name);
+  if (collision) {
+    return {
+      ok: false,
+      error:
+        `honeypot cannot be "${name}": a field of that name is part of the form, ` +
+        'so every genuine submission would be marked as spam and the value discarded',
+    };
+  }
+
+  return { ok: true };
+}

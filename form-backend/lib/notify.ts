@@ -92,6 +92,13 @@ export function buildNotification(input: NotificationInput): {
   // rendered at column 0, so they go through the same normalisation as fields.
   if (input.meta.ip) lines.push(`ip: ${sanitizeLine(input.meta.ip)}`);
   if (input.meta.referer) lines.push(`referer: ${sanitizeLine(input.meta.referer)}`);
+  // The link to this submission in the inbox, which the design's "The notification
+  // email" section calls for. There is no inbox UI yet, so it points at the admin
+  // API route that returns the submission — it needs an admin session, unlike the
+  // file links above, which is why it is labelled rather than left bare.
+  if (input.baseUrl) {
+    lines.push(`view (admin sign-in required): ${input.baseUrl}/admin/api/submissions/${input.submissionId}`);
+  }
 
   const all = [...input.plan.attach, ...input.plan.tooLarge];
   if (all.length) {

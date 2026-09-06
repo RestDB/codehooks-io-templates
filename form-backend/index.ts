@@ -5,7 +5,7 @@ import { checkLoginAttempt, clearLoginAttempts } from '#lib/throttle';
 import type { FormDoc } from '#lib/forms';
 import { parseBody } from '#lib/body';
 import { validateFields } from '#lib/validation';
-import { isHoneypotFilled, controlFieldsFor, checkSubmitRate } from '#lib/spam';
+import { isHoneypotFilled, controlFieldsFor, checkSubmitRate, checkHoneypotName } from '#lib/spam';
 import { saveUploads } from '#lib/files';
 import { originOf, corsHeaders, safeRedirect } from '#lib/security';
 import { toCsv, collectColumns } from '#lib/csv';
@@ -197,6 +197,16 @@ app.patch('/admin/api/forms/:id', async (req, res) => {
     if (patch.notify.email) patch.notify.email.recipients = check.recipients;
   }
 
+  // Checked against the EFFECTIVE post-patch form: `honeypot` and `fields` can
+  // arrive in the same PATCH, in either one alone, or in neither.
+  const honeypot = checkHoneypotName(
+    'honeypot' in patch ? patch.honeypot : (existing as any).honeypot,
+    ('fields' in patch ? patch.fields : (existing as any).fields) || []
+  );
+  if (!honeypot.ok) {
+    return res.status(400).json({ ok: false, error: honeypot.error });
+  }
+
   const updated = await conn.updateOne('forms', req.params.id, { $set: patch });
   res.json({ ok: true, data: updated });
 });
@@ -352,6 +362,14 @@ app.all('/f/:formId', async (req, res) => {
     const files = await saveUploads(form.uuid, submissionId, parsed.files, maxUploadBytes());
 
     const submission = await conn.insertOne('submissions', {
+      // NAMING TRAP: this `submissionId` is a randomUUID, returned to the visitor
+      // and used in upload paths. It is NOT the value stored in
+      // `deliveries.submissionId`, which is this document's Mongo `_id`. Two
+      // fields, one name, different values across two collections. A join on
+      // `deliveries.submissionId === submissions.submissionId` matches NOTHING
+      // and reports no error. Not migrated deliberately — renaming a live field
+      // is a bigger risk than the confusion it removes — so read the comments at
+      // both delivery write sites before building anything on either.
       submissionId,
       formId: form.uuid,
       created: new Date().toISOString(),
@@ -381,8 +399,14 @@ app.all('/f/:formId', async (req, res) => {
     // 500 the request — the visitor would hit back and resubmit, creating
     // duplicates with no explanation.
     try {
+      // `stats.spam` is incremented in the SAME write as `stats.total`, not a
+      // separate one: two writes could drift apart, and this release is the first
+      // to produce a spam verdict at all — before it, the counter read 0 forever.
+      // A spam submission still counts toward `total`; it was received.
+      const inc: any = { 'stats.total': 1 };
+      if (isSpam) inc['stats.spam'] = 1;
       await conn.updateOne('forms', form._id as string, {
-        $inc: { 'stats.total': 1 },
+        $inc: inc,
         $set: { 'stats.lastSubmissionAt': new Date().toISOString() },
       });
     } catch (err: any) {
@@ -649,10 +673,26 @@ app.worker('deliver', async (req, res) => {
   }
 
   const channel = CHANNELS.find((c) => c.name === row.channel);
+  // NAMING TRAP: `row.submissionId` is a submission _id, NOT the `submissionId`
+  // field on the submissions document (that one is an unrelated randomUUID). This
+  // is an _id lookup — see the write site in `processSubmission`.
   const submission: any = await conn.findOneOrNull('submissions', row.submissionId);
   const form = submission ? await getFormByUuid(submission.formId) : null;
   if (!channel || !submission || !form) {
     await conn.updateOne('deliveries', deliveryId, { $set: { status: 'skipped' } });
+    return res.end();
+  }
+
+  // The spam backstop this worker's caller has always advertised. `processSubmission`
+  // already refuses to enqueue a spam submission, but an owner can reclassify one
+  // from the inbox (PATCH /admin/api/submissions/:id, status:'spam') while its
+  // delivery row is still pending after a provider blip — and the hourly redrive
+  // would then send the email anyway. Terminal, and `skipped` rather than `failed`:
+  // nothing went wrong, there is simply nothing to send.
+  if (submission.status === 'spam') {
+    await conn.updateOne('deliveries', deliveryId, {
+      $set: { status: 'skipped', lastError: 'Submission is marked as spam' },
+    });
     return res.end();
   }
 
@@ -691,22 +731,63 @@ app.worker('deliver', async (req, res) => {
   }
 
   const outcome = classify(result, row.attempts || 0, MAX_SEND_ATTEMPTS);
-  await conn.updateOne('deliveries', deliveryId, {
-    $set: {
-      status: outcome.status,
-      attempts: outcome.attempts,
-      lastError: result.ok ? null : (result.error || null),
-      lastAttemptAt: new Date().toISOString(),
-      sentAt: outcome.status === 'sent' ? new Date().toISOString() : (row.sentAt ?? null),
-      // A 429 is the provider asking to slow down, not refusing the message —
-      // record what it asked for so an operator can see why a row is still pending.
-      retryAfter: result.ok ? null : (result.retryAfter ?? null),
-      // ...and turn it into an absolute deadline that the worker and the hourly
-      // redrive both enforce. Null for every other outcome, so an ordinary
-      // transient failure is retried at the next redrive as before.
-      nextAttemptAt: nextAttemptAt(result),
-    },
-  });
+  const patch = {
+    status: outcome.status,
+    attempts: outcome.attempts,
+    lastError: result.ok ? null : (result.error || null),
+    lastAttemptAt: new Date().toISOString(),
+    sentAt: outcome.status === 'sent' ? new Date().toISOString() : (row.sentAt ?? null),
+    // A 429 is the provider asking to slow down, not refusing the message —
+    // record what it asked for so an operator can see why a row is still pending.
+    retryAfter: result.ok ? null : (result.retryAfter ?? null),
+    // ...and turn it into an absolute deadline that the worker and the hourly
+    // redrive both enforce. Null for every other outcome, so an ordinary
+    // transient failure is retried at the next redrive as before.
+    nextAttemptAt: nextAttemptAt(result),
+  };
+
+  // DOUBLE-SEND WINDOW. The provider has already accepted the message; everything
+  // between here and a committed write is a window in which the row still reads
+  // `pending` and something could send it a second time.
+  //
+  // What this does about it:
+  //   - The window holds nothing but the write. The result is classified and the
+  //     patch built BEFORE the send is considered done, so no avoidable work sits
+  //     between the provider's acceptance and the record of it.
+  //   - The write is retried a few times. A single datastore blip — by far the
+  //     likeliest way to land here — never reaches the bad state at all.
+  //   - If it still fails, the worker ends WITHOUT throwing. Throwing hands the row
+  //     to the platform's automatic worker retry, which re-reads it as `pending`
+  //     within seconds and sends a duplicate immediately, repeatedly, for as long
+  //     as the datastore stays unhappy.
+  //
+  // WHAT REMAINS, stated plainly: if every write attempt fails, the row is left
+  // `pending` with an email already sent, and the hourly redrive will send a second
+  // one. Closing that needs the send and the record to commit together — a
+  // deterministic row id plus a conditional update, or an idempotency key the
+  // provider honours — which is a larger change than this seam is worth. Delivery
+  // is at-least-once, the same seam already accepted for the `processSubmission`
+  // idempotency check. The console line below is deliberately loud and names the
+  // target, because it is the only trace an operator gets.
+  let persisted = false;
+  for (let attempt = 1; attempt <= 3 && !persisted; attempt++) {
+    try {
+      await conn.updateOne('deliveries', deliveryId, { $set: patch });
+      persisted = true;
+    } catch (err: any) {
+      console.error(
+        `Failed to record delivery outcome (attempt ${attempt}/3) for ${deliveryId}:`,
+        err.message
+      );
+    }
+  }
+  if (!persisted) {
+    console.error(
+      'DELIVERY OUTCOME LOST for', deliveryId, '→', row.target,
+      '- result was', outcome.status,
+      '- the row still reads pending and MAY BE SENT AGAIN by the hourly redrive'
+    );
+  }
   res.end();
 });
 

@@ -267,3 +267,23 @@ test('meta.ip and meta.referer are line-break normalised too', () => {
   const atColumnZero = out.text.split('\n').filter((l) => l.startsWith('---'));
   assert.equal(atColumnZero.length, 1);
 });
+
+// --- the inbox link (final review, finding 12) ---
+
+test('the body links to the submission in the inbox', () => {
+  const out = buildNotification(base);
+  assert.match(
+    out.text,
+    /https:\/\/api\.example\.com\/admin\/api\/submissions\/sub-1/
+  );
+});
+
+test('the inbox link says an admin sign-in is needed, so it is not mistaken for a file link', () => {
+  const out = buildNotification(base);
+  assert.match(out.text, /admin sign-in required/i);
+});
+
+test('no inbox link is emitted when no base URL is known', () => {
+  const out = buildNotification({ ...base, baseUrl: '' });
+  assert.ok(!out.text.includes('/admin/api/submissions/'));
+});

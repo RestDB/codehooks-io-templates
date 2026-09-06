@@ -6,6 +6,7 @@ import {
   submitKey,
   checkSubmitRate,
   SUBMIT_RATE_DEFAULT,
+  checkHoneypotName,
 } from '#lib/spam';
 
 // --- honeypot ---
@@ -95,4 +96,47 @@ test('a throttle-store failure ALLOWS the submission', async () => {
 
 test('the default limit is exported and positive', () => {
   assert.ok(SUBMIT_RATE_DEFAULT > 0);
+});
+
+// --- honeypot name collisions (final review, finding 12) ---
+
+test('a honeypot that collides with a real field name is rejected', () => {
+  // Setting it to `email` makes isHoneypotFilled() true for every genuine
+  // submission: all of them stored as spam, the email value stripped, no
+  // notification ever sent, and a 200 returned throughout.
+  const check = checkHoneypotName('email', [{ name: 'name' }, { name: 'email' }]);
+  assert.equal(check.ok, false);
+  assert.match(check.error as string, /email/);
+  assert.match(check.error as string, /spam/i);
+});
+
+test('the collision is real: the colliding name would flag a genuine submission', () => {
+  assert.equal(isHoneypotFilled({ email: 'ada@example.com' }, 'email'), true);
+});
+
+test('a honeypot that matches no field is accepted', () => {
+  assert.equal(checkHoneypotName('_gotcha', [{ name: 'name' }, { name: 'email' }]).ok, true);
+});
+
+test('a honeypot colliding with a control field the endpoint interprets is rejected', () => {
+  for (const name of ['_redirect', '_subject', '_next']) {
+    const check = checkHoneypotName(name, []);
+    assert.equal(check.ok, false, name);
+  }
+});
+
+test('an empty or absent honeypot is valid — the check is simply off', () => {
+  assert.equal(checkHoneypotName('', [{ name: 'email' }]).ok, true);
+  assert.equal(checkHoneypotName(undefined, [{ name: 'email' }]).ok, true);
+  assert.equal(checkHoneypotName(null, [{ name: 'email' }]).ok, true);
+  assert.equal(checkHoneypotName('   ', [{ name: 'email' }]).ok, true);
+});
+
+test('a non-string honeypot is rejected', () => {
+  assert.equal(checkHoneypotName(42 as any, []).ok, false);
+});
+
+test('a form with no fields accepts any honeypot name', () => {
+  assert.equal(checkHoneypotName('anything', []).ok, true);
+  assert.equal(checkHoneypotName('anything', null).ok, true);
 });
