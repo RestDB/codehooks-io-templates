@@ -78,7 +78,7 @@
     },
     {
       "name": "form-backend",
-      "description": "Headless form backend — one endpoint per form, works without JavaScript, JSON/urlencoded/multipart with file uploads, domain allowlist, submission inbox and CSV export"
+      "description": "Headless form backend — one endpoint per form, works without JavaScript, file uploads, email notifications with attachments, honeypot and rate-limit spam defence, domain allowlist, submission inbox and CSV export"
     }
   ]
 }
