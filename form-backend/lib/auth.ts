@@ -15,15 +15,24 @@ export function parseCookies(header: string): Record<string, string> {
 }
 
 export function signToken(): string {
-  return jwt.sign({ role: 'admin' }, secret(), { expiresIn: '7d' });
+  return jwt.sign({ role: 'admin', typ: 'session' }, secret(), {
+    expiresIn: '7d',
+    algorithm: 'HS256',
+  });
 }
 
+// A valid SIGNATURE is not a valid SESSION. File-download tokens are signed with
+// the same JWT_SECRET, so verifying the signature alone let anyone who received a
+// notification email replay its /files/<token> value as `Cookie: token=...` and
+// reach the whole admin API, DELETE included. The claim check is what separates
+// the two token types; `algorithms` is pinned so a token cannot arrive claiming
+// `alg: none`.
 export function verifyRequest(req: any): boolean {
   try {
     const token = parseCookies(req.headers?.cookie || '').token;
     if (!token) return false;
-    jwt.verify(token, secret());
-    return true;
+    const claims: any = jwt.verify(token, secret(), { algorithms: ['HS256'] });
+    return !!claims && claims.role === 'admin' && claims.typ === 'session';
   } catch {
     return false;
   }
