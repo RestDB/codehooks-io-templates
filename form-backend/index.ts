@@ -15,6 +15,7 @@ import { randomUUID } from 'crypto';
 import { emailChannel } from '#lib/channels/email';
 import type { Channel } from '#lib/channels/types';
 import type { SendResult } from '#lib/providers/types';
+import { classify } from '#lib/delivery';
 
 // Boot-time guard — a missing JWT_SECRET would make admin sessions forgeable.
 (function checkConfig() {
@@ -493,10 +494,19 @@ app.worker('processSubmission', async (req, res) => {
 
   for (const channel of CHANNELS) {
     for (const target of channel.targets(form)) {
+      // codehooks-js retries workers automatically, so `processSubmission` can run
+      // more than once for the same submission. Without this check a retry would
+      // insert a second row for the same (submission, channel, target) and send a
+      // duplicate email to the same recipient.
+      const existing = await conn.findOneOrNull('deliveries', {
+        submissionId, channel: channel.name, target,
+      });
+      if (existing) continue;
+
       const row = await conn.insertOne('deliveries', {
         submissionId, formId: submission.formId, channel: channel.name, target,
         status: 'pending', attempts: 0, lastError: null, lastAttemptAt: null,
-        created: new Date().toISOString(), sentAt: null,
+        retryAfter: null, created: new Date().toISOString(), sentAt: null,
       });
       await conn.enqueue('deliver', { deliveryId: (row as any)._id });
     }
@@ -540,44 +550,33 @@ app.worker('deliver', async (req, res) => {
   // A channel is expected to catch its own errors and resolve a SendResult, but a
   // provider misconfiguration (e.g. no EMAIL_PROVIDER credentials) throws
   // SYNCHRONOUSLY by design (see lib/providers/index.ts, Task 5: "a misconfiguration
-  // must fail loudly"). Left uncaught, that would strand the row in 'pending'
-  // forever instead of recording why — so it is caught here and, unlike a network
-  // error, treated as PERMANENT: retrying with the same missing config cannot
-  // possibly succeed.
+  // must fail loudly"). Caught here so it reaches `classify` as a result with no
+  // statusCode — the SAME transient bucket as a network error. A fixable
+  // misconfiguration (the operator sets the missing key) then self-heals through
+  // the hourly redrive instead of permanently discarding every queued
+  // notification; a genuinely permanent one still terminates once attempts run out.
   let result: SendResult;
-  let threw = false;
   try {
     result = await channel.deliver({
       form, submission, target: row.target, baseUrl: configuredBaseUrl.replace(/\/+$/, ''),
     });
   } catch (err: any) {
-    threw = true;
     result = { ok: false, error: err.message };
   }
 
-  const attempts = (row.attempts || 0) + 1;
-  if (result.ok) {
-    await conn.updateOne('deliveries', deliveryId, {
-      $set: { status: 'sent', attempts, sentAt: new Date().toISOString(), lastError: null },
-    });
-  } else {
-    // A network error (no HTTP response at all) reports NO statusCode — that must
-    // be classified as TRANSIENT and retried, never as a permanent 4xx. `permanent`
-    // therefore requires a status that is present, in the 4xx range, and not 429
-    // (rate limiting is transient even though it is a 4xx) — or a thrown
-    // misconfiguration error, which is permanent regardless of status.
-    const status = result.statusCode;
-    const permanent = threw || (typeof status === 'number' && status >= 400 && status < 500 && status !== 429);
-    const exhausted = attempts >= MAX_SEND_ATTEMPTS;
-    await conn.updateOne('deliveries', deliveryId, {
-      $set: {
-        status: permanent || exhausted ? 'failed' : 'pending',
-        attempts,
-        lastError: result.error || null,
-        lastAttemptAt: new Date().toISOString(),
-      },
-    });
-  }
+  const outcome = classify(result, row.attempts || 0, MAX_SEND_ATTEMPTS);
+  await conn.updateOne('deliveries', deliveryId, {
+    $set: {
+      status: outcome.status,
+      attempts: outcome.attempts,
+      lastError: result.ok ? null : (result.error || null),
+      lastAttemptAt: new Date().toISOString(),
+      sentAt: outcome.status === 'sent' ? new Date().toISOString() : (row.sentAt ?? null),
+      // A 429 is the provider asking to slow down, not refusing the message —
+      // record what it asked for so an operator can see why a row is still pending.
+      retryAfter: result.ok ? null : (result.retryAfter ?? null),
+    },
+  });
   res.end();
 });
 
