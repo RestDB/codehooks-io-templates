@@ -311,10 +311,30 @@
   .delivery-row.status-failed .delivery-top strong { color: var(--danger); }
   .delivery-row.status-pending .delivery-top strong { color: var(--warn); }
 
+  .deliveries-actions {
+    display: flex;
+    gap: 0.4rem;
+  }
+
   .delivery-retry {
     margin-top: 0.35rem;
     padding: 0.25rem 0.6rem;
     font-size: 0.78rem;
+  }
+
+  .show-more-deliveries {
+    margin-top: 0.6rem;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.78rem;
+  }
+
+  /* Why a row offers no Retry button. Stated rather than left to inference: an
+     absent button is indistinguishable from a UI bug. */
+  .delivery-blocked {
+    margin-top: 0.35rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+    word-break: break-word;
   }
 
   .delivery-error {
@@ -476,10 +496,14 @@
           <div class="deliveries-panel">
             <div class="deliveries-header">
               <h4>Recent delivery attempts</h4>
-              <button type="button" class="refresh-deliveries">Refresh</button>
+              <div class="deliveries-actions">
+                <button type="button" class="secondary retry-all-deliveries" hidden>Retry all failed</button>
+                <button type="button" class="refresh-deliveries">Refresh</button>
+              </div>
             </div>
             <p class="deliveries-empty help" hidden>No delivery attempts yet &mdash; submit the form once to test.</p>
             <ul class="deliveries-list"></ul>
+            <button type="button" class="secondary show-more-deliveries" hidden>Show more</button>
             <div class="deliveries-msg" role="alert"></div>
           </div>
         </fieldset>
@@ -889,20 +913,39 @@
   // submissions view. Shows why an email did or didn't arrive, so a customer never
   // has to drop to curl on the /admin/api/forms/:id/deliveries collection.
 
+  var DELIVERY_PAGE = 20;
+
   function initDeliveries(detail, form) {
     var list = detail.querySelector('.deliveries-list');
     var empty = detail.querySelector('.deliveries-empty');
     var msg = detail.querySelector('.deliveries-msg');
     var refreshBtn = detail.querySelector('.refresh-deliveries');
+    var moreBtn = detail.querySelector('.show-more-deliveries');
+    var retryAllBtn = detail.querySelector('.retry-all-deliveries');
 
-    function load() {
+    // How many rows the panel is currently showing. The API was hardcoded to the
+    // five newest with no way past them, which made a weekend backlog unreachable:
+    // a delivery _id is the only input the retry endpoint takes, and this panel is
+    // the only place to get one.
+    var shown = DELIVERY_PAGE;
+
+    // `notice` survives the reload. Setting a message and then calling load(),
+    // which begins with clearMsg(), erased it synchronously in the same task — so
+    // a successful retry looked like a no-op and invited a second click.
+    function load(notice) {
       clearMsg(msg);
       refreshBtn.disabled = true;
       var originalLabel = refreshBtn.textContent;
       refreshBtn.textContent = 'Refreshing…';
-      api('/admin/api/forms/' + encodeURIComponent(form._id) + '/deliveries')
+      api('/admin/api/forms/' + encodeURIComponent(form._id) + '/deliveries?limit=' + shown)
         .then(function (body) {
-          renderDeliveries(list, empty, body.data || [], msg, load);
+          var rows = body.data || [];
+          renderDeliveries(list, empty, rows, msg, load);
+          moreBtn.hidden = !body.hasMore;
+          retryAllBtn.hidden = !rows.some(function (r) {
+            return r.status === 'failed' && r.retryable;
+          });
+          if (notice) setMsg(msg, notice, 'ok');
         })
         .catch(function (err) {
           handleAuthFailure(err, function () { setMsg(msg, err.message, 'error'); });
@@ -913,7 +956,36 @@
         });
     }
 
-    refreshBtn.addEventListener('click', load);
+    refreshBtn.addEventListener('click', function () { load(); });
+
+    moreBtn.addEventListener('click', function () {
+      shown += DELIVERY_PAGE;
+      load();
+    });
+
+    // The bulk way out of a backlog. Retrying one row at a time is unusable when
+    // forty submissions failed over a weekend because BASE_URL was unset.
+    retryAllBtn.addEventListener('click', function () {
+      retryAllBtn.disabled = true;
+      var label = retryAllBtn.textContent;
+      retryAllBtn.textContent = 'Retrying…';
+      api('/admin/api/forms/' + encodeURIComponent(form._id) + '/deliveries/retry-all', { method: 'POST' })
+        .then(function (body) {
+          var d = body.data || {};
+          var text = 'Queued ' + (d.queued || 0) + ' delivery attempt' + ((d.queued === 1) ? '' : 's') + '.';
+          if (d.skipped) text += ' ' + d.skipped + ' could not be retried (see the reasons below).';
+          text += ' Refresh in a moment to see the results.';
+          load(text);
+        })
+        .catch(function (err) {
+          handleAuthFailure(err, function () { setMsg(msg, err.message, 'error'); });
+        })
+        .finally(function () {
+          retryAllBtn.disabled = false;
+          retryAllBtn.textContent = label;
+        });
+    });
+
     load();
   }
 
@@ -950,15 +1022,22 @@
       meta.className = 'help';
       var metaText = 'Attempt ' + (row.attempts || 0);
       if (row.created) metaText += ' · ' + row.created;
+      // Without this, a row backing off exponentially just reads `pending` with an
+      // unchanging attempt count and looks stuck rather than scheduled.
+      if (row.status === 'pending' && row.nextAttemptAt) {
+        metaText += ' · next attempt ' + row.nextAttemptAt;
+      }
       meta.textContent = metaText;
       li.appendChild(meta);
 
-      // The way back out of `failed`. The hourly redrive only picks up `pending`
-      // rows, so without this a notification queued before BASE_URL (or a
-      // provider key) was set could never be recovered from the UI.
-      // Deliberately absent on `sent` and `skipped`: the API refuses both, and
-      // retrying a sent row would mean a duplicate email.
-      if (row._id && (row.status === 'failed' || row.status === 'pending')) {
+      // Whether this row can be re-driven is decided ONCE, server-side, by
+      // planRetry — the same function the retry endpoint enforces — and arrives as
+      // `retryable`. The UI used to re-derive it from `status`, which offered the
+      // button on rows the API then refused, and on rows where a retry could only
+      // do harm: a `pending` row races an in-flight worker into a duplicate email,
+      // and a row addressed to an unusable recipient re-sends to the same bad
+      // address and overwrites the reason that made it diagnosable.
+      if (row._id && row.retryable) {
         var retryBtn = document.createElement('button');
         retryBtn.type = 'button';
         retryBtn.className = 'secondary delivery-retry';
@@ -968,8 +1047,10 @@
           retryBtn.textContent = 'Retrying…';
           api('/admin/api/deliveries/' + encodeURIComponent(row._id) + '/retry', { method: 'POST' })
             .then(function () {
-              setMsg(msg, 'Queued for another attempt. Refresh in a moment to see the result.', 'ok');
-              reload();
+              // Handed to reload() rather than set here: load() starts with
+              // clearMsg(), which ran in this same task and wiped the message
+              // instantly — so a successful retry looked like nothing happened.
+              reload('Queued for another attempt. Refresh in a moment to see the result.');
             })
             .catch(function (err) {
               handleAuthFailure(err, function () { setMsg(msg, err.message, 'error'); });
@@ -978,6 +1059,12 @@
             });
         });
         li.appendChild(retryBtn);
+      } else if (row.retryBlockedReason && row.status !== 'sent' && row.status !== 'skipped') {
+        // An absent button with no explanation is indistinguishable from a bug.
+        var blocked = document.createElement('div');
+        blocked.className = 'delivery-blocked';
+        blocked.textContent = row.retryBlockedReason;
+        li.appendChild(blocked);
       }
 
       list.appendChild(li);
