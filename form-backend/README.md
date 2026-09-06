@@ -192,7 +192,7 @@ Environment variables:
 |---|---|---|
 | `JWT_SECRET` | yes | Signs admin session cookies |
 | `ADMIN_PASSWORD` | yes | Admin login password |
-| `BASE_URL` | for notifications | Public URL of the deployment, e.g. `https://your-space.codehooks.io`. Used to build signed file-download links in notification emails; without it, notification delivery fails fast rather than sending a broken link |
+| `BASE_URL` | for notifications | Public URL of the deployment, e.g. `https://your-space.codehooks.io`. Used to build signed file-download links in notification emails. Without it a notification is parked rather than sent or failed, and is delivered once you set it |
 | `EMAIL_PROVIDER` | no | `brevo` (default) or `mailgun` |
 | `BREVO_API_KEY` | if using Brevo | Brevo API key |
 | `MAILGUN_API_KEY`, `MAILGUN_DOMAIN` | if using Mailgun | Mailgun credentials. `MAILGUN_EU=true` selects the EU region |
@@ -233,7 +233,7 @@ sent until you configure it.
 | `MAILGUN_API_KEY`, `MAILGUN_DOMAIN` | if using Mailgun | Mailgun credentials. `MAILGUN_EU=true` selects the EU region |
 | `FROM_EMAIL` | no (but see below) | Sender address for notification emails |
 | `FROM_NAME` | no | Sender display name, default `Form Backend` |
-| `BASE_URL` | for notifications | Public URL of the deployment. Used to build the signed file-download link in the email body; without it, delivery fails fast with `lastError: "BASE_URL is not configured"` rather than sending a broken link |
+| `BASE_URL` | for notifications | Public URL of the deployment. Used to build the signed file-download link in the email body. Without it a delivery is PARKED, not failed: the row stays `pending` with `lastError: "BASE_URL is not configured"`, spends no attempt, and is delivered once you set the variable — see "Delivery, retries and backoff" below |
 | `MAX_ATTACH_MB` | no | Total attachment budget per email, default `10`. Files are packed smallest-first; anything that doesn't fit is left off the attachment and listed instead as a signed download link |
 
 **`FROM_EMAIL` must be an address your provider has verified as a sender.** An unverified sender is
@@ -258,36 +258,75 @@ Recipient addresses are validated when you save them. `PATCH /admin/api/forms/:i
 update and names the offending address, rather than storing it and dropping it at send time — a
 mistyped recipient used to produce no email and no delivery row, which looks exactly like
 notifications being switched off. An unusable address that reaches delivery by another route now
-produces a terminal `failed` delivery row with the reason, so the panel says what happened.
+produces a terminal `failed` delivery row with the reason, so the panel says what happened. A
+`recipients` value that is not a list at all — the bare string `"owner@example.com"`, say — is
+treated as one address rather than as no addresses; anything else non-list leaves a visible
+rejection. Silence is the one outcome this path never produces.
 
 A submission caught by the honeypot is stored with `status: "spam"` and never reaches the
 notification pipeline at all — no delivery row is created and no email is sent for it, by design.
 
-Delivery is queued and retried automatically: a transient failure (network error, rate limit, or a
-misconfiguration such as a missing provider key) is retried by an hourly job; a permanent one (e.g. a
-`4xx` from the provider, such as an unverified sender) is marked `failed` after one attempt and is not
-retried. `GET /admin/api/forms/:id/deliveries` shows the last 5 attempts per form, including
-`status`, `attempts` and `lastError`, so a missing email can be diagnosed without dropping to
-provider-side logs.
+### Delivery, retries and backoff
+
+Delivery is queued and retried automatically, and a row ends in one of three ways.
+
+- **A transient failure** — a network error, or an unexpected error from the channel — burns one of
+  the five attempts and is retried by the hourly job. Once the five are gone the row is `failed`.
+- **A permanent failure** — a `4xx` from the provider, such as an unverified sender — is `failed`
+  after one attempt and is never retried automatically. Retrying cannot change the answer.
+- **A deferral** — a `429`, or a configuration error such as an unset `BASE_URL` or a missing
+  provider key — spends **no attempt at all**. Nobody could have sent that message until something
+  outside the row changes, so counting it as an attempt would just burn the budget while the
+  operator was asleep.
+
+`GET /admin/api/forms/:id/deliveries` lists a form's attempts with `status`, `attempts`,
+`deferrals`, `nextAttemptAt` and `lastError`, so a missing email can be diagnosed without dropping
+to provider-side logs. It takes `limit` (default 20, max 200), `offset` and `status`, and reports
+`hasMore` — a weekend's backlog is longer than one page, and a delivery `_id` is the only input the
+retry endpoint takes.
 
 The hourly redrive uses `enqueueFromQuery`, which puts the matched **document** in `body.payload` —
 not the `{ deliveryId }` wrapper that the immediate `enqueue` uses. The `deliver` worker accepts both
 shapes and stops if it can be given neither. Reading only `payload.deliveryId` made every redriven
 row resolve to `undefined`, which was invisible in tests and only showed up in the deployed logs.
 
-A provider rate limit (`429`) is handled separately: the row stays `pending` without burning an
-attempt, and the `Retry-After` the provider asked for becomes an absolute deadline on the row. Both
-the worker and the hourly job skip a row that is not yet due, so a rate-limited backlog backs off
-instead of re-firing in full every hour. A `429` with no `Retry-After` header waits 15 minutes.
+**Deferred rows back off exponentially.** The wait doubles each time the same row is deferred —
+15 minutes, 30, 1 hour, 2, 4, 8, 16, capped at 24 — and each wait is stretched by an independent
+random factor of up to 25%, so a hundred rows deferred in the same minute do not come due in the
+same minute. Both the worker and the hourly job skip a row that is not yet due.
 
-A missing `BASE_URL` is treated as a **transient** failure, not a permanent one: it is the most
-likely first-run misconfiguration, and hard-failing it would mean every notification queued before
-you noticed was lost for good. Set `BASE_URL` and the hourly job delivers the backlog.
+The growth is the part that matters, and an earlier release got this wrong in a way worth naming:
+the redrive job runs **hourly**, so a flat 15-minute deadline had always elapsed by the time the job
+looked. Five hundred rate-limited rows re-fired together at 13:00, again at 14:00, again at 15:00 —
+identical to having no backoff at all, while the docs claimed a backlog "backs off instead of
+re-firing in full every hour". A deadline shorter than the job interval cannot change anything. From
+the third deferral the wait exceeds an hour, the job genuinely steps over the row, and the attempt
+rate of a stuck backlog decays instead of staying flat. The first deferral is still deliberately
+short: most rate limits clear in minutes.
 
-Anything that did reach `failed` can still be re-driven: **Retry now** in the delivery panel on
-`/setup/`, or `POST /admin/api/deliveries/:id/retry`. The retry restores the attempt budget and
-re-queues the row. A `sent` row is refused (it would duplicate the email) and so is a `skipped` one
-(terminal by design — the channel had nothing to do).
+A provider's `Retry-After` wins whenever it is **longer** than that schedule, and is clamped to 24
+hours so a hostile or fat-fingered value cannot park a row past any useful horizon. It never
+shortens the wait of a row that has already been backing off for hours.
+
+**A missing `BASE_URL` is recoverable for about five days.** It is the most likely first-run
+misconfiguration, so it neither fails the row nor spends its attempts: deploy on Friday without it,
+take submissions all weekend, set it on Monday, and the backlog is still there. A row is given up on
+after 12 deferrals — roughly five days on the schedule above — and is then `failed` with a reason
+that says how many deferrals it took, so "keeps the row alive until you fix it" cannot quietly mean
+"forever". The same bound terminates a provider that rate-limits indefinitely.
+
+Anything that reached `failed` can be re-driven: **Retry now** in the delivery panel on `/setup/`,
+`POST /admin/api/deliveries/:id/retry` for one row, or **Retry all failed** /
+`POST /admin/api/forms/:id/deliveries/retry-all` for a whole form's backlog. A retry restores the
+attempt budget and re-queues the row. Four kinds of row are refused, and the panel prints the reason
+where the button would be rather than silently omitting it:
+
+| Row | Why not |
+|---|---|
+| `sent` | Re-driving it would send a second copy of the same email |
+| `skipped` | Terminal by design — the channel had nothing to do |
+| `pending` and **due** | A worker is either running it now or about to; retrying races it into a duplicate. A `pending` row that is **not** due — parked behind a backoff deadline — *is* retryable, and that is the recovery path after fixing config |
+| addressed to an unusable recipient | The row still carries the address that was rejected, and correcting the form's settings does not rewrite it. A retry would re-send to the same address, fail identically, and overwrite the one useful thing the row held — `Not a valid email address: …` — with a generic provider message. Fix the recipient in the form's settings; later submissions use the new address |
 
 ### Deliverability
 

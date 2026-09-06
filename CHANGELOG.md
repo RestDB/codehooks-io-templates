@@ -25,18 +25,50 @@ Each template carries its own `version` in its `package.json`.
   write with `NOT_FOUND`, every hour, without ever recording a result. Found in deployed logs, not in
   tests — the payload shape is the platform's. The worker now accepts both shapes and stops if given
   neither.
-- **`form-backend`** — a missing `BASE_URL` no longer marks deliveries permanently `failed`. It is a
-  fixable misconfiguration and is now transient, so the hourly redrive delivers the backlog once it is
-  set. `POST /admin/api/deliveries/:id/retry` re-drives a single row, including a `failed` one, and the
-  setup page's delivery panel offers it as a button.
-- **`form-backend`** — a provider's `Retry-After` is now honoured. A `429` kept a row `pending` without
-  burning an attempt, so nothing ever excluded it from the redrive and a rate-limited backlog re-fired
-  in full every hour, indefinitely. The wait is held per row and enforced by both the worker and the
-  redrive.
+- **`form-backend`** — a configuration error is no longer counted as a delivery attempt. A missing
+  `BASE_URL` was made *transient* rather than permanent, but it still spent one of the five attempts
+  on every hourly redrive, so a row was terminally `failed` about four hours after the submission:
+  deploy on Friday without `BASE_URL`, set it on Monday, and the entire weekend was already
+  unrecoverable. A missing `BASE_URL`, a missing provider key and an unknown `EMAIL_PROVIDER` now
+  park the row without spending an attempt, bounded by 12 deferrals (about five days) so a parked
+  row cannot cycle forever.
+- **`form-backend`** — failed deliveries are reachable again.
+  `GET /admin/api/forms/:id/deliveries` was hardcoded to the five newest rows with no pagination,
+  and a delivery `_id` is the only input the retry endpoint takes — so a weekend of forty failed
+  notifications left thirty-five of them unrecoverable by any route short of a datastore query. The
+  listing now takes `limit`/`offset`/`status` and reports `hasMore`, and
+  `POST /admin/api/forms/:id/deliveries/retry-all` re-drives a whole form's backlog in one action.
+- **`form-backend`** — the per-row backoff was inert, and this changelog and the README both claimed
+  otherwise. A `429` stamped a flat 15-minute deadline, but the redrive job runs **hourly**, so the
+  deadline had always elapsed by the time the job looked: 500 rate-limited rows re-fired together
+  every hour exactly as before. The wait now doubles with each deferral of the same row (15m → 24h)
+  with up to 25% random jitter so a backlog does not re-synchronise, and a provider's `Retry-After`
+  wins whenever it is longer. From the third deferral the wait exceeds the job interval, which is
+  what makes the claim true.
+- **`form-backend`** — **Retry now** is no longer offered where it can only do harm. On a `pending`
+  row that is due it raced the running worker into two identical emails; on a row addressed to an
+  unusable recipient it could never succeed — the row still carries the rejected address — and it
+  overwrote `Not a valid email address: …`, the one thing that made the row diagnosable, with a
+  generic provider message. Both are refused with a reason the panel prints where the button was.
+  A `pending` row that is *not* due stays retryable: that is the recovery path after fixing config.
+- **`form-backend`** — a successful retry no longer looks like a no-op. The confirmation message was
+  set and then erased synchronously by the refresh that followed it, so the only visible outcome of
+  clicking **Retry now** was nothing at all.
 - **`form-backend`** — notification recipients are validated when saved. A mistyped address used to
   save cleanly and then be dropped at send time with no delivery row at all, which looked exactly like
   notifications being switched off. `PATCH` now rejects the update and names the address, and an
   unusable address that reaches delivery leaves a terminal row with the reason.
+- **`form-backend`** — a `notify.email.recipients` that is not a list is no longer silent. Any
+  non-array value produced no target, no rejection and therefore no delivery row, so a form whose
+  `recipients` was the bare string `"owner@example.com"` — saved by curl before the `PATCH` gate
+  existed, or written straight to the datastore — sent nothing and showed nothing, which is the exact
+  symptom that validation was added to eliminate. A bare string is now treated as one address; any
+  other shape leaves a visible rejection.
+- **`form-backend`** — `PATCH /admin/api/forms/:id` validates the shape of `notify` before writing
+  into it. `PATCH {"notify":{"email":"a@b.com"}}` made the handler throw
+  `TypeError: Cannot create property 'recipients' on string`; the client received **HTTP 200** with
+  `{"text":"Unhandled Codehook exception","fatal":true}`, so a caller checking the status code read
+  a failed update as a successful one. Both shapes now return a 400 naming the cause.
 - **`form-backend`** — field names, uploaded filenames and submission metadata are line-break
   normalised in the notification body. Only field values were, so a field literally named
   `msg\n\n--- files ---\n…` rendered a forged attachment section, with an attacker-controlled URL,
@@ -48,7 +80,7 @@ Each template carries its own `version` in its `package.json`.
   Setting it to `email` silently marked every genuine submission as spam, stripped the value, and sent
   nothing, while returning `200` throughout.
 - **`form-backend`** — the notification email carries the link to the submission that the design
-  specifies, and `stats.spam` is incremented alongside `stats.total`.
+  specifies.
 - **`form-backend`** — the health endpoint moved from `/health` to `/status`. The platform serves its
   own `/health` (returning `Alive`) which shadows any route an app registers there, so the template's
   endpoint never ran. Caught by a fresh-install test after release.
