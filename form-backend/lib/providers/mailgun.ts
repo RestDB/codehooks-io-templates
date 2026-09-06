@@ -16,7 +16,12 @@ export function makeMailgun(
       form.append('text', msg.text);
       if (msg.replyTo) form.append('h:Reply-To', msg.replyTo);
       for (const a of msg.attachments || []) {
-        form.append('attachment', new Blob([a.content], { type: a.contentType }), a.filename);
+        // Buffer is a Uint8Array at runtime, but its type does not satisfy BlobPart.
+        // Copy rather than taking a view: a no-copy view must pass byteOffset and
+        // byteLength, and omitting them on a POOLED Buffer silently yields the wrong
+        // bytes. One extra allocation per attachment, bounded by MAX_ATTACH_MB, is
+        // cheaper than a class of silent corruption.
+        form.append('attachment', new Blob([new Uint8Array(a.content)], { type: a.contentType }), a.filename);
       }
 
       try {

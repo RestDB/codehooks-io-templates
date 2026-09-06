@@ -5,6 +5,7 @@ import { checkLoginAttempt, clearLoginAttempts } from '#lib/throttle';
 import type { FormDoc } from '#lib/forms';
 import { parseBody } from '#lib/body';
 import { validateFields } from '#lib/validation';
+import { isHoneypotFilled, controlFieldsFor, checkSubmitRate } from '#lib/spam';
 import { saveUploads } from '#lib/files';
 import { originOf, corsHeaders, safeRedirect } from '#lib/security';
 import { toCsv, collectColumns } from '#lib/csv';
@@ -99,16 +100,12 @@ app.patch('/admin/api/forms/:id', async (req, res) => {
   if (!existing) return res.status(404).json({ ok: false, error: 'Form not found' });
 
   // uuid, created and stats are server-owned and never client-writable.
-  // `honeypot` is deliberately NOT editable yet: the submit endpoint and
-  // lib/validation still hardcode `_gotcha`, so changing it here would store and
-  // export bot values and, under strict, reject real users with "Unknown field".
-  // It becomes editable when the plan that enforces the honeypot lands.
-  // `honeypot` and `retentionDays` are deliberately NOT writable: nothing enforces
-  // either one yet, and a knob that silently does nothing is worse than no knob —
-  // someone could set retentionDays expecting deletion that never happens.
+  // `retentionDays` is deliberately NOT writable: no purge job enforces it, and a
+  // knob that silently does nothing could be mistaken for a retention guarantee.
+  // `honeypot` IS writable now that the submit endpoint enforces it.
   const allowed: Array<keyof FormDoc> = [
     'name', 'enabled', 'fields', 'strict', 'redirectUrl',
-    'allowRedirectOverride', 'allowedDomains',
+    'allowRedirectOverride', 'allowedDomains', 'honeypot',
   ];
   const patch: any = { updated: new Date().toISOString() };
   for (const key of allowed) {
@@ -143,6 +140,10 @@ app.delete('/admin/api/forms/:id', async (req, res) => {
 
 function maxUploadBytes(): number {
   return (Number(process.env.MAX_UPLOAD_MB) || 5) * 1024 * 1024;
+}
+
+function submitRateLimit(): number {
+  return Number(process.env.SUBMIT_RATE_LIMIT) || 30;
 }
 
 // codehooks-js exposes get/post/put/patch/delete/all — there is no app.options —
@@ -202,6 +203,17 @@ app.all('/f/:formId', async (req, res) => {
       return fail(403, 'Origin not allowed');
     }
 
+    // Rate limit AFTER parsing: parseBody must remain the first await (the platform
+    // consumes the request stream once a handler yields). A flood therefore still
+    // costs one buffered body each; the limit protects the database, the queue and
+    // the owner's inbox rather than raw bandwidth.
+    const conn = await Datastore.open();
+    const rate = await checkSubmitRate(conn, form.uuid, req, submitRateLimit());
+    if (!rate.allowed) {
+      res.set('Retry-After', String(rate.retryAfterSeconds));
+      return fail(429, 'Too many submissions. Please try again later.');
+    }
+
     if (parseErr) {
       if (parseErr.message === 'PAYLOAD_TOO_LARGE') {
         return fail(413, 'Submission too large');
@@ -216,7 +228,13 @@ app.all('/f/:formId', async (req, res) => {
 
     const data = { ...parsed.fields };
     const requestedRedirect = data._redirect || '';
-    for (const key of ['_gotcha', '_redirect', '_subject', '_next']) delete data[key];
+    for (const key of controlFieldsFor(form.honeypot || '')) delete data[key];
+
+    // A filled honeypot means a bot. Store it, mark it spam, answer with an ordinary
+    // success, and never enqueue: telling a bot it was detected only helps it adapt,
+    // and storing rather than dropping means a false positive is recoverable from the
+    // inbox instead of silently lost.
+    const isSpam = isHoneypotFilled(parsed.fields, form.honeypot || '');
 
     const check = validateFields(
       form.fields || [],
@@ -224,13 +242,13 @@ app.all('/f/:formId', async (req, res) => {
       form.strict,
       // Empty parts are discarded by saveUploads, so they must not satisfy `required`
       // either — otherwise an empty upload passes validation and stores files: [].
-      parsed.files.filter((f) => f.content.length > 0).map((f) => f.field)
+      parsed.files.filter((f) => f.content.length > 0).map((f) => f.field),
+      controlFieldsFor(form.honeypot || '')
     );
     if (!check.ok) {
       return fail(400, 'Validation failed', check.errors);
     }
 
-    const conn = await Datastore.open();
     const submissionId = randomUUID();
     const files = await saveUploads(form.uuid, submissionId, parsed.files, maxUploadBytes());
 
@@ -246,12 +264,15 @@ app.all('/f/:formId', async (req, res) => {
         referer: String(req.headers.referer || ''),
         origin: String(req.headers.origin || ''),
       },
-      status: 'new',
+      status: isSpam ? 'spam' : 'new',
       starred: false,
       notes: [],
-      spam: { score: 0, reasons: [] },
+      spam: { score: isSpam ? 100 : 0, reasons: isSpam ? ['honeypot'] : [] },
       ai: null,
     });
+
+    // Task 7 adds the notification enqueue here, guarded on `!isSpam` — a spam
+    // submission is stored (recoverable from the inbox) but never enqueued.
 
     // The submission is already durable at this point. A stats failure must not
     // 500 the request — the visitor would hit back and resubmit, creating
