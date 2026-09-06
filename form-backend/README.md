@@ -384,7 +384,7 @@ schema. Shown here as reference, and for automation that generates its own HTML:
 
 ## Platform behaviours that fail silently
 
-Five behaviours of the Codehooks platform produce **no error** when you get them wrong — the code
+Six behaviours of the Codehooks platform produce **no error** when you get them wrong — the code
 runs, returns success, and does the wrong thing. Each one cost a real bug in this template. If you
 fork it, these are the traps.
 
@@ -430,6 +430,23 @@ overlap. *Here:* form counters are stored flat (`statsTotal`, `statsSpam`, `stat
 and `lib/stats.ts` composes the public `stats` object on the way out, so the API shape is unchanged.
 This one shipped broken: `form.stats.total` read `0` on every form, on every version, until it was
 found by reading a raw document rather than an API response.
+
+**6. An unhandled exception in a handler returns HTTP `200`.**
+A route that throws does not produce a `500`. The platform answers with a success status and an
+error document in the body:
+
+```
+HTTP/1.1 200 OK
+{"text":"Unhandled Codehook exception, check logs (2)","fatal":true}
+```
+
+So `if (!res.ok)` — the ordinary way any client decides whether a call worked — reads a crashed
+handler as a success, and a caller that goes on to parse the reply gets a shape it never expected.
+This is the trap behind the others in this list: it is why a broken write can look like a working
+one from the outside, and why several bugs here were only found by reading stored documents or
+deployed logs rather than by checking a response. *Here:* every route wraps its work and returns an
+explicit status; `PATCH /admin/api/forms/:id` validates `notify.email`'s shape rather than letting a
+property access on a primitive throw, which previously turned a rejected update into a `200`.
 
 ## Verified against
 
