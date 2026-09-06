@@ -12,6 +12,36 @@ Each template carries its own `version` in its `package.json`.
 
 ### Fixed
 
+- **`form-backend`** — the hourly redrive never re-drove anything. `enqueueFromQuery` puts the matched
+  document in `body.payload`, not the `{ deliveryId }` wrapper the immediate enqueue uses, so every
+  redriven row resolved to `undefined`: the worker re-sent the notification and then failed its status
+  write with `NOT_FOUND`, every hour, without ever recording a result. Found in deployed logs, not in
+  tests — the payload shape is the platform's. The worker now accepts both shapes and stops if given
+  neither.
+- **`form-backend`** — a missing `BASE_URL` no longer marks deliveries permanently `failed`. It is a
+  fixable misconfiguration and is now transient, so the hourly redrive delivers the backlog once it is
+  set. `POST /admin/api/deliveries/:id/retry` re-drives a single row, including a `failed` one, and the
+  setup page's delivery panel offers it as a button.
+- **`form-backend`** — a provider's `Retry-After` is now honoured. A `429` kept a row `pending` without
+  burning an attempt, so nothing ever excluded it from the redrive and a rate-limited backlog re-fired
+  in full every hour, indefinitely. The wait is held per row and enforced by both the worker and the
+  redrive.
+- **`form-backend`** — notification recipients are validated when saved. A mistyped address used to
+  save cleanly and then be dropped at send time with no delivery row at all, which looked exactly like
+  notifications being switched off. `PATCH` now rejects the update and names the address, and an
+  unusable address that reaches delivery leaves a terminal row with the reason.
+- **`form-backend`** — field names, uploaded filenames and submission metadata are line-break
+  normalised in the notification body. Only field values were, so a field literally named
+  `msg\n\n--- files ---\n…` rendered a forged attachment section, with an attacker-controlled URL,
+  above the genuine signed links.
+- **`form-backend`** — the `deliver` worker now really does re-check `submission.status === 'spam'`, as
+  its caller's comment had always claimed. Reclassifying a submission as spam while its delivery row
+  was still pending previously sent the email anyway on the next redrive.
+- **`form-backend`** — a `honeypot` name that collides with a real field is rejected on `PATCH`.
+  Setting it to `email` silently marked every genuine submission as spam, stripped the value, and sent
+  nothing, while returning `200` throughout.
+- **`form-backend`** — the notification email carries the link to the submission that the design
+  specifies, and `stats.spam` is incremented alongside `stats.total`.
 - **`form-backend`** — the health endpoint moved from `/health` to `/status`. The platform serves its
   own `/health` (returning `Alive`) which shadows any route an app registers there, so the template's
   endpoint never ran. Caught by a fresh-install test after release.
@@ -29,9 +59,9 @@ Each template carries its own `version` in its `package.json`.
   against a configurable size budget with a signed, expiring download link for anything left out,
   `Reply-To` set automatically to the submitter's own address, and automatic retry of transient
   provider failures via an hourly redrive — a spam-flagged submission never enters the pipeline.
-  200 unit tests. Verified end to end against a live deployment: the honeypot path producing no
-  delivery row and no send, and the signed download link resolving to the correct bytes under a
-  configured `BASE_URL`. A live provider send has not yet been confirmed — see the deliverability
+  262 unit tests. Verified end to end against a live deployment: the honeypot path producing no
+  delivery row and no send, the signed download link resolving to the correct bytes under a configured
+  `BASE_URL`, and a live provider send reaching `status: "sent"` through Brevo. See the deliverability
   notes in `form-backend/README.md`.
 
 ## 2026-07-05
