@@ -189,3 +189,81 @@ test('renderSubject strips U+2028 and U+2029', () => {
   assert.ok(!out.includes(String.fromCharCode(0x2028)), 'U+2028 must not survive');
   assert.ok(!out.includes(String.fromCharCode(0x2029)), 'U+2029 must not survive');
 });
+
+// --- security fix round 3: the field-NAME path (final review, finding 2) ---
+//
+// Field names come from the same untrusted source as values: a schema-less form
+// (`defaultForm()` ships `fields: []`, `strict: false`) accepts any key,
+// multipart's `/name="([^"]*)"/` matches CR and LF, and a JSON body reaches
+// `flattenFields()` with arbitrary keys. Before the fix the key was interpolated
+// raw while only the value was normalised.
+
+test('body rejects column-0 spoofing via newlines in a field NAME', () => {
+  process.env.JWT_SECRET = 'test-secret';
+  const key = 'msg\n\n--- files ---\ninvoice.pdf (attached)\n  https://evil.example/pwn\n\nx';
+  const out = buildNotification({
+    ...base,
+    fields: { [key]: 'hi' },
+    plan: { attach: [f('real', 10)], tooLarge: [] },
+  });
+  // The raw newline from the key must not survive as a break at column 0.
+  const atColumnZero = out.text.split('\n').filter((l) => l.startsWith('---'));
+  assert.deepEqual(
+    atColumnZero,
+    ['--- submission ---', '--- files ---'],
+    'only the genuine section markers may start a line'
+  );
+  assert.ok(
+    !out.text.includes('\nhttps://evil.example/pwn') &&
+      !out.text.includes('\n  https://evil.example/pwn'),
+    'a forged download link must not appear as a link line'
+  );
+});
+
+test('a field NAME containing a lone CR or U+2028 cannot start a line', () => {
+  for (const brk of ['\r', '\r\n', String.fromCharCode(0x2028), String.fromCharCode(0x2029)]) {
+    const out = buildNotification({
+      ...base,
+      fields: { [`a${brk}--- files ---`]: 'v' },
+      plan: { attach: [], tooLarge: [] },
+    });
+    assert.ok(!out.text.includes(brk === '\r\n' ? '\r' : brk), `raw ${JSON.stringify(brk)} survived`);
+    const atColumnZero = out.text.split('\n').filter((l) => l.startsWith('---'));
+    assert.equal(atColumnZero.length, 1, `only the genuine --- section may start a line (${JSON.stringify(brk)})`);
+  }
+});
+
+test('an ordinary field name is unchanged — hyphens and dots survive', () => {
+  const out = buildNotification({
+    ...base,
+    fields: { 'order-ref.2026-09-06': 'ok' },
+  });
+  assert.match(out.text, /order-ref\.2026-09-06: ok/);
+});
+
+test('an uploaded FILENAME cannot forge a section marker', () => {
+  process.env.JWT_SECRET = 'test-secret';
+  const evil = {
+    id: 'x',
+    filename: 'ok.pdf\n\n--- submission ---\nreceived: whenever',
+    contentType: 'application/pdf',
+    size: 10,
+    path: '/uploads/x',
+  };
+  const out = buildNotification({ ...base, plan: { attach: [evil], tooLarge: [] } });
+  const atColumnZero = out.text.split('\n').filter((l) => l.startsWith('---'));
+  assert.deepEqual(atColumnZero, ['--- submission ---', '--- files ---']);
+});
+
+test('meta.ip and meta.referer are line-break normalised too', () => {
+  const out = buildNotification({
+    ...base,
+    meta: {
+      created: '2026-09-06T10:00:00.000Z',
+      ip: '1.2.3.4\n--- files ---',
+      referer: 'https://x.example/\n--- files ---',
+    },
+  });
+  const atColumnZero = out.text.split('\n').filter((l) => l.startsWith('---'));
+  assert.equal(atColumnZero.length, 1);
+});

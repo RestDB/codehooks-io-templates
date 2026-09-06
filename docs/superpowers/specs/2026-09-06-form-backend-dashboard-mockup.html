@@ -1,0 +1,1194 @@
+<title>Form Backend Inbox</title>
+<style>
+  /* ------------------------------------------------------------------
+     This mockup deliberately uses the SAME system font stacks and the
+     SAME palette the shipped template will use — no webfont, no CDN —
+     so what you see here is what the deployed page renders.
+     ------------------------------------------------------------------ */
+  :root {
+    color-scheme: light;
+
+    --paper:   #FBFAF7;  /* warm ground            */
+    --surface: #FFFFFF;  /* panes                  */
+    --sunk:    #F4F2EE;  /* rail, inset areas      */
+    --ink:     #1C1917;  /* headings               */
+    --body:    #44403C;  /* prose                  */
+    --muted:   #A8A29E;  /* metadata               */
+    --rule:    #E7E5E4;  /* hairlines              */
+    --accent:  #0F5C5C;  /* archival teal          */
+    --accent-soft: #E3EFEE;
+    --flag:    #B91C1C;  /* spam                   */
+    --star:    #B45309;
+
+    --ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
+          "Segoe UI", system-ui, Roboto, "Helvetica Neue", sans-serif;
+    --data: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code",
+            "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: #EEEBE5;
+    color: var(--body);
+    font-family: var(--ui);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 2rem 1.25rem 4rem;
+  }
+
+  /* ---------- page chrome ---------- */
+
+  .chrome { margin-bottom: 1.25rem; }
+
+  .chrome .eyebrow {
+    font-family: var(--data);
+    font-size: 11px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 0.4rem;
+  }
+
+  .chrome h1 {
+    font-size: 1.5rem;
+    line-height: 1.2;
+    color: var(--ink);
+    margin: 0 0 0.35rem;
+    font-weight: 600;
+    letter-spacing: -0.012em;
+    text-wrap: balance;
+  }
+
+  .chrome p {
+    margin: 0;
+    max-width: 62ch;
+    color: #57534E;
+  }
+
+  /* ---------- the app frame ---------- */
+
+  .app {
+    background: var(--paper);
+    border: 1px solid #DDD8D0;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(28,25,23,0.05), 0 12px 32px -12px rgba(28,25,23,0.18);
+  }
+
+  .titlebar {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.6rem 0.9rem;
+    background: var(--sunk);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .dots { display: flex; gap: 0.375rem; }
+  .dots i {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #D6D1C9; display: block;
+  }
+
+  .titlebar .url {
+    font-family: var(--data);
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+
+  .panes {
+    display: grid;
+    grid-template-columns: 216px 336px minmax(0, 1fr);
+    min-height: 620px;
+  }
+
+  /* ---------- pane 1: forms rail ---------- */
+
+  .rail {
+    background: var(--sunk);
+    border-right: 1px solid var(--rule);
+    padding: 1rem 0.625rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .rail-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 0 0.5rem;
+  }
+
+  .rail-head .mark {
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+
+  .rail-head .ver {
+    font-family: var(--data);
+    font-size: 10.5px;
+    color: var(--muted);
+  }
+
+  .rail-label {
+    font-family: var(--data);
+    font-size: 10.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 0 0.5rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .rail-list { display: flex; flex-direction: column; gap: 1px; }
+
+  .rail-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    color: var(--body);
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    padding: 0.42rem 0.5rem;
+    cursor: pointer;
+  }
+
+  .rail-item:hover { background: rgba(28,25,23,0.045); }
+
+  .rail-item[aria-current="true"] {
+    background: var(--surface);
+    color: var(--ink);
+    font-weight: 500;
+    box-shadow: inset 0 0 0 1px var(--rule);
+  }
+
+  .rail-item .badge {
+    font-family: var(--data);
+    font-variant-numeric: tabular-nums;
+    font-size: 10.5px;
+    line-height: 1;
+    padding: 0.22rem 0.36rem;
+    border-radius: 4px;
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .rail-item .badge[data-zero="true"] { display: none; }
+
+  .rail-new {
+    font: inherit;
+    font-size: 13px;
+    color: var(--accent);
+    background: transparent;
+    border: 1px dashed #C9C3B9;
+    border-radius: 6px;
+    padding: 0.42rem 0.5rem;
+    cursor: pointer;
+    text-align: left;
+    margin-top: 0.35rem;
+  }
+  .rail-new:hover { background: rgba(15,92,92,0.05); border-color: var(--accent); }
+
+  .rail-foot {
+    margin-top: auto;
+    padding: 0 0.5rem;
+    font-family: var(--data);
+    font-size: 10.5px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  /* ---------- pane 2: submissions list ---------- */
+
+  .list {
+    border-right: 1px solid var(--rule);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.6rem 0.75rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .tab {
+    font: inherit;
+    font-size: 13px;
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    padding: 0.35rem 0.5rem 0.5rem;
+    cursor: pointer;
+    margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--body); }
+  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 500; }
+
+  .filters {
+    display: flex;
+    gap: 0.4rem;
+    padding: 0.625rem 0.75rem;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .filters input[type="search"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    font: inherit;
+    font-size: 13px;
+    color: var(--body);
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 0.34rem 0.55rem;
+  }
+  .filters input[type="search"]::placeholder { color: var(--muted); }
+
+  .filters select {
+    font: inherit;
+    font-size: 13px;
+    color: var(--body);
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 0.34rem 0.4rem;
+  }
+
+  .rows {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    max-height: 460px;
+  }
+
+  .row {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--rule);
+    border-left: 3px solid transparent;
+    padding: 0.6rem 0.75rem 0.65rem;
+    cursor: pointer;
+    color: var(--body);
+  }
+
+  .row:hover { background: var(--paper); }
+  .row[aria-current="true"] { background: var(--accent-soft); }
+
+  .row[data-status="new"] { border-left-color: var(--accent); }
+  .row[data-status="spam"] { border-left-color: var(--flag); }
+
+  .row-top {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  .row-who {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink);
+  }
+
+  .row[data-status="new"] .row-who { font-weight: 600; }
+  .row[data-status="archived"] .row-who,
+  .row[data-status="spam"] .row-who { color: var(--muted); }
+
+  .row-when {
+    flex: none;
+    font-family: var(--data);
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .row-snip {
+    margin-top: 0.1rem;
+    font-size: 12.5px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .row-marks {
+    display: inline-flex;
+    gap: 0.3rem;
+    margin-right: 0.1rem;
+    vertical-align: baseline;
+  }
+  .row-marks span { font-size: 11px; line-height: 1; }
+  .mark-star { color: var(--star); }
+  .mark-clip { color: var(--muted); }
+
+  .list-foot {
+    border-top: 1px solid var(--rule);
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--data);
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--paper);
+  }
+
+  .pager { display: flex; gap: 0.25rem; }
+  .pager button {
+    font: inherit;
+    font-size: 11px;
+    background: var(--surface);
+    color: var(--body);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 0.15rem 0.4rem;
+    cursor: pointer;
+  }
+  .pager button:disabled { color: #D6D1C9; cursor: default; }
+
+  /* ---------- pane 3: the record ---------- */
+
+  .record {
+    background: var(--surface);
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .record-head {
+    padding: 1.1rem 1.25rem 0.9rem;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .record-eyebrow {
+    font-family: var(--data);
+    font-size: 10.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.3rem;
+  }
+
+  .record-head h2 {
+    margin: 0;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+
+  .record-head .from {
+    font-family: var(--data);
+    font-size: 12px;
+    color: var(--accent);
+    margin-top: 0.15rem;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.7rem 1.25rem;
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper);
+  }
+
+  .act {
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--body);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 0.3rem 0.55rem;
+    cursor: pointer;
+  }
+  .act:hover { border-color: #CFC9C0; background: var(--paper); }
+  .act[aria-pressed="true"] { color: var(--star); border-color: #E7D6B8; background: #FDF8EF; }
+  .act.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .act.primary:hover { filter: brightness(1.1); }
+  .act.danger { color: var(--flag); }
+  .act.danger:hover { background: #FEF2F2; border-color: #F3C9C9; }
+
+  .record-body {
+    padding: 1.25rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.4rem;
+  }
+
+  /* --- the signature element: the record itself --- */
+
+  .fields {
+    display: grid;
+    grid-template-columns: 7.25rem minmax(0, 1fr);
+  }
+
+  .fields dt {
+    font-family: var(--data);
+    font-size: 11.5px;
+    color: var(--muted);
+    text-align: right;
+    padding: 0.55rem 0.75rem 0.55rem 0;
+    border-top: 1px solid var(--rule);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .fields dd {
+    margin: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--rule);
+    color: var(--ink);
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .fields dt:first-of-type, .fields dd:first-of-type { border-top: 0; }
+
+  .block-label {
+    font-family: var(--data);
+    font-size: 10.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+  }
+
+  .files { display: flex; flex-direction: column; gap: 0.375rem; }
+
+  .file {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    padding: 0.5rem 0.7rem;
+    background: var(--paper);
+  }
+
+  .file .name { flex: 1 1 auto; min-width: 0; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file .size { font-family: var(--data); font-variant-numeric: tabular-nums; font-size: 11.5px; color: var(--muted); }
+  .file .get { font-size: 12.5px; color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(15,92,92,0.3); }
+  .file .get:hover { border-bottom-color: var(--accent); }
+
+  .meta {
+    display: grid;
+    grid-template-columns: 7.25rem minmax(0, 1fr);
+    row-gap: 0.3rem;
+    font-family: var(--data);
+    font-size: 11.5px;
+  }
+  .meta dt { color: var(--muted); text-align: right; padding-right: 0.75rem; }
+  .meta dd { margin: 0; color: var(--body); overflow-wrap: anywhere; }
+
+  .notes { display: flex; flex-direction: column; gap: 0.5rem; }
+
+  .note {
+    border-left: 2px solid var(--rule);
+    padding: 0.1rem 0 0.1rem 0.7rem;
+  }
+  .note .when {
+    font-family: var(--data);
+    font-size: 10.5px;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 0.1rem;
+  }
+
+  .note-add {
+    display: flex;
+    gap: 0.4rem;
+  }
+  .note-add input {
+    flex: 1 1 auto;
+    min-width: 0;
+    font: inherit;
+    font-size: 13px;
+    color: var(--body);
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 0.36rem 0.55rem;
+  }
+  .note-add input::placeholder { color: var(--muted); }
+
+  .empty {
+    margin: auto;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 2rem;
+  }
+
+  /* ---------- legend ---------- */
+
+  .legend {
+    margin-top: 2rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+    gap: 1.25rem;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid #DDD8D0;
+    border-radius: 10px;
+    padding: 1.1rem 1.15rem 1.2rem;
+  }
+
+  .card h3 {
+    margin: 0 0 0.75rem;
+    font-size: 12px;
+    font-family: var(--data);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .card p { margin: 0 0 0.6rem; font-size: 13px; }
+  .card p:last-child { margin-bottom: 0; }
+
+  .swatches { display: flex; flex-direction: column; gap: 0.3rem; }
+  .sw {
+    display: grid;
+    grid-template-columns: 1.5rem 1fr auto;
+    align-items: center;
+    gap: 0.6rem;
+    font-family: var(--data);
+    font-size: 11.5px;
+  }
+  .sw i {
+    display: block;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 5px;
+    border: 1px solid rgba(28,25,23,0.12);
+  }
+  .sw .role { font-family: var(--ui); font-size: 12.5px; color: var(--body); }
+  .sw .hex { color: var(--muted); }
+
+  .typerow { border-top: 1px solid var(--rule); padding-top: 0.6rem; margin-top: 0.6rem; }
+  .typerow:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+  .typerow .what { font-size: 11.5px; font-family: var(--data); color: var(--muted); margin-bottom: 0.15rem; }
+  .sample-ui { font-family: var(--ui); font-size: 15px; color: var(--ink); }
+  .sample-data { font-family: var(--data); font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  .ask { border-color: var(--accent); background: var(--accent-soft); }
+  .ask h3 { color: var(--accent); }
+  .ask p { color: #1F4A4A; }
+  .ask strong { color: var(--ink); }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+  @media (max-width: 1040px) {
+    .panes { grid-template-columns: 1fr; min-height: 0; }
+    .rail { border-right: 0; border-bottom: 1px solid var(--rule); }
+    .rail-foot { display: none; }
+    .list { border-right: 0; border-bottom: 1px solid var(--rule); }
+    .rows { max-height: 320px; }
+  }
+</style>
+
+<div class="page">
+
+  <div class="chrome">
+    <p class="eyebrow">Design review · form-backend</p>
+    <h1>Form Backend Inbox</h1>
+    <p>A working mockup of the admin dashboard. Click a form in the rail, click a submission, try the
+      status filter. Fonts and colours here are exactly what ships — this page uses the same system
+      font stacks and no webfont, so nothing you see depends on a CDN.</p>
+  </div>
+
+  <div class="app">
+    <div class="titlebar">
+      <div class="dots"><i></i><i></i><i></i></div>
+      <span class="url">api.formbackend.dev/setup/</span>
+    </div>
+
+    <div class="panes">
+
+      <!-- pane 1 -->
+      <nav class="rail" aria-label="Forms">
+        <div class="rail-head">
+          <span class="mark">Form Backend</span>
+          <span class="ver">v1.2</span>
+        </div>
+        <div>
+          <div class="rail-label">Forms</div>
+          <div class="rail-list" id="rail"></div>
+          <button class="rail-new" type="button">+ New form</button>
+        </div>
+        <div class="rail-foot">
+          343 submissions<br>
+          5 flagged spam<br>
+          last 2 min ago
+        </div>
+      </nav>
+
+      <!-- pane 2 -->
+      <section class="list" aria-label="Submissions">
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" aria-selected="true" type="button">Submissions</button>
+          <button class="tab" role="tab" aria-selected="false" type="button">Settings</button>
+        </div>
+        <div class="filters">
+          <input type="search" id="q" placeholder="Search submissions" aria-label="Search submissions">
+          <select id="status" aria-label="Filter by status">
+            <option value="">All</option>
+            <option value="new">New</option>
+            <option value="read">Read</option>
+            <option value="archived">Archived</option>
+            <option value="spam">Spam</option>
+          </select>
+        </div>
+        <div class="rows" id="rows"></div>
+        <div class="list-foot">
+          <span id="count">1–6 of 214</span>
+          <span class="pager">
+            <button type="button" disabled>←</button>
+            <button type="button">→</button>
+          </span>
+        </div>
+      </section>
+
+      <!-- pane 3 -->
+      <section class="record" aria-label="Submission record" id="record"></section>
+
+    </div>
+  </div>
+
+  <div class="legend">
+
+    <div class="card">
+      <h3>Palette</h3>
+      <div class="swatches">
+        <div class="sw"><i style="background:#FBFAF7"></i><span class="role">Paper ground</span><span class="hex">#FBFAF7</span></div>
+        <div class="sw"><i style="background:#F4F2EE"></i><span class="role">Rail, inset</span><span class="hex">#F4F2EE</span></div>
+        <div class="sw"><i style="background:#E7E5E4"></i><span class="role">Hairlines</span><span class="hex">#E7E5E4</span></div>
+        <div class="sw"><i style="background:#A8A29E"></i><span class="role">Metadata</span><span class="hex">#A8A29E</span></div>
+        <div class="sw"><i style="background:#44403C"></i><span class="role">Body text</span><span class="hex">#44403C</span></div>
+        <div class="sw"><i style="background:#1C1917"></i><span class="role">Headings</span><span class="hex">#1C1917</span></div>
+        <div class="sw"><i style="background:#0F5C5C"></i><span class="role">Accent — new, actions</span><span class="hex">#0F5C5C</span></div>
+        <div class="sw"><i style="background:#B91C1C"></i><span class="role">Spam only</span><span class="hex">#B91C1C</span></div>
+      </div>
+      <p style="margin-top:0.85rem">Warm neutrals rather than the cool slate the setup page uses today.
+        Colour appears in exactly three places: the accent on actions and the <em>new</em> edge, red on
+        spam, amber on a star. Status rides a 3px left edge, never a badge.</p>
+    </div>
+
+    <div class="card">
+      <h3>Type</h3>
+      <div class="typerow">
+        <div class="what">UI — system stack</div>
+        <div class="sample-ui">Do you support uploads over 10 MB?</div>
+      </div>
+      <div class="typerow">
+        <div class="what">Data — system monospace</div>
+        <div class="sample-data">2026-09-06 21:22 · 203.0.113.44 · 240 KB</div>
+      </div>
+      <p style="margin-top:0.85rem">Two roles. The monospace face carries field keys, timestamps, IPs,
+        sizes and IDs — the things that are literally data — with tabular figures so columns line up.
+        That contrast is the character of the page, and it costs zero bytes and zero requests.</p>
+    </div>
+
+    <div class="card ask">
+      <h3>The two calls</h3>
+      <p><strong>Teal on warm paper.</strong> This is an archive of correspondence from strangers, so the
+        accent reads as archival ink rather than the notification-blue every admin panel uses.</p>
+      <p><strong>System fonts only.</strong> A webfont would mean a Google Fonts request, which is the
+        thing approach A exists to avoid. The lift comes from the palette, the type scale and the
+        record layout instead.</p>
+      <p style="margin-top:0.85rem">Both are cheap to change — they're four CSS variables and one font
+        stack. Tell me what you'd move.</p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var FORMS = [
+    { id: 'contact',  name: 'Contact',  unread: 4, total: 214 },
+    { id: 'careers',  name: 'Careers',  unread: 0, total: 38  },
+    { id: 'support',  name: 'Support',  unread: 1, total: 91  }
+  ];
+
+  var DATA = {
+    contact: [
+      {
+        who: 'Ada Lovelace', when: '2 min', status: 'new', starred: false,
+        snip: 'Do you support file uploads over 10 MB? We want to send design files.',
+        fields: [
+          ['name', 'Ada Lovelace'],
+          ['email', 'ada@analytical.eng'],
+          ['topics', 'uploads, limits'],
+          ['message', 'Do you support file uploads over 10 MB? We want to send design files\nthrough the contact form rather than a separate Dropbox link.\n\nHappy to pay for a higher tier if that is what it takes.']
+        ],
+        files: [{ name: 'brand-guidelines.pdf', size: '2.4 MB' }, { name: 'logo-marks.zip', size: '840 KB' }],
+        meta: [
+          ['submitted', '2026-09-06 21:22:04 UTC'],
+          ['ip', '203.0.113.44'],
+          ['referer', 'https://acme.example/contact'],
+          ['agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'],
+          ['id', '6a9dbd6d885e838719efece8']
+        ],
+        notes: []
+      },
+      {
+        who: 'Grace Hopper', when: '1 hr', status: 'new', starred: false,
+        snip: 'The CSV export puts the date column in the wrong order.',
+        fields: [
+          ['name', 'Grace Hopper'],
+          ['email', 'grace@navy.example'],
+          ['topics', 'bug, export'],
+          ['message', 'The CSV export puts the date column in the wrong order — it sorts as\ntext, so 2026-10-01 lands before 2026-9-30. Screenshot attached.']
+        ],
+        files: [{ name: 'csv-order.png', size: '186 KB' }],
+        meta: [
+          ['submitted', '2026-09-06 20:14:51 UTC'],
+          ['ip', '198.51.100.7'],
+          ['referer', 'https://acme.example/contact'],
+          ['agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'],
+          ['id', '6a9db452885e838719efecc4']
+        ],
+        notes: [{ when: '2026-09-06 20:31', text: 'Reproduced. It is the sort, not the export.' }]
+      },
+      {
+        who: 'Alan Turing', when: '3 hr', status: 'read', starred: true,
+        snip: 'Can I point three separate forms at one endpoint?',
+        fields: [
+          ['name', 'Alan Turing'],
+          ['email', 'alan@bletchley.example'],
+          ['topics', 'setup'],
+          ['message', 'Can I point three separate forms at one endpoint, or do I need one\nform per page? The docs were not clear on this.']
+        ],
+        files: [],
+        meta: [
+          ['submitted', '2026-09-06 18:02:19 UTC'],
+          ['ip', '192.0.2.31'],
+          ['referer', 'https://acme.example/pricing'],
+          ['agent', 'Mozilla/5.0 (X11; Linux x86_64)'],
+          ['id', '6a9db70d885e838719efecd9']
+        ],
+        notes: [{ when: '2026-09-06 18:40', text: 'Answered — one form per endpoint, uuid is the key.' }]
+      },
+      {
+        who: 'CHEAP MEDS ONLINE', when: '1 day', status: 'spam', starred: false,
+        snip: 'best price!!! click here now http://198.51.100.9/deals',
+        fields: [
+          ['name', 'CHEAP MEDS ONLINE'],
+          ['email', 'noreply@198.51.100.9'],
+          ['message', 'best price!!! click here now http://198.51.100.9/deals'],
+          ['_gotcha', 'filled — bot']
+        ],
+        files: [],
+        meta: [
+          ['submitted', '2026-09-05 03:11:02 UTC'],
+          ['ip', '198.51.100.9'],
+          ['referer', '—'],
+          ['agent', 'python-requests/2.31.0'],
+          ['id', '6a9c1140885e838719efeb02']
+        ],
+        notes: []
+      },
+      {
+        who: 'Katherine Johnson', when: '2 days', status: 'read', starred: false,
+        snip: 'Requesting a quote for 50 seats on an annual plan.',
+        fields: [
+          ['name', 'Katherine Johnson'],
+          ['email', 'katherine@orbital.example'],
+          ['topics', 'sales'],
+          ['message', 'Requesting a quote for 50 seats on an annual plan. We would need\ninvoicing rather than card payment.']
+        ],
+        files: [],
+        meta: [
+          ['submitted', '2026-09-04 14:55:38 UTC'],
+          ['ip', '203.0.113.90'],
+          ['referer', 'https://acme.example/pricing'],
+          ['agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'],
+          ['id', '6a9a8891885e838719efe9c1']
+        ],
+        notes: []
+      },
+      {
+        who: 'Barbara Liskov', when: '6 days', status: 'archived', starred: false,
+        snip: 'Thanks — sorted, no action needed.',
+        fields: [
+          ['name', 'Barbara Liskov'],
+          ['email', 'barbara@substitution.example'],
+          ['message', 'Thanks — sorted, no action needed.']
+        ],
+        files: [],
+        meta: [
+          ['submitted', '2026-08-31 09:20:11 UTC'],
+          ['ip', '192.0.2.14'],
+          ['referer', 'https://acme.example/contact'],
+          ['agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2)'],
+          ['id', '6a92f0aa885e838719efe4d3']
+        ],
+        notes: []
+      }
+    ],
+    careers: [
+      {
+        who: 'Margaret Hamilton', when: '4 hr', status: 'read', starred: true,
+        snip: 'Applying for the backend role — CV and a short write-up attached.',
+        fields: [
+          ['name', 'Margaret Hamilton'],
+          ['email', 'margaret@apollo.example'],
+          ['role', 'Backend engineer'],
+          ['message', 'Applying for the backend role. CV attached, plus a short write-up on\nthe error-handling approach I mentioned in the cover note.']
+        ],
+        files: [{ name: 'hamilton-cv.pdf', size: '312 KB' }, { name: 'error-handling.md', size: '11 KB' }],
+        meta: [
+          ['submitted', '2026-09-06 17:08:44 UTC'],
+          ['ip', '203.0.113.2'],
+          ['referer', 'https://acme.example/careers'],
+          ['agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'],
+          ['id', '6a9db1c4885e838719efecb0']
+        ],
+        notes: [{ when: '2026-09-06 17:45', text: 'Strong. Forwarded to the hiring channel.' }]
+      },
+      {
+        who: 'Radia Perlman', when: '3 days', status: 'archived', starred: false,
+        snip: 'Withdrawing my application — accepted another offer.',
+        fields: [
+          ['name', 'Radia Perlman'],
+          ['email', 'radia@spanning.example'],
+          ['role', 'Network engineer'],
+          ['message', 'Withdrawing my application — I accepted another offer this week.\nThank you for the time.']
+        ],
+        files: [],
+        meta: [
+          ['submitted', '2026-09-03 11:30:00 UTC'],
+          ['ip', '198.51.100.55'],
+          ['referer', 'https://acme.example/careers'],
+          ['agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'],
+          ['id', '6a97b201885e838719efe7aa']
+        ],
+        notes: []
+      }
+    ],
+    support: [
+      {
+        who: 'Karen Spärck Jones', when: '25 min', status: 'new', starred: false,
+        snip: 'Search returns nothing past the first page of results.',
+        fields: [
+          ['name', 'Karen Spärck Jones'],
+          ['email', 'karen@idf.example'],
+          ['severity', 'medium'],
+          ['message', 'Search returns nothing past the first page of results, even though\nthe total count says there are more matches.']
+        ],
+        files: [],
+        meta: [
+          ['submitted', '2026-09-06 20:57:12 UTC'],
+          ['ip', '192.0.2.77'],
+          ['referer', 'https://acme.example/support'],
+          ['agent', 'Mozilla/5.0 (X11; Linux x86_64)'],
+          ['id', '6a9dba33885e838719efece1']
+        ],
+        notes: []
+      },
+      {
+        who: 'Frances Allen', when: '5 hr', status: 'read', starred: false,
+        snip: 'Where do I find the signed download link expiry setting?',
+        fields: [
+          ['name', 'Frances Allen'],
+          ['email', 'frances@optimiser.example'],
+          ['severity', 'low'],
+          ['message', 'Where do I find the signed download link expiry setting? The email\nsays seven days but I cannot see where to change it.']
+        ],
+        files: [],
+        meta: [
+          ['submitted', '2026-09-06 16:12:30 UTC'],
+          ['ip', '203.0.113.120'],
+          ['referer', 'https://acme.example/support'],
+          ['agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'],
+          ['id', '6a9dad00885e838719efeca4']
+        ],
+        notes: []
+      }
+    ]
+  };
+
+  var TOTALS = { contact: '1–6 of 214', careers: '1–2 of 38', support: '1–2 of 91' };
+
+  var railEl   = document.getElementById('rail');
+  var rowsEl   = document.getElementById('rows');
+  var recEl    = document.getElementById('record');
+  var countEl  = document.getElementById('count');
+  var statusEl = document.getElementById('status');
+  var qEl      = document.getElementById('q');
+
+  var formId = 'contact';
+  var index  = 0;
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function visible() {
+    var list = DATA[formId] || [];
+    var want = statusEl.value;
+    var needle = qEl.value.trim().toLowerCase();
+    return list.filter(function (s) {
+      if (want && s.status !== want) return false;
+      if (!needle) return true;
+      return s.fields.some(function (f) {
+        return String(f[1]).toLowerCase().indexOf(needle) !== -1;
+      });
+    });
+  }
+
+  function renderRail() {
+    railEl.textContent = '';
+    FORMS.forEach(function (f) {
+      var b = el('button', 'rail-item');
+      b.type = 'button';
+      b.setAttribute('aria-current', f.id === formId ? 'true' : 'false');
+      b.appendChild(el('span', null, f.name));
+      var badge = el('span', 'badge', String(f.unread));
+      badge.setAttribute('data-zero', f.unread === 0 ? 'true' : 'false');
+      b.appendChild(badge);
+      b.addEventListener('click', function () {
+        formId = f.id;
+        index = 0;
+        renderAll();
+      });
+      railEl.appendChild(b);
+    });
+  }
+
+  function renderRows() {
+    rowsEl.textContent = '';
+    var list = visible();
+
+    if (!list.length) {
+      rowsEl.appendChild(el('div', 'empty', 'No submissions match that filter.'));
+      countEl.textContent = '0 of ' + (DATA[formId] || []).length;
+      return;
+    }
+
+    list.forEach(function (s, i) {
+      var b = el('button', 'row');
+      b.type = 'button';
+      b.setAttribute('data-status', s.status);
+      b.setAttribute('aria-current', i === index ? 'true' : 'false');
+
+      var top = el('div', 'row-top');
+      top.appendChild(el('span', 'row-who', s.who));
+      top.appendChild(el('span', 'row-when', s.when));
+      b.appendChild(top);
+
+      var snip = el('div', 'row-snip');
+      if (s.starred || s.files.length) {
+        var marks = el('span', 'row-marks');
+        if (s.starred) marks.appendChild(el('span', 'mark-star', '★'));
+        if (s.files.length) marks.appendChild(el('span', 'mark-clip', '❑'));
+        snip.appendChild(marks);
+      }
+      snip.appendChild(document.createTextNode(s.snip));
+      b.appendChild(snip);
+
+      b.addEventListener('click', function () {
+        index = i;
+        renderRows();
+        renderRecord();
+      });
+
+      rowsEl.appendChild(b);
+    });
+
+    countEl.textContent = (statusEl.value || qEl.value.trim())
+      ? list.length + ' of ' + (DATA[formId] || []).length
+      : TOTALS[formId];
+  }
+
+  function renderRecord() {
+    recEl.textContent = '';
+    var list = visible();
+    var s = list[index];
+
+    if (!s) {
+      recEl.appendChild(el('div', 'empty', 'Select a submission to read it.'));
+      return;
+    }
+
+    var formName = FORMS.filter(function (f) { return f.id === formId; })[0].name;
+
+    var head = el('div', 'record-head');
+    head.appendChild(el('div', 'record-eyebrow', formName + ' · ' + s.status));
+    head.appendChild(el('h2', null, s.who));
+    var mail = s.fields.filter(function (f) { return f[0] === 'email'; })[0];
+    if (mail) head.appendChild(el('div', 'from', mail[1]));
+    recEl.appendChild(head);
+
+    var acts = el('div', 'actions');
+
+    var star = el('button', 'act', s.starred ? '★ Starred' : '☆ Star');
+    star.type = 'button';
+    star.setAttribute('aria-pressed', s.starred ? 'true' : 'false');
+    star.addEventListener('click', function () {
+      s.starred = !s.starred;
+      renderRows();
+      renderRecord();
+    });
+    acts.appendChild(star);
+
+    var reply = el('button', 'act primary', 'Reply');
+    reply.type = 'button';
+    acts.appendChild(reply);
+
+    [['Mark read', 'read'], ['Archive', 'archived'], ['Not spam', 'new']].forEach(function (pair) {
+      if (pair[1] === s.status) return;
+      if (pair[0] === 'Not spam' && s.status !== 'spam') return;
+      if (pair[0] === 'Mark read' && s.status === 'spam') return;
+      var b = el('button', 'act', pair[0]);
+      b.type = 'button';
+      b.addEventListener('click', function () {
+        s.status = pair[1];
+        renderRows();
+        renderRecord();
+      });
+      acts.appendChild(b);
+    });
+
+    if (s.status !== 'spam') {
+      var sp = el('button', 'act', 'Spam');
+      sp.type = 'button';
+      sp.addEventListener('click', function () { s.status = 'spam'; renderRows(); renderRecord(); });
+      acts.appendChild(sp);
+    }
+
+    var del = el('button', 'act danger', 'Delete');
+    del.type = 'button';
+    acts.appendChild(del);
+
+    recEl.appendChild(acts);
+
+    var body = el('div', 'record-body');
+
+    var dl = el('dl', 'fields');
+    s.fields.forEach(function (f) {
+      dl.appendChild(el('dt', null, f[0]));
+      dl.appendChild(el('dd', null, f[1]));
+    });
+    body.appendChild(dl);
+
+    if (s.files.length) {
+      var fw = el('div');
+      fw.appendChild(el('div', 'block-label', 'Files'));
+      var fl = el('div', 'files');
+      s.files.forEach(function (f) {
+        var row = el('div', 'file');
+        row.appendChild(el('span', 'name', f.name));
+        row.appendChild(el('span', 'size', f.size));
+        var a = el('a', 'get', 'Download');
+        a.href = '#';
+        a.addEventListener('click', function (e) { e.preventDefault(); });
+        row.appendChild(a);
+        fl.appendChild(row);
+      });
+      fw.appendChild(fl);
+      body.appendChild(fw);
+    }
+
+    var mw = el('div');
+    mw.appendChild(el('div', 'block-label', 'Metadata'));
+    var ml = el('dl', 'meta');
+    s.meta.forEach(function (m) {
+      ml.appendChild(el('dt', null, m[0]));
+      ml.appendChild(el('dd', null, m[1]));
+    });
+    mw.appendChild(ml);
+    body.appendChild(mw);
+
+    var nw = el('div');
+    nw.appendChild(el('div', 'block-label', 'Notes'));
+    var nl = el('div', 'notes');
+    if (s.notes.length) {
+      s.notes.forEach(function (n) {
+        var note = el('div', 'note');
+        note.appendChild(el('span', 'when', n.when));
+        note.appendChild(document.createTextNode(n.text));
+        nl.appendChild(note);
+      });
+    }
+    var add = el('div', 'note-add');
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.placeholder = 'Add a note';
+    add.appendChild(inp);
+    var save = el('button', 'act', 'Add');
+    save.type = 'button';
+    save.addEventListener('click', function () {
+      var t = inp.value.trim();
+      if (!t) return;
+      s.notes.push({ when: '2026-09-06 21:30', text: t });
+      inp.value = '';
+      renderRecord();
+    });
+    add.appendChild(save);
+    nl.appendChild(add);
+    nw.appendChild(nl);
+    body.appendChild(nw);
+
+    recEl.appendChild(body);
+  }
+
+  function renderAll() {
+    renderRail();
+    renderRows();
+    renderRecord();
+  }
+
+  statusEl.addEventListener('change', function () { index = 0; renderRows(); renderRecord(); });
+  qEl.addEventListener('input', function () { index = 0; renderRows(); renderRecord(); });
+
+  renderAll();
+})();
+</script>
