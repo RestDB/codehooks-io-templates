@@ -41,10 +41,13 @@ export function renderSubject(
   fields: Record<string, string>
 ): string {
   const t = template && template.trim() ? template : 'New submission: {{form}}';
-  return t.replace(/\{\{(\w+)\}\}/g, (_m, key) => {
+  const rendered = t.replace(/\{\{(\w+)\}\}/g, (_m, key) => {
     if (key === 'form') return formName;
     return fields?.[key] ?? '';
   });
+  // A subject is a header. Collapse CR/LF and other control characters so a submitted
+  // value cannot inject one, regardless of what the provider does downstream.
+  return rendered.replace(/[\r\n\t -]+/g, ' ').trim().slice(0, 200);
 }
 
 export function buildNotification(input: NotificationInput): {
@@ -55,7 +58,10 @@ export function buildNotification(input: NotificationInput): {
   const lines: string[] = [];
 
   for (const [key, value] of Object.entries(input.fields || {})) {
-    lines.push(`${key}: ${value}`);
+    // Indent continuation lines: untrusted values must never start a line at column 0,
+    // where a forged "--- files ---" marker would be indistinguishable from the real one.
+    const safe = String(value ?? '').replace(/\r?\n/g, '\n    ');
+    lines.push(`${key}: ${safe}`);
   }
 
   lines.push('');

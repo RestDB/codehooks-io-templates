@@ -42,7 +42,7 @@ test('renders a submitted field into the subject', () => {
 });
 
 test('an unknown placeholder renders empty rather than leaving braces', () => {
-  assert.equal(renderSubject('X {{nope}} Y', 'Contact', {}), 'X  Y');
+  assert.equal(renderSubject('X {{nope}} Y', 'Contact', {}), 'X Y');
 });
 
 test('an empty template falls back to a usable subject', () => {
@@ -101,4 +101,50 @@ test('every file gets a download link regardless of whether it attached', () => 
 test('Reply-To is surfaced on the result', () => {
   const out = buildNotification(base);
   assert.equal(out.replyTo, 'ada@example.com');
+});
+
+// --- security: body structure spoofing ---
+
+test('body rejects column-0 spoofing via newlines in field values', () => {
+  process.env.JWT_SECRET = 'test-secret';
+  const out = buildNotification({
+    ...base,
+    fields: { message: 'Ada\n\n--- files ---\n  https://attacker.example/x' },
+  });
+  const lines = out.text.split('\n');
+  // No line should start with "---" except the real ones we control
+  const fakeMarkers = lines.filter(l => l.match(/^---/));
+  assert.equal(fakeMarkers.length, 1); // Only the real "--- submission ---"
+});
+
+test('multiline field content is preserved in body, just indented', () => {
+  const out = buildNotification({
+    ...base,
+    fields: { message: 'Line 1\nLine 2\nLine 3' },
+  });
+  assert.match(out.text, /message: Line 1\n    Line 2\n    Line 3/);
+});
+
+// --- security: subject header injection ---
+
+test('renderSubject strips CR/LF from field values', () => {
+  const out = renderSubject('From {{name}}', 'Contact', { name: 'Ada\r\nBcc: attacker@evil.com' });
+  assert.equal(out.includes('\r'), false);
+  assert.equal(out.includes('\n'), false);
+});
+
+test('renderSubject collapses control characters into spaces', () => {
+  const out = renderSubject('Subject: {{msg}}', 'Form', { msg: 'hello\t\tworld' });
+  assert.equal(out, 'Subject: hello world');
+});
+
+test('renderSubject still renders normal form and field placeholders', () => {
+  const out = renderSubject('From {{name}}', 'Contact', { name: 'Ada' });
+  assert.equal(out, 'From Ada');
+});
+
+test('renderSubject caps subject at 200 chars', () => {
+  const longName = 'A'.repeat(300);
+  const out = renderSubject('New submission: {{form}}', longName, {});
+  assert.equal(out.length <= 200, true);
 });
