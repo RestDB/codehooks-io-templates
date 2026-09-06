@@ -1,6 +1,7 @@
 import { app, Datastore, filestore } from 'codehooks-js';
 import { signToken, verifyRequest, passwordMatches } from '#lib/auth';
 import { defaultForm, getFormByUuid, resolveForm } from '#lib/forms';
+import { formView, statsUpdate } from '#lib/stats';
 import { checkLoginAttempt, clearLoginAttempts } from '#lib/throttle';
 import type { FormDoc } from '#lib/forms';
 import { parseBody } from '#lib/body';
@@ -87,20 +88,23 @@ app.post('/admin/logout', (req, res) => {
 app.get('/admin/api/forms', async (req, res) => {
   const conn = await Datastore.open();
   const forms = await conn.getMany('forms', {}, { sort: { created: -1 } }).toArray();
-  res.json({ ok: true, data: forms });
+  // formView composes the `stats` object from the flat counter fields — see
+  // lib/forms.ts. Every route that returns a form must go through it, or the
+  // caller sees raw storage fields and a `stats` object that is missing or stale.
+  res.json({ ok: true, data: (forms as any[]).map(formView) });
 });
 
 app.post('/admin/api/forms', async (req, res) => {
   const conn = await Datastore.open();
   const form = await conn.insertOne('forms', defaultForm(req.body?.name));
-  res.status(201).json({ ok: true, data: form });
+  res.status(201).json({ ok: true, data: formView(form) });
 });
 
 app.get('/admin/api/forms/:id', async (req, res) => {
   const conn = await Datastore.open();
   const form = await conn.findOneOrNull('forms', req.params.id);
   if (!form) return res.status(404).json({ ok: false, error: 'Form not found' });
-  res.json({ ok: true, data: form });
+  res.json({ ok: true, data: formView(form) });
 });
 
 app.get('/admin/api/forms/:id/snippet', async (req, res) => {
@@ -208,7 +212,7 @@ app.patch('/admin/api/forms/:id', async (req, res) => {
   }
 
   const updated = await conn.updateOne('forms', req.params.id, { $set: patch });
-  res.json({ ok: true, data: updated });
+  res.json({ ok: true, data: formView(updated) });
 });
 
 app.delete('/admin/api/forms/:id', async (req, res) => {
@@ -399,16 +403,13 @@ app.all('/f/:formId', async (req, res) => {
     // 500 the request — the visitor would hit back and resubmit, creating
     // duplicates with no explanation.
     try {
-      // `stats.spam` is incremented in the SAME write as `stats.total`, not a
-      // separate one: two writes could drift apart, and this release is the first
-      // to produce a spam verdict at all — before it, the counter read 0 forever.
-      // A spam submission still counts toward `total`; it was received.
-      const inc: any = { 'stats.total': 1 };
-      if (isSpam) inc['stats.spam'] = 1;
-      await conn.updateOne('forms', form._id as string, {
-        $inc: inc,
-        $set: { 'stats.lastSubmissionAt': new Date().toISOString() },
-      });
+      // One atomic update on TOP-LEVEL, DOT-FREE fields. This used to read
+      // `$inc: {'stats.total': 1}`, which this datastore applies to a literal
+      // top-level key NAMED "stats.total" rather than to `total` inside `stats` —
+      // silently, so the counter the API returned never moved off zero. See the
+      // probe results in lib/stats.ts. A spam submission still counts toward
+      // `total`; it was received.
+      await conn.updateOne('forms', form._id as string, statsUpdate(isSpam, new Date().toISOString()));
     } catch (err: any) {
       console.error('Failed to update form stats for', form.uuid, err.message);
     }
