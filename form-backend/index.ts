@@ -15,7 +15,7 @@ import { randomUUID } from 'crypto';
 import { emailChannel } from '#lib/channels/email';
 import type { Channel } from '#lib/channels/types';
 import type { SendResult } from '#lib/providers/types';
-import { classify, planRetry, isDue, nextAttemptAt } from '#lib/delivery';
+import { classify, planRetry, isDue, nextAttemptAt, deliveryIdFrom } from '#lib/delivery';
 import { checkRecipients } from '#lib/recipients';
 import { verifyFileToken } from '#lib/signed-links';
 import { buildSnippet } from '#lib/snippet';
@@ -658,7 +658,14 @@ app.worker('processSubmission', async (req, res) => {
 
 // All retry logic lives here, so channels stay simple adapters.
 app.worker('deliver', async (req, res) => {
-  const { deliveryId } = req.body.payload;
+  // Two callers, two payload shapes — see deliveryIdFrom(). The hourly redrive
+  // uses enqueueFromQuery, which passes the matched DOCUMENT, not { deliveryId }.
+  const deliveryId = deliveryIdFrom(req.body?.payload);
+  if (!deliveryId) {
+    console.error('deliver worker called with no delivery id, payload:', req.body?.payload);
+    return res.end();
+  }
+
   const conn = await Datastore.open();
   const row: any = await conn.findOneOrNull('deliveries', deliveryId);
   if (!row || row.status === 'sent' || row.status === 'skipped') return res.end();

@@ -8,6 +8,7 @@ import {
   isDue,
   RATE_LIMIT_COOLDOWN_SECONDS,
   MAX_COOLDOWN_SECONDS,
+  deliveryIdFrom,
 } from '#lib/delivery';
 
 const MAX = 5;
@@ -192,4 +193,30 @@ test('an operator retry clears the cooldown', () => {
   assert.equal(decision.allowed, true);
   assert.equal(decision.patch.nextAttemptAt, null);
   assert.equal(isDue(decision.patch, NOW), true);
+});
+
+// --- which row a `deliver` message refers to ---
+//
+// Found live, not by reading: the hourly redrive uses enqueueFromQuery, which puts
+// the matched DOCUMENT in body.payload — there is no `deliveryId` key. Destructuring
+// `{ deliveryId }` yielded undefined for every redriven row, and the logs showed the
+// worker re-sending and then failing its status write with NOT_FOUND, every hour.
+
+test('the immediate enqueue shape carries deliveryId', () => {
+  assert.equal(deliveryIdFrom({ deliveryId: 'abc123' }), 'abc123');
+});
+
+test('the enqueueFromQuery shape carries the document, so the id is _id', () => {
+  const row = { _id: 'row-1', status: 'pending', target: 'a@b.com', attempts: 1 };
+  assert.equal(deliveryIdFrom(row), 'row-1');
+});
+
+test('deliveryId wins when both are somehow present', () => {
+  assert.equal(deliveryIdFrom({ deliveryId: 'wrapper', _id: 'doc' }), 'wrapper');
+});
+
+test('an unusable payload yields null so the worker stops instead of loading a random row', () => {
+  for (const payload of [null, undefined, {}, 'string', 42, { deliveryId: '' }, { _id: 123 }]) {
+    assert.equal(deliveryIdFrom(payload as any), null, JSON.stringify(payload));
+  }
 });

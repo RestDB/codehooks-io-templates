@@ -270,6 +270,11 @@ retried. `GET /admin/api/forms/:id/deliveries` shows the last 5 attempts per for
 `status`, `attempts` and `lastError`, so a missing email can be diagnosed without dropping to
 provider-side logs.
 
+The hourly redrive uses `enqueueFromQuery`, which puts the matched **document** in `body.payload` —
+not the `{ deliveryId }` wrapper that the immediate `enqueue` uses. The `deliver` worker accepts both
+shapes and stops if it can be given neither. Reading only `payload.deliveryId` made every redriven
+row resolve to `undefined`, which was invisible in tests and only showed up in the deployed logs.
+
 A provider rate limit (`429`) is handled separately: the row stays `pending` without burning an
 attempt, and the `Retry-After` the provider asked for becomes an absolute deadline on the row. Both
 the worker and the hourly job skip a row that is not yet due, so a rate-limited backlog backs off

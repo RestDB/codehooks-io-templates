@@ -144,3 +144,28 @@ export function isDue(row: { nextAttemptAt?: string | null } | null | undefined,
   if (!Number.isFinite(due)) return true;
   return due <= now.getTime();
 }
+
+
+/**
+ * Which delivery row a `deliver` message refers to.
+ *
+ * The worker is fed from TWO places that put DIFFERENT things in the payload, and
+ * this was silently broken until it was watched live:
+ *
+ *   - `conn.enqueue('deliver', { deliveryId })` — the immediate send. Payload is
+ *     the wrapper object.
+ *   - `conn.enqueueFromQuery('deliveries', query, 'deliver')` — the hourly redrive.
+ *     Per codehooks-js, this puts each matched DOCUMENT in `body.payload`, so
+ *     there is no `deliveryId` key at all; the id is the document's own `_id`.
+ *
+ * Reading only `payload.deliveryId` therefore yielded `undefined` for every
+ * redriven row. Observed consequence in the logs: the worker went on to load a
+ * row anyway, re-sent it, and then failed its status write three times with
+ * `NOT_FOUND` — so the redrive re-sent the same notification every hour and could
+ * never record that it had. Returning null here makes the worker stop instead.
+ */
+export function deliveryIdFrom(payload: any): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const id = payload.deliveryId ?? payload._id;
+  return typeof id === 'string' && id ? id : null;
+}
