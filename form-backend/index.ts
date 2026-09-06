@@ -12,6 +12,9 @@ import { toCsv, collectColumns } from '#lib/csv';
 import { thanksPage, errorPage } from '#lib/pages';
 import { filterAndPaginate, clampInt } from '#lib/search';
 import { randomUUID } from 'crypto';
+import { emailChannel } from '#lib/channels/email';
+import type { Channel } from '#lib/channels/types';
+import type { SendResult } from '#lib/providers/types';
 
 // Boot-time guard — a missing JWT_SECRET would make admin sessions forgeable.
 (function checkConfig() {
@@ -105,7 +108,7 @@ app.patch('/admin/api/forms/:id', async (req, res) => {
   // `honeypot` IS writable now that the submit endpoint enforces it.
   const allowed: Array<keyof FormDoc> = [
     'name', 'enabled', 'fields', 'strict', 'redirectUrl',
-    'allowRedirectOverride', 'allowedDomains', 'honeypot',
+    'allowRedirectOverride', 'allowedDomains', 'honeypot', 'notify',
   ];
   const patch: any = { updated: new Date().toISOString() };
   for (const key of allowed) {
@@ -144,6 +147,18 @@ function maxUploadBytes(): number {
 
 function submitRateLimit(): number {
   return Number(process.env.SUBMIT_RATE_LIMIT) || 30;
+}
+
+// Route handlers have a real request with forwarded-host headers; a QUEUE WORKER
+// does not, so this fallback only ever fires for a route. The `deliver` worker
+// below reads process.env.BASE_URL directly and treats it as required — see the
+// comment there.
+function resolveBaseUrl(req: any): string {
+  const configured = process.env.BASE_URL;
+  if (configured) return configured.replace(/\/+$/, '');
+  const proto = req?.headers?.['x-forwarded-proto'] || 'https';
+  const host = req?.headers?.['x-forwarded-host'] || req?.headers?.host;
+  return host ? `${proto}://${host}` : '';
 }
 
 // codehooks-js exposes get/post/put/patch/delete/all — there is no app.options —
@@ -271,8 +286,12 @@ app.all('/f/:formId', async (req, res) => {
       ai: null,
     });
 
-    // Task 7 adds the notification enqueue here, guarded on `!isSpam` — a spam
-    // submission is stored (recoverable from the inbox) but never enqueued.
+    // A filled honeypot must never produce a delivery row or an email — the whole
+    // notification feature hinges on this guard, so the `deliver` worker ALSO
+    // checks submission.status === 'spam' independently (belt and braces).
+    if (!isSpam) {
+      await conn.enqueue('processSubmission', { submissionId: (submission as any)._id });
+    }
 
     // The submission is already durable at this point. A stats failure must not
     // 500 the request — the visitor would hit back and resubmit, creating
@@ -454,6 +473,125 @@ app.get('/admin/api/forms/:formId/export.csv', async (req, res) => {
   const slug = String(form.uuid).replace(/[^A-Za-z0-9._-]/g, '');
   res.set('content-disposition', `attachment; filename="submissions-${slug}.csv"`);
   res.send(toCsv(flat, columns));
+});
+
+const CHANNELS: Channel[] = [emailChannel];
+const MAX_SEND_ATTEMPTS = 5;
+
+// Fan out one deliveries row per channel target, then enqueue a deliver task each.
+app.worker('processSubmission', async (req, res) => {
+  const { submissionId } = req.body.payload;
+  const conn = await Datastore.open();
+  const submission: any = await conn.findOneOrNull('submissions', submissionId);
+  // Belt and braces: the submit handler already guards the enqueue on `!isSpam`,
+  // but a spam row must never produce a delivery or an email even if that guard
+  // is ever bypassed (a redrive, a future caller, a bug) — check it again here.
+  if (!submission || submission.status === 'spam') return res.end();
+
+  const form = await getFormByUuid(submission.formId);
+  if (!form) return res.end();
+
+  for (const channel of CHANNELS) {
+    for (const target of channel.targets(form)) {
+      const row = await conn.insertOne('deliveries', {
+        submissionId, formId: submission.formId, channel: channel.name, target,
+        status: 'pending', attempts: 0, lastError: null, lastAttemptAt: null,
+        created: new Date().toISOString(), sentAt: null,
+      });
+      await conn.enqueue('deliver', { deliveryId: (row as any)._id });
+    }
+  }
+  res.end();
+});
+
+// All retry logic lives here, so channels stay simple adapters.
+app.worker('deliver', async (req, res) => {
+  const { deliveryId } = req.body.payload;
+  const conn = await Datastore.open();
+  const row: any = await conn.findOneOrNull('deliveries', deliveryId);
+  if (!row || row.status === 'sent' || row.status === 'skipped') return res.end();
+
+  const channel = CHANNELS.find((c) => c.name === row.channel);
+  const submission: any = await conn.findOneOrNull('submissions', row.submissionId);
+  const form = submission ? await getFormByUuid(submission.formId) : null;
+  if (!channel || !submission || !form) {
+    await conn.updateOne('deliveries', deliveryId, { $set: { status: 'skipped' } });
+    return res.end();
+  }
+
+  // resolveBaseUrl(req) is NOT usable here: a worker's `req` carries no
+  // x-forwarded-host or host header, so it would resolve to '' and every signed
+  // download link in the email would come out relative and broken. BASE_URL is
+  // therefore required for notifications, not merely a nice-to-have fallback.
+  const configuredBaseUrl = process.env.BASE_URL;
+  if (!configuredBaseUrl) {
+    console.error('Cannot deliver notification: BASE_URL is not configured');
+    await conn.updateOne('deliveries', deliveryId, {
+      $set: {
+        status: 'failed',
+        attempts: (row.attempts || 0) + 1,
+        lastError: 'BASE_URL is not configured',
+        lastAttemptAt: new Date().toISOString(),
+      },
+    });
+    return res.end();
+  }
+
+  // A channel is expected to catch its own errors and resolve a SendResult, but a
+  // provider misconfiguration (e.g. no EMAIL_PROVIDER credentials) throws
+  // SYNCHRONOUSLY by design (see lib/providers/index.ts, Task 5: "a misconfiguration
+  // must fail loudly"). Left uncaught, that would strand the row in 'pending'
+  // forever instead of recording why — so it is caught here and, unlike a network
+  // error, treated as PERMANENT: retrying with the same missing config cannot
+  // possibly succeed.
+  let result: SendResult;
+  let threw = false;
+  try {
+    result = await channel.deliver({
+      form, submission, target: row.target, baseUrl: configuredBaseUrl.replace(/\/+$/, ''),
+    });
+  } catch (err: any) {
+    threw = true;
+    result = { ok: false, error: err.message };
+  }
+
+  const attempts = (row.attempts || 0) + 1;
+  if (result.ok) {
+    await conn.updateOne('deliveries', deliveryId, {
+      $set: { status: 'sent', attempts, sentAt: new Date().toISOString(), lastError: null },
+    });
+  } else {
+    // A network error (no HTTP response at all) reports NO statusCode — that must
+    // be classified as TRANSIENT and retried, never as a permanent 4xx. `permanent`
+    // therefore requires a status that is present, in the 4xx range, and not 429
+    // (rate limiting is transient even though it is a 4xx) — or a thrown
+    // misconfiguration error, which is permanent regardless of status.
+    const status = result.statusCode;
+    const permanent = threw || (typeof status === 'number' && status >= 400 && status < 500 && status !== 429);
+    const exhausted = attempts >= MAX_SEND_ATTEMPTS;
+    await conn.updateOne('deliveries', deliveryId, {
+      $set: {
+        status: permanent || exhausted ? 'failed' : 'pending',
+        attempts,
+        lastError: result.error || null,
+        lastAttemptAt: new Date().toISOString(),
+      },
+    });
+  }
+  res.end();
+});
+
+// Re-drive anything still pending. The initial enqueue happens immediately, so
+// this only picks up transient failures.
+app.job('0 * * * *', async (req, res) => {
+  const conn = await Datastore.open();
+  await conn.enqueueFromQuery(
+    'deliveries',
+    { status: 'pending', attempts: { $lt: MAX_SEND_ATTEMPTS } },
+    'deliver',
+    { limit: 1000 }
+  );
+  res.end();
 });
 
 export default app.init();

@@ -17,6 +17,14 @@ export type FormDoc = {
   created: string;
   updated: string;
   stats: { total: number; spam: number; lastSubmissionAt: string | null };
+  notify: {
+    email: {
+      enabled: boolean;
+      recipients: string[];
+      subjectTemplate: string;
+      attachFiles: boolean;
+    };
+  };
 };
 
 export function defaultForm(name: string): FormDoc {
@@ -35,6 +43,9 @@ export function defaultForm(name: string): FormDoc {
     created: now,
     updated: now,
     stats: { total: 0, spam: 0, lastSubmissionAt: null },
+    notify: {
+      email: { enabled: false, recipients: [], subjectTemplate: '', attachFiles: true },
+    },
   };
 }
 
