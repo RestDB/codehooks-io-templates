@@ -45,9 +45,11 @@ export function renderSubject(
     if (key === 'form') return formName;
     return fields?.[key] ?? '';
   });
-  // A subject is a header. Collapse CR/LF and other control characters so a submitted
-  // value cannot inject one, regardless of what the provider does downstream.
-  return rendered.replace(/[\r\n\t -]+/g, ' ').trim().slice(0, 200);
+  // Control characters only. A subject legitimately contains hyphens (dates, compound
+  // words) and other punctuation, so they must survive — the goal is to stop CR/LF
+  // reaching a header, not to sanitise prose.
+  const CONTROL_CHARS = /[\x00-\x1f\x7f\u2028\u2029]/g;
+  return rendered.replace(CONTROL_CHARS, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
 export function buildNotification(input: NotificationInput): {
@@ -57,10 +59,13 @@ export function buildNotification(input: NotificationInput): {
 } {
   const lines: string[] = [];
 
+  // Every character a renderer may treat as a line break: CRLF, lone CR, LF, and the
+  // Unicode line/paragraph separators. Untrusted values must never begin a line at
+  // column 0, where a forged "--- files ---" marker would look genuine.
+  const LINE_BREAKS = /\r\n|[\r\n\u2028\u2029]/g;
+
   for (const [key, value] of Object.entries(input.fields || {})) {
-    // Indent continuation lines: untrusted values must never start a line at column 0,
-    // where a forged "--- files ---" marker would be indistinguishable from the real one.
-    const safe = String(value ?? '').replace(/\r?\n/g, '\n    ');
+    const safe = String(value ?? '').replace(LINE_BREAKS, '\n    ');
     lines.push(`${key}: ${safe}`);
   }
 

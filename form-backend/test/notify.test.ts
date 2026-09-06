@@ -148,3 +148,43 @@ test('renderSubject caps subject at 200 chars', () => {
   const out = renderSubject('New submission: {{form}}', longName, {});
   assert.equal(out.length <= 200, true);
 });
+
+// --- security fix round 2: additional line-break variants ---
+
+test('body rejects lone CR spoofing attempt', () => {
+  process.env.JWT_SECRET = 'test-secret';
+  const out = buildNotification({
+    ...base,
+    fields: { message: 'Ada\r\r--- files ---\r  https://attacker.example/x' },
+  });
+  const lines = out.text.split('\n');
+  const fakeMarkers = lines.filter(l => l.match(/^---/));
+  assert.equal(fakeMarkers.length, 1); // Only the real "--- submission ---"
+});
+
+test('body rejects U+2028 spoofing attempt', () => {
+  process.env.JWT_SECRET = 'test-secret';
+  const out = buildNotification({
+    ...base,
+    fields: { message: 'Ada\u2028--- files ---\u2028  https://attacker.example/x' },
+  });
+  const lines = out.text.split('\n');
+  const fakeMarkers = lines.filter(l => l.match(/^---/));
+  assert.equal(fakeMarkers.length, 1); // Only the real "--- submission ---"
+});
+
+test('renderSubject preserves hyphens in dates', () => {
+  const out = renderSubject('Submission from {{date}}', 'Contact', { date: '2026-09-06' });
+  assert.equal(out, 'Submission from 2026-09-06');
+});
+
+test('renderSubject preserves hyphens in compound words', () => {
+  const out = renderSubject('About {{topic}}', 'Contact', { topic: 'well-known-issue' });
+  assert.equal(out, 'About well-known-issue');
+});
+
+test('renderSubject strips U+2028 and U+2029', () => {
+  const out = renderSubject('Subject: {{msg}}', 'Form', { msg: 'hello\u2028world\u2029end' });
+  assert.equal(!out.includes('\u2028'), true);
+  assert.equal(!out.includes('\u2029'), true);
+});
