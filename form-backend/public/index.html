@@ -1001,11 +1001,15 @@
 
     deleteBtn.addEventListener('click', function () {
       clearMsg(msg);
-      var count = (form.stats && form.stats.total) || 0;
+      // Deliberately NO submission count here. `form.stats.total` reads 0 on every
+      // form: this datastore treats a dotted $inc key literally, so the counter
+      // lives in a stray top-level "stats.total" field and the nested one the API
+      // returns has never moved. A wrong count is worse than none before an
+      // irreversible delete — "and its 0 submissions" made deleting a form with a
+      // thousand of them look safe.
       var name = form.name || 'Untitled';
-      confirmText.textContent = "Delete '" + name + "' and its " + count +
-        (count === 1 ? " submission" : " submissions") +
-        " and uploaded files? This cannot be undone.";
+      confirmText.textContent = "Delete '" + name + "'? This permanently removes the form, " +
+        "every submission it has received, and every uploaded file. This cannot be undone.";
       deleteBtn.hidden = true;
       confirmBlock.hidden = false;
     });
