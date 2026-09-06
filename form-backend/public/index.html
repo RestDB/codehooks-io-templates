@@ -1,0 +1,756 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Form Backend Setup</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #1f2937;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --bg: #f9fafb;
+    --card: #ffffff;
+    --accent: #2563eb;
+    --accent-ink: #ffffff;
+    --danger: #b91c1c;
+    --danger-bg: #fef2f2;
+    --danger-line: #fecaca;
+    --ok: #15803d;
+    --ok-bg: #f0fdf4;
+    --ok-line: #bbf7d0;
+    --warn: #92400e;
+    --warn-bg: #fffbeb;
+    --warn-line: #fde68a;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.5;
+  }
+
+  .wrap {
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 2.5rem 1rem 5rem;
+  }
+
+  header.top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+  }
+
+  header.top h1 {
+    font-size: 1.25rem;
+    margin: 0;
+  }
+
+  header.top .sub {
+    color: var(--muted);
+    font-size: 0.875rem;
+  }
+
+  button, input[type="text"], input[type="password"], input[type="email"], textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  a { color: var(--accent); }
+
+  button {
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--card);
+    border-radius: 0.5rem;
+    padding: 0.55rem 1rem;
+  }
+
+  button:hover { background: var(--bg); }
+
+  button.primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+  }
+
+  button.primary:hover { filter: brightness(1.08); }
+
+  button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  button.link {
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--accent);
+    text-decoration: underline;
+  }
+
+  :focus-visible {
+    outline: 3px solid #93c5fd;
+    outline-offset: 2px;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .card h2 {
+    margin: 0 0 1rem;
+    font-size: 1.05rem;
+  }
+
+  label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+  }
+
+  .field { margin-bottom: 1rem; }
+
+  .help {
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin-top: 0.3rem;
+  }
+
+  input[type="text"], input[type="password"], input[type="email"], textarea {
+    width: 100%;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: 0.5rem;
+    background: var(--card);
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 4rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .row label {
+    margin: 0;
+    font-weight: 500;
+    font-size: 0.9rem;
+  }
+
+  .msg {
+    border-radius: 0.5rem;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.875rem;
+    margin-top: 0.75rem;
+  }
+
+  .msg.error { color: var(--danger); background: var(--danger-bg); border: 1px solid var(--danger-line); }
+  .msg.ok { color: var(--ok); background: var(--ok-bg); border: 1px solid var(--ok-line); }
+  .msg.warn { color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-line); }
+
+  [hidden] { display: none !important; }
+
+  .forms-list { list-style: none; margin: 0; padding: 0; }
+
+  .forms-list li {
+    border: 1px solid var(--line);
+    border-radius: 0.5rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .form-summary {
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0.75rem 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    border-radius: 0.5rem;
+  }
+
+  .form-summary:hover { background: var(--bg); }
+
+  .form-name { font-weight: 600; }
+
+  .form-endpoint {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    word-break: break-all;
+  }
+
+  .form-detail {
+    border-top: 1px solid var(--line);
+    padding: 1rem;
+  }
+
+  pre.snippet {
+    background: #0b1020;
+    color: #e2e8f0;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    overflow-x: auto;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    margin: 0 0 0.75rem;
+  }
+
+  .copy-row { display: flex; justify-content: flex-end; margin-bottom: 0.5rem; }
+
+  .center {
+    max-width: 22rem;
+    margin: 12vh auto 0;
+  }
+
+  .brand {
+    text-align: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .brand .mark {
+    font-weight: 700;
+    font-size: 1.1rem;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 0.9em;
+    height: 0.9em;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: -0.15em;
+    margin-right: 0.4em;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation-duration: 2.5s; }
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  fieldset {
+    border: none;
+    padding: 0;
+    margin: 0 0 1.25rem;
+  }
+
+  fieldset legend {
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 0;
+    margin-bottom: 0.5rem;
+  }
+
+  @media (max-width: 30rem) {
+    .wrap { padding: 1.5rem 0.75rem 4rem; }
+    .form-summary { flex-direction: column; align-items: flex-start; gap: 0.25rem; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>Form Backend</h1>
+    <span class="sub">Setup</span>
+  </header>
+
+  <!-- Login view -->
+  <section id="login-view" hidden>
+    <div class="center">
+      <div class="brand">
+        <div class="mark">Form Backend</div>
+        <div class="sub" style="color:var(--muted);font-size:0.85rem">Sign in to manage your forms</div>
+      </div>
+      <div class="card">
+        <form id="login-form" novalidate>
+          <div class="field">
+            <label for="password">Admin password</label>
+            <input type="password" id="password" name="password" autocomplete="current-password" required>
+          </div>
+          <button type="submit" class="primary" id="login-btn" style="width:100%">Log in</button>
+        </form>
+        <div id="login-msg" role="alert"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main app view -->
+  <section id="app-view" hidden>
+    <div class="card">
+      <h2>Create a form</h2>
+      <form id="create-form" novalidate>
+        <div class="field" style="margin-bottom:0.75rem">
+          <label for="form-name">Form name</label>
+          <input type="text" id="form-name" name="name" placeholder="Contact form" required maxlength="100">
+        </div>
+        <button type="submit" class="primary" id="create-btn">Create form</button>
+      </form>
+      <div id="create-msg" role="alert"></div>
+    </div>
+
+    <div class="card">
+      <h2>Your forms</h2>
+      <p id="forms-empty" class="help" hidden>No forms yet. Create one above to get an endpoint and a snippet to paste into your site.</p>
+      <ul class="forms-list" id="forms-list"></ul>
+      <div id="forms-msg" role="alert"></div>
+    </div>
+
+    <p class="help" style="text-align:center">
+      <button type="button" class="link" id="logout-btn">Log out</button>
+    </p>
+  </section>
+</div>
+
+<template id="form-item-template">
+  <li>
+    <button type="button" class="form-summary" aria-expanded="false">
+      <span>
+        <span class="form-name"></span><br>
+        <span class="form-endpoint"></span>
+      </span>
+      <span aria-hidden="true">&#9662;</span>
+    </button>
+    <div class="form-detail" hidden>
+      <div class="snippet-block">
+        <h3 style="font-size:0.9rem;margin:0 0 0.5rem">Paste this into your site</h3>
+        <div id="snippet-status" class="help">Loading snippet&hellip;</div>
+        <div class="copy-row" hidden>
+          <button type="button" class="copy-btn">Copy snippet</button>
+        </div>
+        <pre class="snippet" hidden><code></code></pre>
+      </div>
+
+      <form class="settings-form" novalidate>
+        <fieldset>
+          <legend>Email notifications</legend>
+          <div class="row">
+            <input type="checkbox" class="notify-enabled">
+            <label class="notify-enabled-label">Send an email when this form receives a submission</label>
+          </div>
+          <div class="field">
+            <label class="recipients-label">Recipients (comma-separated)</label>
+            <input type="text" class="notify-recipients" placeholder="you@example.com, team@example.com">
+          </div>
+          <div class="field">
+            <label class="subject-label">Subject line (optional)</label>
+            <input type="text" class="notify-subject" placeholder="New submission to {{formName}}">
+            <p class="help">Leave blank for a default subject. <code>{{formName}}</code> is replaced with the form's name.</p>
+          </div>
+          <div class="row">
+            <input type="checkbox" class="notify-attach">
+            <label class="attach-label">Attach uploaded files to the email (within the size budget)</label>
+          </div>
+          <p class="help">
+            Notifications require an email provider configured on the deployment
+            (<code>FROM_EMAIL</code> and either Brevo or Mailgun credentials as environment
+            variables). Save your settings, then submit the form once through the snippet above
+            to confirm the email arrives &mdash; if it doesn't, check those environment variables.
+          </p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Allowed origins</legend>
+          <div class="field">
+            <label class="allowlist-label">One domain per line</label>
+            <textarea class="allowlist" rows="3" placeholder="example.com"></textarea>
+            <p class="help">
+              Leave empty to accept submissions from any origin. When set, matching is
+              <strong>exact</strong> &mdash; <code>example.com</code> does not also allow
+              <code>www.example.com</code>; list both if you need them.
+            </p>
+          </div>
+        </fieldset>
+
+        <button type="submit" class="primary save-btn">Save settings</button>
+      </form>
+      <div class="settings-msg" role="alert"></div>
+    </div>
+  </li>
+</template>
+
+<script>
+(function () {
+  'use strict';
+
+  var loginView = document.getElementById('login-view');
+  var appView = document.getElementById('app-view');
+  var loginForm = document.getElementById('login-form');
+  var loginBtn = document.getElementById('login-btn');
+  var loginMsg = document.getElementById('login-msg');
+  var createForm = document.getElementById('create-form');
+  var createBtn = document.getElementById('create-btn');
+  var createMsg = document.getElementById('create-msg');
+  var formsList = document.getElementById('forms-list');
+  var formsEmpty = document.getElementById('forms-empty');
+  var formsMsg = document.getElementById('forms-msg');
+  var logoutBtn = document.getElementById('logout-btn');
+  var template = document.getElementById('form-item-template');
+
+  var retryTimer = null;
+
+  function setMsg(el, text, kind) {
+    el.className = 'msg ' + (kind || 'error');
+    el.textContent = text;
+    if (!text) { el.className = ''; }
+  }
+
+  function clearMsg(el) {
+    el.textContent = '';
+    el.className = '';
+  }
+
+  // Every fetch to the admin API goes through here so a non-2xx response always
+  // surfaces the server's `error` field instead of failing silently.
+  function api(path, options) {
+    options = options || {};
+    options.credentials = 'same-origin';
+    options.headers = Object.assign({ 'content-type': 'application/json' }, options.headers || {});
+    return fetch(path, options).then(function (res) {
+      return res.text().then(function (text) {
+        var body = {};
+        try { body = text ? JSON.parse(text) : {}; } catch (e) { /* non-JSON body */ }
+        if (!res.ok) {
+          var err = new Error(body.error || ('Request failed (' + res.status + ')'));
+          err.status = res.status;
+          err.retryAfter = res.headers.get('Retry-After');
+          err.body = body;
+          throw err;
+        }
+        return body;
+      });
+    });
+  }
+
+  function showLogin(message) {
+    loginView.hidden = false;
+    appView.hidden = true;
+    if (message) setMsg(loginMsg, message, 'error');
+  }
+
+  function showApp() {
+    loginView.hidden = true;
+    appView.hidden = false;
+    loadForms();
+  }
+
+  // ---- Login ----
+
+  loginForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var password = document.getElementById('password').value;
+    clearMsg(loginMsg);
+    loginBtn.disabled = true;
+    loginBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span>Logging in&hellip;';
+    if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
+
+    fetch('/admin/login', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: password }),
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (body) {
+        return { res: res, body: body };
+      });
+    }).then(function (result) {
+      var res = result.res, body = result.body;
+      if (res.status === 429) {
+        var retryAfter = parseInt(res.headers.get('Retry-After'), 10);
+        startRetryCountdown(isFinite(retryAfter) ? retryAfter : null);
+        return;
+      }
+      if (!res.ok) {
+        setMsg(loginMsg, body.error || 'Invalid password', 'error');
+        return;
+      }
+      document.getElementById('password').value = '';
+      showApp();
+    }).catch(function () {
+      setMsg(loginMsg, 'Could not reach the server. Check your connection and try again.', 'error');
+    }).finally(function () {
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Log in';
+    });
+  });
+
+  function startRetryCountdown(seconds) {
+    if (seconds === null) {
+      setMsg(loginMsg, 'Too many login attempts. Please try again later.', 'warn');
+      return;
+    }
+    var remaining = seconds;
+    var render = function () {
+      var mins = Math.floor(remaining / 60);
+      var secs = remaining % 60;
+      var readable = mins > 0 ? (mins + 'm ' + secs + 's') : (secs + 's');
+      setMsg(loginMsg, 'Too many login attempts. Try again in ' + readable + '.', 'warn');
+    };
+    render();
+    retryTimer = setInterval(function () {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(retryTimer);
+        retryTimer = null;
+        clearMsg(loginMsg);
+        return;
+      }
+      render();
+    }, 1000);
+  }
+
+  logoutBtn.addEventListener('click', function () {
+    fetch('/admin/logout', { method: 'POST', credentials: 'same-origin' }).finally(function () {
+      showLogin();
+    });
+  });
+
+  // ---- Forms list ----
+
+  function loadForms() {
+    clearMsg(formsMsg);
+    formsList.textContent = '';
+    api('/admin/api/forms').then(function (body) {
+      var forms = body.data || [];
+      formsEmpty.hidden = forms.length !== 0;
+      forms.forEach(function (form) { formsList.appendChild(renderFormItem(form)); });
+    }).catch(function (err) {
+      handleAuthFailure(err, function () {
+        setMsg(formsMsg, err.message, 'error');
+      });
+    });
+  }
+
+  // A 401 on any admin-api call means the session is gone (expired, logged out
+  // elsewhere, or never existed). Show the login prompt instead of an empty
+  // dashboard or a silently-broken page.
+  function handleAuthFailure(err, otherwise) {
+    if (err && err.status === 401) {
+      showLogin('Your session has expired. Please log in again.');
+      return;
+    }
+    otherwise();
+  }
+
+  function endpointUrl(form) {
+    return window.location.origin + '/f/' + form.uuid;
+  }
+
+  function renderFormItem(form) {
+    var node = template.content.cloneNode(true);
+    var li = node.querySelector('li');
+    var summary = node.querySelector('.form-summary');
+    var detail = node.querySelector('.form-detail');
+    node.querySelector('.form-name').textContent = form.name || 'Untitled';
+    node.querySelector('.form-endpoint').textContent = endpointUrl(form);
+
+    var opened = false;
+    summary.addEventListener('click', function () {
+      opened = !opened;
+      detail.hidden = !opened;
+      summary.setAttribute('aria-expanded', String(opened));
+      if (opened && !detail.dataset.loaded) {
+        detail.dataset.loaded = '1';
+        initDetail(detail, form);
+      }
+    });
+
+    return li;
+  }
+
+  function initDetail(detail, form) {
+    loadSnippet(detail, form);
+    initCopy(detail, form);
+    initSettingsForm(detail, form);
+  }
+
+  // ---- Create form ----
+
+  createForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var nameInput = document.getElementById('form-name');
+    var name = nameInput.value.trim();
+    clearMsg(createMsg);
+    createBtn.disabled = true;
+    createBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span>Creating&hellip;';
+
+    api('/admin/api/forms', { method: 'POST', body: JSON.stringify({ name: name }) })
+      .then(function (body) {
+        nameInput.value = '';
+        setMsg(createMsg, 'Form created.', 'ok');
+        var item = renderFormItem(body.data);
+        formsList.insertBefore(item, formsList.firstChild);
+        formsEmpty.hidden = true;
+        // Open it immediately so the customer lands straight on the snippet.
+        item.querySelector('.form-summary').click();
+      })
+      .catch(function (err) {
+        handleAuthFailure(err, function () { setMsg(createMsg, err.message, 'error'); });
+      })
+      .finally(function () {
+        createBtn.disabled = false;
+        createBtn.textContent = 'Create form';
+      });
+  });
+
+  // ---- Snippet ----
+
+  function loadSnippet(detail, form) {
+    var status = detail.querySelector('#snippet-status');
+    status.removeAttribute('id');
+    var pre = detail.querySelector('pre.snippet');
+    var code = pre.querySelector('code');
+    var copyRow = detail.querySelector('.copy-row');
+
+    api('/admin/api/forms/' + encodeURIComponent(form._id) + '/snippet')
+      .then(function (body) {
+        status.hidden = true;
+        pre.hidden = false;
+        copyRow.hidden = false;
+        // textContent, never innerHTML: the snippet is HTML-as-text, not markup
+        // to be parsed, and this is exactly the mistake a copied template should
+        // never model.
+        code.textContent = body.snippet;
+        pre.dataset.raw = body.snippet;
+      })
+      .catch(function (err) {
+        handleAuthFailure(err, function () {
+          status.hidden = false;
+          status.textContent = 'Could not load snippet: ' + err.message;
+        });
+      });
+  }
+
+  function initCopy(detail, form) {
+    var btn = detail.querySelector('.copy-btn');
+    btn.addEventListener('click', function () {
+      var pre = detail.querySelector('pre.snippet');
+      var text = pre.dataset.raw || pre.querySelector('code').textContent;
+      var done = function () {
+        var original = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(function () { btn.textContent = original; }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text, done); });
+      } else {
+        fallbackCopy(text, done);
+      }
+    });
+  }
+
+  function fallbackCopy(text, done) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { /* nothing more to do */ }
+    document.body.removeChild(ta);
+  }
+
+  // ---- Settings (notifications + allowlist) ----
+
+  function initSettingsForm(detail, form) {
+    var enabledInput = detail.querySelector('.notify-enabled');
+    var recipientsInput = detail.querySelector('.notify-recipients');
+    var subjectInput = detail.querySelector('.notify-subject');
+    var attachInput = detail.querySelector('.notify-attach');
+    var allowlistInput = detail.querySelector('.allowlist');
+    var settingsForm = detail.querySelector('.settings-form');
+    var settingsMsg = detail.querySelector('.settings-msg');
+    var saveBtn = detail.querySelector('.save-btn');
+
+    // Unique ids so labels associate correctly across multiple expanded forms.
+    var uid = 'f' + (form._id || Math.random().toString(36).slice(2));
+    enabledInput.id = uid + '-enabled';
+    detail.querySelector('.notify-enabled-label').setAttribute('for', enabledInput.id);
+    recipientsInput.id = uid + '-recipients';
+    detail.querySelector('.recipients-label').setAttribute('for', recipientsInput.id);
+    subjectInput.id = uid + '-subject';
+    detail.querySelector('.subject-label').setAttribute('for', subjectInput.id);
+    attachInput.id = uid + '-attach';
+    detail.querySelector('.attach-label').setAttribute('for', attachInput.id);
+    allowlistInput.id = uid + '-allowlist';
+    detail.querySelector('.allowlist-label').setAttribute('for', allowlistInput.id);
+
+    var notify = (form.notify && form.notify.email) || {};
+    enabledInput.checked = !!notify.enabled;
+    recipientsInput.value = (notify.recipients || []).join(', ');
+    subjectInput.value = notify.subjectTemplate || '';
+    attachInput.checked = notify.attachFiles !== false;
+    allowlistInput.value = (form.allowedDomains || []).join('\n');
+
+    settingsForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      clearMsg(settingsMsg);
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span>Saving&hellip;';
+
+      var recipients = recipientsInput.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+      var allowedDomains = allowlistInput.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+
+      var patch = {
+        notify: {
+          email: {
+            enabled: enabledInput.checked,
+            recipients: recipients,
+            subjectTemplate: subjectInput.value,
+            attachFiles: attachInput.checked,
+          },
+        },
+        allowedDomains: allowedDomains,
+      };
+
+      api('/admin/api/forms/' + encodeURIComponent(form._id), {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }).then(function (body) {
+        form.notify = body.data.notify;
+        form.allowedDomains = body.data.allowedDomains;
+        setMsg(settingsMsg, 'Settings saved.', 'ok');
+      }).catch(function (err) {
+        handleAuthFailure(err, function () { setMsg(settingsMsg, err.message, 'error'); });
+      }).finally(function () {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save settings';
+      });
+    });
+  }
+
+  // ---- Boot ----
+  // The page is a static file with no server-rendered state, so the only way to
+  // know whether the visitor already has a session is to ask the API. A 401 here
+  // is the expected, common case (first visit, expired cookie) and shows the
+  // login prompt rather than an empty dashboard.
+  api('/admin/api/forms').then(function () {
+    showApp();
+  }).catch(function () {
+    showLogin();
+  });
+})();
+</script>

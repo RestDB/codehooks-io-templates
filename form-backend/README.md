@@ -26,8 +26,14 @@ deployment. Its source is in [`example/`](example/).
 - **CSV export** — with spreadsheet formula injection neutralised.
 - **Admin auth** — password login issuing an HttpOnly, Secure, SameSite=Strict JWT cookie.
 
-Not built yet: email/webhook/Slack notifications, spam scoring, AI triage, and a visual admin UI.
-The inbox is an API today.
+- **Email notifications** — an owner gets emailed on submission, with the file attached (within a
+  size budget) and a signed download link. Retried automatically on a transient provider failure.
+- **A setup page** — `/setup/` walks a new customer from deploy to a working form: log in, create a
+  form, copy a ready-to-paste snippet, and configure notifications and the domain allowlist. No curl
+  required.
+
+Not built yet: webhook/Slack notifications, spam scoring beyond the honeypot, and AI triage. The
+inbox is an API today — the setup page is deliberately not a dashboard (see below).
 
 ## Quick start
 
@@ -37,14 +43,33 @@ cd myforms && npm install
 
 coho set-env JWT_SECRET "$(openssl rand -hex 32)" --encrypted
 coho set-env ADMIN_PASSWORD 'choose-a-strong-password' --encrypted
+coho set-env BASE_URL 'https://your-space.codehooks.io'   # required for notification emails
 
 coho deploy
 coho info          # note your endpoint URL
 ```
 
+Then open `https://your-space.codehooks.io/setup/` in a browser and:
+
+1. **Log in** with the `ADMIN_PASSWORD` you set above.
+2. **Create a form** — give it a name.
+3. **Copy the snippet** shown for that form and paste it into your site. It already points at the
+   right endpoint and includes the honeypot field.
+4. **Configure notifications** — turn on email, list recipient addresses, and optionally a subject
+   template. This needs an email provider configured on the deployment (see
+   [Configuration](#configuration)) — if a test submission doesn't produce an email, that is almost
+   always a missing `FROM_EMAIL` or provider credential, not a bug in the form.
+5. **Set the domain allowlist** if you want to restrict which sites can submit — the page explains
+   the exact-match behaviour described below.
+
+That is the whole setup. Submitting the pasted form is the same request `curl` would make below, so
+everything after this point is optional — useful for automating deployment or for CI, not required
+to get a form working.
+
 ## Verify your deployment
 
-This doubles as the acceptance test. Set `U` to your deploy URL and `PW` to your `ADMIN_PASSWORD`.
+This doubles as the acceptance test for anyone automating setup instead of using `/setup/`. Set `U`
+to your deploy URL and `PW` to your `ADMIN_PASSWORD`.
 
 ```bash
 U=https://your-space.codehooks.io
@@ -167,11 +192,18 @@ Environment variables:
 |---|---|---|
 | `JWT_SECRET` | yes | Signs admin session cookies |
 | `ADMIN_PASSWORD` | yes | Admin login password |
+| `BASE_URL` | for notifications | Public URL of the deployment, e.g. `https://your-space.codehooks.io`. Used to build signed file-download links in notification emails; without it, notification delivery fails fast rather than sending a broken link |
+| `EMAIL_PROVIDER` | no | `brevo` (default) or `mailgun` |
+| `BREVO_API_KEY` | if using Brevo | Brevo API key |
+| `MAILGUN_API_KEY`, `MAILGUN_DOMAIN` | if using Mailgun | Mailgun credentials. `MAILGUN_EU=true` selects the EU region |
+| `FROM_EMAIL`, `FROM_NAME` | no | Sender address/name for notification emails |
 | `MAX_UPLOAD_MB` | no | Upload cap, default `5` |
+| `MAX_ATTACH_MB` | no | Total email attachment budget per notification |
+| `SUBMIT_RATE_LIMIT` | no | Submissions per form per window before `429`, default `30` |
 
 Admin login is throttled to 8 attempts per IP per 15 minutes; a successful login clears the counter.
 
-Per-form settings, via `PATCH /admin/api/forms/:id`:
+Per-form settings — set from `/setup/`, or via `PATCH /admin/api/forms/:id` for automation:
 
 | Field | Meaning |
 |---|---|
@@ -179,14 +211,18 @@ Per-form settings, via `PATCH /admin/api/forms/:id`:
 | `enabled` | Set false to stop accepting submissions |
 | `fields` | Field schema; `[]` accepts anything |
 | `strict` | Reject fields not in the schema (ignored when `fields` is empty) |
-| `allowedDomains` | Origin allowlist; `[]` allows any |
+| `allowedDomains` | Origin allowlist; `[]` allows any. Matching is **exact** — `example.com` does not also allow `www.example.com` |
 | `redirectUrl` | Where a browser post lands on success |
 | `allowRedirectOverride` | Honour a `_redirect` field, still allowlist-checked |
+| `notify.email` | `{enabled, recipients, subjectTemplate, attachFiles}` — email notification settings |
 | `retentionDays` | Reserved. **Not writable** — no purge job enforces it yet, so the field is deliberately locked rather than silently doing nothing |
 
 Field types: `text`, `textarea`, `email`, `phone`, `url`, `number`, `date`, `rating`, `select`, `file`.
 
 ## Pointing a form at it
+
+The setup page's snippet button does this for you, already filled in with your form's endpoint and
+schema. Shown here as reference, and for automation that generates its own HTML:
 
 ```html
 <form action="https://your-space.codehooks.io/f/YOUR_FORM_UUID" method="POST"
@@ -215,6 +251,10 @@ Field types: `text`, `textarea`, `email`, `phone`, `url`, `number`, `date`, `rat
 - `_redirect` overrides are resolved against the allowlist, so `//evil.com` cannot escape.
 - CSV exports neutralise leading `=`, `+`, `-` and `@` so a submitted value cannot execute as a
   spreadsheet formula.
+- The setup page (`/setup/`) is a static file with no server-side session check of its own — it is
+  safe to serve unauthenticated because every action on it calls `/admin/api/*`, which enforces the
+  session cookie exactly as it does for a curl-driven client. Visiting it with no cookie shows the
+  login form, not any account's data.
 
 ## Verified against
 
@@ -236,6 +276,7 @@ re-check the two workarounds in `index.ts` — they exist because of platform be
 
 ```
 index.ts              route registration only
+public/index.html     the setup page, served at /setup/ — no build step, no dependencies
 lib/multipart.ts      raw request bytes -> fields + files
 lib/body.ts           content-type dispatch
 lib/validation.ts     field schema enforcement
@@ -247,6 +288,13 @@ lib/search.ts         inbox filter + pagination
 lib/csv.ts            CSV export
 lib/throttle.ts       admin login attempt limiting
 lib/pages.ts          hosted thank-you and error pages
-test/                 116 unit tests, run with node --test, no build step
+lib/snippet.ts        generates the paste-into-your-site HTML shown on the setup page
+lib/notify.ts         notification email composition
+lib/delivery.ts       delivery retry classification
+lib/channels/         notification channel adapters (email)
+lib/providers/        email provider adapters (Brevo, Mailgun)
+lib/attachments.ts    attachment size budgeting
+lib/signed-links.ts   token-scoped file download links for emails
+test/                 200 unit tests, run with node --test, no build step
 example/              the live demo client
 ```

@@ -35,6 +35,7 @@ app.auth('/admin/logout', (req, res, next) => next());
 app.auth('/f/*', (req, res, next) => next());
 app.auth('/thanks/*', (req, res, next) => next());
 app.auth('/files/*', (req, res, next) => next());
+app.auth('/setup/*', (req, res, next) => next());
 
 // Admin API — bypass the platform API key, require our JWT cookie instead.
 app.auth('/admin/api/*', (req, res, next) => {
@@ -641,5 +642,9 @@ app.get('/files/:token', async (req, res) => {
       res.end();
     });
 });
+
+// The setup page is a static file. Everything it does goes through /admin/api/*,
+// which requires the session cookie, so serving the page itself is not sensitive.
+app.static({ route: '/setup', directory: '/public', default: 'index.html' });
 
 export default app.init();
