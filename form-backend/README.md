@@ -299,10 +299,14 @@ The growth is the part that matters, and an earlier release got this wrong in a 
 the redrive job runs **hourly**, so a flat 15-minute deadline had always elapsed by the time the job
 looked. Five hundred rate-limited rows re-fired together at 13:00, again at 14:00, again at 15:00 —
 identical to having no backoff at all, while the docs claimed a backlog "backs off instead of
-re-firing in full every hour". A deadline shorter than the job interval cannot change anything. From
-the third deferral the wait exceeds an hour, the job genuinely steps over the row, and the attempt
-rate of a stuck backlog decays instead of staying flat. The first deferral is still deliberately
-short: most rate limits clear in minutes.
+re-firing in full every hour". A deadline shorter than the job interval cannot change anything.
+
+The waits are 15 min, 30 min, then 1 h, 2 h, 4 h and so on. So the first two deferrals are still
+shorter than the job interval and a backlog does re-fire twice; the third is exactly one hour, which
+the job may or may not step over depending on where it lands; from the fourth the row is genuinely
+skipped and the attempt rate of a stuck backlog decays instead of staying flat. The early waits are
+deliberately short — most rate limits clear in minutes — and the point is the decay, not the first
+value.
 
 A provider's `Retry-After` wins whenever it is **longer** than that schedule, and is clamped to 24
 hours so a hostile or fat-fingered value cannot park a row past any useful horizon. It never
@@ -311,7 +315,8 @@ shortens the wait of a row that has already been backing off for hours.
 **A missing `BASE_URL` is recoverable for about five days.** It is the most likely first-run
 misconfiguration, so it neither fails the row nor spends its attempts: deploy on Friday without it,
 take submissions all weekend, set it on Monday, and the backlog is still there. A row is given up on
-after 12 deferrals — roughly five days on the schedule above — and is then `failed` with a reason
+after 12 deferrals — between about five and seven days on the schedule above, since each wait
+carries up to 25% jitter — and is then `failed` with a reason
 that says how many deferrals it took, so "keeps the row alive until you fix it" cannot quietly mean
 "forever". The same bound terminates a provider that rate-limits indefinitely.
 
@@ -444,9 +449,16 @@ So `if (!res.ok)` — the ordinary way any client decides whether a call worked 
 handler as a success, and a caller that goes on to parse the reply gets a shape it never expected.
 This is the trap behind the others in this list: it is why a broken write can look like a working
 one from the outside, and why several bugs here were only found by reading stored documents or
-deployed logs rather than by checking a response. *Here:* every route wraps its work and returns an
-explicit status; `PATCH /admin/api/forms/:id` validates `notify.email`'s shape rather than letting a
-property access on a primitive throw, which previously turned a rejected update into a `200`.
+deployed logs rather than by checking a response.
+
+*Here:* the defence is on the **client** side, because it has to be — a handler cannot catch what it
+did not anticipate. `api()` in `public/index.html` treats a reply as failed when `res.ok` is false
+**or** the body carries `ok: false` **or** the body carries `fatal: true`, so a crashed route
+surfaces as an error message instead of a green confirmation. Server-side, routes that touch a
+known-throwing operation guard it — `PATCH /admin/api/forms/:id` validates `notify.email`'s shape
+rather than letting a property access on a primitive throw, which previously turned a rejected
+update into a `200` — but that is narrower than blanket coverage, and it is the client check that
+closes the class. If you fork this template, keep that check.
 
 ## Verified against
 

@@ -579,8 +579,13 @@
       return res.text().then(function (text) {
         var body = {};
         try { body = text ? JSON.parse(text) : {}; } catch (e) { /* non-JSON body */ }
-        if (!res.ok) {
-          var err = new Error(body.error || ('Request failed (' + res.status + ')'));
+        // The status code alone is not enough. This platform answers an unhandled
+        // exception in a handler with HTTP 200 and {"text": "...", "fatal": true},
+        // so `res.ok` reports a crashed route as a success — a failed save rendered
+        // as a green confirmation, and a throw in a listing rendered as "none yet".
+        // Every route here also carries an explicit `ok`, so check all three.
+        if (!res.ok || body.ok === false || body.fatal === true) {
+          var err = new Error(body.error || body.text || ('Request failed (' + res.status + ')'));
           err.status = res.status;
           err.retryAfter = res.headers.get('Retry-After');
           err.body = body;
@@ -914,6 +919,8 @@
   // has to drop to curl on the /admin/api/forms/:id/deliveries collection.
 
   var DELIVERY_PAGE = 20;
+  // The endpoint refuses to return more than this, so the UI must not keep asking.
+  var DELIVERY_PAGE_MAX = 200;
 
   function initDeliveries(detail, form) {
     var list = detail.querySelector('.deliveries-list');
@@ -942,8 +949,11 @@
           var rows = body.data || [];
           renderDeliveries(list, empty, rows, msg, load);
           moreBtn.hidden = !body.hasMore;
+          // Any retryable row, not just a `failed` one. A configuration error parks
+          // rows as `pending` with a growing wait, so gating on `failed` hid this
+          // control in exactly the situation it exists for.
           retryAllBtn.hidden = !rows.some(function (r) {
-            return r.status === 'failed' && r.retryable;
+            return r.retryable;
           });
           if (notice) setMsg(msg, notice, 'ok');
         })
@@ -959,7 +969,10 @@
     refreshBtn.addEventListener('click', function () { load(); });
 
     moreBtn.addEventListener('click', function () {
-      shown += DELIVERY_PAGE;
+      // Clamp to what the endpoint will actually return. Without this `shown` grows
+      // past the server's cap, the row count stops changing, and the button stays
+      // visible as a permanent no-op.
+      shown = Math.min(shown + DELIVERY_PAGE, DELIVERY_PAGE_MAX);
       load();
     });
 

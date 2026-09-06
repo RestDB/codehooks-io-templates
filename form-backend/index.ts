@@ -192,8 +192,16 @@ app.post('/admin/api/forms/:id/deliveries/retry-all', async (req, res) => {
   if (!form) return res.status(404).json({ ok: false, error: 'Form not found' });
 
   const conn = await Datastore.open();
+  // NOT `status: 'failed'` alone. A configuration error — the case this endpoint
+  // exists for — is deliberately parked as `pending` with a growing deferral, so
+  // the very backlog it was built to rescue contains no `failed` rows at all.
+  // An operator who unsets BASE_URL on Friday and fixes it on Monday would find
+  // this endpoint matching nothing while forty deferred rows waited another day.
+  // `planRetry` decides what is genuinely retryable; this query only has to stop
+  // hiding candidates from it.
   const rows = await conn
-    .getMany('deliveries', { formId: form.uuid, status: 'failed' },
+    .getMany('deliveries',
+      { formId: form.uuid, status: { $in: ['failed', 'pending'] } },
       { sort: { created: -1 }, limit: RETRY_ALL_CAP })
     .toArray();
 
