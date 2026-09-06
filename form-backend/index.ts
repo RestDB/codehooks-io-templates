@@ -17,6 +17,7 @@ import type { Channel } from '#lib/channels/types';
 import type { SendResult } from '#lib/providers/types';
 import { classify } from '#lib/delivery';
 import { verifyFileToken } from '#lib/signed-links';
+import { buildSnippet } from '#lib/snippet';
 
 // Boot-time guard — a missing JWT_SECRET would make admin sessions forgeable.
 (function checkConfig() {
@@ -98,6 +99,12 @@ app.get('/admin/api/forms/:id', async (req, res) => {
   const form = await conn.findOneOrNull('forms', req.params.id);
   if (!form) return res.status(404).json({ ok: false, error: 'Form not found' });
   res.json({ ok: true, data: form });
+});
+
+app.get('/admin/api/forms/:id/snippet', async (req, res) => {
+  const form = await resolveForm(req.params.id);
+  if (!form) return res.status(404).json({ ok: false, error: 'Form not found' });
+  res.json({ ok: true, snippet: buildSnippet(form, resolveBaseUrl(req)) });
 });
 
 app.patch('/admin/api/forms/:id', async (req, res) => {
