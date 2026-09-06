@@ -219,6 +219,68 @@ Per-form settings — set from `/setup/`, or via `PATCH /admin/api/forms/:id` fo
 
 Field types: `text`, `textarea`, `email`, `phone`, `url`, `number`, `date`, `rating`, `select`, `file`.
 
+## Notifications
+
+An owner can be emailed on every submission. This is opt-in per form and per channel — nothing is
+sent until you configure it.
+
+**Environment variables** (deployment-wide):
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `EMAIL_PROVIDER` | no | `brevo` (default) or `mailgun` |
+| `BREVO_API_KEY` | if using Brevo | Brevo API key, set with `--encrypted` |
+| `MAILGUN_API_KEY`, `MAILGUN_DOMAIN` | if using Mailgun | Mailgun credentials. `MAILGUN_EU=true` selects the EU region |
+| `FROM_EMAIL` | no (but see below) | Sender address for notification emails |
+| `FROM_NAME` | no | Sender display name, default `Form Backend` |
+| `BASE_URL` | for notifications | Public URL of the deployment. Used to build the signed file-download link in the email body; without it, delivery fails fast with `lastError: "BASE_URL is not configured"` rather than sending a broken link |
+| `MAX_ATTACH_MB` | no | Total attachment budget per email, default `10`. Files are packed smallest-first; anything that doesn't fit is left off the attachment and listed instead as a signed download link |
+
+**`FROM_EMAIL` must be an address your provider has verified as a sender.** An unverified sender is
+rejected by the provider with a `4xx`, and the delivery row is recorded `failed` with that reason in
+`lastError` — it is not a bug in the form, and no amount of retrying will fix it.
+
+**Per-form settings** — `notify.email`, set from `/setup/` or via `PATCH /admin/api/forms/:id`:
+
+| Field | Meaning |
+|---|---|
+| `enabled` | Turn email notifications on for this form |
+| `recipients` | Array of addresses to notify. One delivery row is created per recipient, so a failure or retry for one address never affects another |
+| `subjectTemplate` | e.g. `"New submission: {{form}}"` — `{{form}}` is the form name, `{{fieldName}}` interpolates a submitted field. Defaults to `"New submission: {{form}}"` if blank |
+| `attachFiles` | When `true` (default), uploaded files are attached up to `MAX_ATTACH_MB` total; set `false` to always send links only, never attachments |
+
+The notification `Reply-To` is set to the submitter's own address automatically — the first field of
+type `email` in the form's schema, or otherwise the first submitted value that looks like an email
+address — never to `FROM_EMAIL`. Replying to a notification reaches the person who submitted the
+form, not the sender account.
+
+A submission caught by the honeypot is stored with `status: "spam"` and never reaches the
+notification pipeline at all — no delivery row is created and no email is sent for it, by design.
+
+Delivery is queued and retried automatically: a transient failure (network error, rate limit, or a
+misconfiguration such as a missing provider key) is retried by an hourly job; a permanent one (e.g. a
+`4xx` from the provider, such as an unverified sender) is marked `failed` after one attempt and is not
+retried. `GET /admin/api/forms/:id/deliveries` shows the last 5 attempts per form, including
+`status`, `attempts` and `lastError`, so a missing email can be diagnosed without dropping to
+provider-side logs.
+
+### Deliverability
+
+This template sends through **your own** provider account under **your own** sender address — it
+never sends on anyone else's behalf, and nothing here is a shared or pre-warmed sending identity.
+
+- `FROM_EMAIL` must be a sender your provider (Brevo or Mailgun) has verified, or every send fails
+  with a `4xx` and the delivery is recorded `failed` with the reason in `lastError`.
+- Whether the email lands in the inbox or the spam folder depends on **your sending domain's** SPF
+  and DKIM records, configured on your provider's side. The template has no influence over this —
+  it cannot warm up a domain or improve its reputation for you.
+- A file attachment from a new or unwarmed sending domain is more likely to be filtered by strict
+  providers than a plain-text notification. If that matters for your use case, set
+  `notify.email.attachFiles` to `false` — every uploaded file still gets a signed download link in
+  the email body, so nothing is lost, only the attachment itself.
+- Signed download links expire after 7 days by default. A recipient who needs long-term access
+  should save the attachment or download the file before then.
+
 ## Pointing a form at it
 
 The setup page's snippet button does this for you, already filled in with your form's endpoint and

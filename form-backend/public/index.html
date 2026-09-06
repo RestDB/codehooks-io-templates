@@ -953,7 +953,8 @@
       var count = (form.stats && form.stats.total) || 0;
       var name = form.name || 'Untitled';
       confirmText.textContent = "Delete '" + name + "' and its " + count +
-        " submissions and uploaded files? This cannot be undone.";
+        (count === 1 ? " submission" : " submissions") +
+        " and uploaded files? This cannot be undone.";
       deleteBtn.hidden = true;
       confirmBlock.hidden = false;
     });

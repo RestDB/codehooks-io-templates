@@ -24,6 +24,15 @@ Each template carries its own `version` in its `package.json`.
   inbox API (search, status, star, notes), authenticated file download, and CSV export with formula
   injection neutralised. Ships a live example client in `form-backend/example/`.
   116 unit tests, no build step. ([#15](https://github.com/RestDB/codehooks-io-templates/pull/15))
+- **`form-backend`** — email notifications on submission, via Brevo or Mailgun. Per-form
+  `notify.email` settings (recipients, subject template, attach-files toggle), attachments packed
+  against a configurable size budget with a signed, expiring download link for anything left out,
+  `Reply-To` set automatically to the submitter's own address, and automatic retry of transient
+  provider failures via an hourly redrive — a spam-flagged submission never enters the pipeline.
+  200 unit tests. Verified end to end against a live deployment: the honeypot path producing no
+  delivery row and no send, and the signed download link resolving to the correct bytes under a
+  configured `BASE_URL`. A live provider send has not yet been confirmed — see the deliverability
+  notes in `form-backend/README.md`.
 
 ## 2026-07-05
 
