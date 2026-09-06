@@ -12,6 +12,13 @@ Each template carries its own `version` in its `package.json`.
 
 ### Fixed
 
+- **`form-backend`** — `stats.total` and `stats.lastSubmissionAt` have never worked, on any version.
+  This datastore does not interpret dot notation in an update as a path into a nested object, so
+  `$inc: { 'stats.total': 1 }` was creating a top-level field literally *named* `stats.total` and
+  leaving `stats.total` at zero — silently. Counters are now stored flat (`statsTotal`, `statsSpam`,
+  `statsLastSubmissionAt`) where `$inc` is atomic, and composed back into the public `stats` object on
+  read, so the API shape is unchanged. An existing deployment keeps its true count with no migration:
+  the stray key is frozen and is summed with the new counter.
 - **`form-backend`** — the hourly redrive never re-drove anything. `enqueueFromQuery` puts the matched
   document in `body.payload`, not the `{ deliveryId }` wrapper the immediate enqueue uses, so every
   redriven row resolved to `undefined`: the worker re-sent the notification and then failed its status

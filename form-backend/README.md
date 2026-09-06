@@ -343,10 +343,58 @@ schema. Shown here as reference, and for automation that generates its own HTML:
   session cookie exactly as it does for a curl-driven client. Visiting it with no cookie shows the
   login form, not any account's data.
 
+## Platform behaviours that fail silently
+
+Five behaviours of the Codehooks platform produce **no error** when you get them wrong — the code
+runs, returns success, and does the wrong thing. Each one cost a real bug in this template. If you
+fork it, these are the traps.
+
+**1. `parseBody` must be the FIRST awaited call in a request handler.** The platform finishes
+consuming the request stream as soon as a handler yields, so any earlier `await` — a database lookup,
+anything — leaves a multipart body empty. `req.on('data', …)` simply never fires. JSON and urlencoded
+bodies are pre-parsed and unaffected, which is what makes this so easy to miss in testing.
+*Here:* `app.all('/f/:formId')` parses before the form lookup, and the rate-limit and honeypot checks
+run after parsing for this reason.
+
+**2. `filestore.getReadStream()` has no `.pipe()`.** Use `.on('data')` / `.on('end')` / `.on('error')`,
+and obtain the stream *before* setting any headers — once headers are flushed, a failure reaches the
+client as a misleading `200` with an error body.
+*Here:* both file download routes.
+
+**3. The platform serves its own `/health`** (returning `Alive`) and it shadows any route an app
+registers there. An app-level `/health` never runs.
+*Here:* the status endpoint is `/status`.
+
+**4. `enqueueFromQuery` puts the matched DOCUMENT in `body.payload`** — not the wrapper object that
+`enqueue(topic, {...})` passes. A worker written as `const { id } = req.body.payload` works when
+called directly and silently resolves to `undefined` for every row the scheduled redrive feeds it.
+*Here:* `lib/delivery.ts`'s `deliveryIdFrom()` accepts both shapes. Before it existed, the hourly
+redrive re-sent notifications it could never mark as sent.
+
+**5. Dot notation in an update is NOT a path into a nested object.**
+`updateOne(col, id, { $inc: { 'stats.total': 1 } })` creates or updates a **top-level field whose
+name contains a dot**. It does not touch `total` inside `stats`, and it does not complain. Probed
+against the deployed platform:
+
+```
+$inc  {'stats.total': 1}         ->  { stats: {total: 0}, "stats.total": 1 }
+$set  {'stats.lastSubmissionAt'} ->  { stats: {...},      "stats.lastSubmissionAt": "X" }
+$inc  {stats: {total: 1}}        ->  THROWS "The value of $inc must be an object
+                                     where each property is a number"
+$inc  {statsTotal: 1}            ->  { statsTotal: 1 }         works, and is atomic
+$unset {'stats.total': ''}       ->  removes the literal key   works
+```
+
+So an **atomic** counter is only possible on a top-level, dot-free field, and a nested object can
+only be written wholesale — which means read-modify-write, and lost counts whenever two writes
+overlap. *Here:* form counters are stored flat (`statsTotal`, `statsSpam`, `statsLastSubmissionAt`)
+and `lib/stats.ts` composes the public `stats` object on the way out, so the API shape is unchanged.
+This one shipped broken: `form.stats.total` read `0` on every form, on every version, until it was
+found by reading a raw document rather than an API response.
+
 ## Verified against
 
-The three platform behaviours documented under **Security notes** and in the source comments are
-version-dependent. This template was built and verified against:
+The five platform behaviours documented above are version-dependent. This template was built and verified against:
 
 | | Version |
 |---|---|
@@ -355,9 +403,10 @@ version-dependent. This template was built and verified against:
 | Node.js | 23.7 (type stripping, so tests run on `.ts` with no build step) |
 | `jsonwebtoken` | 9.0.3 |
 
-Dependencies are declared as `latest` so a new project picks up current releases. If a future
-`codehooks-js` changes how the request stream is consumed or how `filestore.getReadStream()` behaves,
-re-check the two workarounds in `index.ts` — they exist because of platform behaviour, not preference.
+Dependency versions are pinned so a customer installing this template fresh gets the versions it was
+verified against. If you upgrade `codehooks-js`, re-check all five behaviours above — every
+workaround in this codebase exists because of platform behaviour, not preference, and each one fails
+without an error message.
 
 ## Layout
 
@@ -377,7 +426,9 @@ lib/throttle.ts       admin login attempt limiting
 lib/pages.ts          hosted thank-you and error pages
 lib/snippet.ts        generates the paste-into-your-site HTML shown on the setup page
 lib/notify.ts         notification email composition
-lib/delivery.ts       delivery retry classification
+lib/recipients.ts     what counts as a valid notification recipient
+lib/stats.ts          form counters — flat storage, composed API shape
+lib/delivery.ts       delivery retry classification, backoff and payload shape
 lib/channels/         notification channel adapters (email)
 lib/providers/        email provider adapters (Brevo, Mailgun)
 lib/attachments.ts    attachment size budgeting
