@@ -16,8 +16,11 @@ import { randomUUID } from 'crypto';
 import { emailChannel } from '#lib/channels/email';
 import type { Channel } from '#lib/channels/types';
 import type { SendResult } from '#lib/providers/types';
-import { classify, planRetry, isDue, nextAttemptAt, deliveryIdFrom } from '#lib/delivery';
-import { checkRecipients } from '#lib/recipients';
+import {
+  classify, planRetry, isDue, nextAttemptAt, deliveryIdFrom,
+  isDeferrable, isConfigurationError,
+} from '#lib/delivery';
+import { checkNotifyPatch } from '#lib/recipients';
 import { verifyFileToken } from '#lib/signed-links';
 import { buildSnippet } from '#lib/snippet';
 
@@ -116,28 +119,101 @@ app.get('/admin/api/forms/:id/snippet', async (req, res) => {
 // Setup diagnostics: the last few delivery attempts for one form, so a customer can
 // see WHY a notification did not arrive without dropping to curl. Deliberately not a
 // submissions view — this reports on the thing being configured, nothing more.
+// Paged, and filterable by status. It was hardcoded to the five newest rows with
+// no way past them, which made it the bottleneck in a real recovery: deploy on
+// Friday without BASE_URL, take forty submissions over the weekend, and on Monday
+// the only route to a delivery `_id` — the only input the retry endpoint takes —
+// exposed five of them. Thirty-five notifications were unreachable by any means
+// short of a datastore query.
+const DELIVERY_PAGE_DEFAULT = 20;
+const DELIVERY_PAGE_MAX = 200;
+
 app.get('/admin/api/forms/:id/deliveries', async (req, res) => {
+  const form = await resolveForm(req.params.id);
+  if (!form) return res.status(404).json({ ok: false, error: 'Form not found' });
+
+  const { limit, offset, status } = req.query as any;
+  const lim = clampInt(limit, DELIVERY_PAGE_DEFAULT, 1, DELIVERY_PAGE_MAX);
+  const off = clampInt(offset, 0, 0, 1000000);
+
+  const query: any = { formId: form.uuid };
+  // Whitelisted rather than passed through: an arbitrary status string would
+  // return an empty page that reads exactly like "no deliveries", which is the
+  // ambiguity this whole panel exists to remove.
+  if (['pending', 'sent', 'failed', 'skipped'].includes(String(status))) {
+    query.status = String(status);
+  }
+
+  const conn = await Datastore.open();
+  // One row past the page so the client can say "there are more" without a count.
+  const rows = await conn
+    .getMany('deliveries', query, { sort: { created: -1 }, limit: lim + 1, offset: off })
+    .toArray();
+  const page = (rows as any[]).slice(0, lim);
+
+  res.json({
+    ok: true,
+    limit: lim,
+    offset: off,
+    hasMore: (rows as any[]).length > lim,
+    data: page.map((r) => {
+      // The refusal matrix lives in ONE place (planRetry) and is reported here, so
+      // the UI never has to re-derive which rows are retryable — and can say WHY a
+      // row is not, instead of silently omitting a button.
+      const decision = planRetry(r);
+      return {
+        _id: r._id,
+        channel: r.channel,
+        target: r.target,
+        status: r.status,
+        attempts: r.attempts,
+        deferrals: r.deferrals || 0,
+        lastError: r.lastError,
+        nextAttemptAt: r.nextAttemptAt || null,
+        created: r.created,
+        sentAt: r.sentAt,
+        retryable: decision.allowed,
+        retryBlockedReason: decision.allowed ? null : decision.reason,
+      };
+    }),
+  });
+});
+
+// Re-drive every recoverable row for one form in a single action. The per-row
+// endpoint is unusable for a real backlog: it takes one `_id` at a time, and the
+// operator's actual situation is "a weekend of notifications is sitting in
+// `failed` because BASE_URL was unset". Bounded, and it reuses planRetry, so a
+// row that cannot be helped (a `sent` one, or one addressed to an unusable
+// recipient) is counted as skipped rather than pointlessly re-queued.
+const RETRY_ALL_CAP = 500;
+
+app.post('/admin/api/forms/:id/deliveries/retry-all', async (req, res) => {
   const form = await resolveForm(req.params.id);
   if (!form) return res.status(404).json({ ok: false, error: 'Form not found' });
 
   const conn = await Datastore.open();
   const rows = await conn
-    .getMany('deliveries', { formId: form.uuid }, { sort: { created: -1 }, limit: 5 })
+    .getMany('deliveries', { formId: form.uuid, status: 'failed' },
+      { sort: { created: -1 }, limit: RETRY_ALL_CAP })
     .toArray();
 
-  res.json({
-    ok: true,
-    data: (rows as any[]).map((r) => ({
-      _id: r._id,
-      channel: r.channel,
-      target: r.target,
-      status: r.status,
-      attempts: r.attempts,
-      lastError: r.lastError,
-      created: r.created,
-      sentAt: r.sentAt,
-    })),
-  });
+  let queued = 0;
+  let skipped = 0;
+  for (const row of rows as any[]) {
+    const decision = planRetry(row);
+    if (!decision.allowed) { skipped++; continue; }
+    try {
+      await conn.updateOne('deliveries', row._id, { $set: decision.patch });
+      await conn.enqueue('deliver', { deliveryId: row._id });
+      queued++;
+    } catch (err: any) {
+      // One unwritable row must not abandon the rest of the backlog.
+      console.error('retry-all could not re-drive', row._id, err.message);
+      skipped++;
+    }
+  }
+
+  res.json({ ok: true, data: { queued, skipped, scanned: (rows as any[]).length } });
 });
 
 // Re-drive ONE delivery row, including a `failed` one. Specified by the design
@@ -193,12 +269,18 @@ app.patch('/admin/api/forms/:id', async (req, res) => {
   // then silently produce no email. Rejecting the whole update rather than
   // dropping the bad entry: a half-saved recipient list is the same failure in
   // quieter clothing.
-  if (patch.notify) {
-    const check = checkRecipients(patch.notify?.email?.recipients);
+  // checkNotifyPatch validates the SHAPE as well as the addresses. It has to:
+  // the normalising assignment below writes into whatever the client sent, and
+  // `PATCH {"notify":{"email":"a@b.com"}}` used to make it throw
+  // `TypeError: Cannot create property 'recipients' on string` (this file is an
+  // ES module, so strict mode) in a handler with no try/catch — a platform error
+  // where a 400 with a named cause was the whole point of validating.
+  if ('notify' in patch) {
+    const check = checkNotifyPatch(patch.notify);
     if (!check.ok) {
       return res.status(400).json({ ok: false, error: check.error });
     }
-    if (patch.notify.email) patch.notify.email.recipients = check.recipients;
+    if (check.assign) patch.notify.email.recipients = check.recipients;
   }
 
   // Checked against the EFFECTIVE post-patch form: `honeypot` and `fields` can
@@ -620,7 +702,7 @@ app.worker('processSubmission', async (req, res) => {
         // and reports no error. The `deliver` worker reads this back with
         // findOneOrNull('submissions', row.submissionId), which is an _id lookup.
         submissionId, formId: submission.formId, channel: channel.name, target,
-        status: 'pending', attempts: 0, lastError: null, lastAttemptAt: null,
+        status: 'pending', attempts: 0, deferrals: 0, lastError: null, lastAttemptAt: null,
         // `retryAfter` is what the provider asked for, in seconds, kept for the
         // operator to read; `nextAttemptAt` is the absolute deadline the worker
         // and the hourly redrive actually enforce. A new row is due immediately.
@@ -645,7 +727,7 @@ app.worker('processSubmission', async (req, res) => {
       // See the NAMING TRAP note above: `submissionId` here is a submission _id.
       await conn.insertOne('deliveries', {
         submissionId, formId: submission.formId, channel: channel.name, target: bad.target,
-        status: 'failed', attempts: 0, lastError: bad.reason,
+        status: 'failed', attempts: 0, deferrals: 0, lastError: bad.reason,
         lastAttemptAt: new Date().toISOString(), retryAfter: null, nextAttemptAt: null,
         created: new Date().toISOString(), sentAt: null,
       });
@@ -724,34 +806,54 @@ app.worker('deliver', async (req, res) => {
   // afterwards brought nothing back. Routed through classify() it is transient,
   // so the hourly redrive delivers the backlog once the operator fixes the config.
   const configuredBaseUrl = process.env.BASE_URL;
-  let result: SendResult;
+  let result: SendResult & { configError?: boolean };
   if (!configuredBaseUrl) {
     console.error('Cannot deliver notification: BASE_URL is not configured');
-    result = { ok: false, error: 'BASE_URL is not configured' };
+    result = { ok: false, error: 'BASE_URL is not configured', configError: true };
   } else {
     try {
       result = await channel.deliver({
         form, submission, target: row.target, baseUrl: configuredBaseUrl.replace(/\/+$/, ''),
       });
     } catch (err: any) {
-      result = { ok: false, error: err.message };
+      // A ConfigurationError (a missing provider key, an unknown EMAIL_PROVIDER)
+      // is flagged so it does not spend the attempt budget. Any OTHER throw is a
+      // genuine unexpected failure and stays on the ordinary transient path, where
+      // MAX_SEND_ATTEMPTS still terminates it — a bug must not become an
+      // indefinitely retried row.
+      result = { ok: false, error: err.message, configError: isConfigurationError(err) };
     }
   }
 
-  const outcome = classify(result, row.attempts || 0, MAX_SEND_ATTEMPTS);
+  const priorDeferrals = row.deferrals || 0;
+  const outcome = classify(result, row.attempts || 0, MAX_SEND_ATTEMPTS, priorDeferrals);
+
+  // A row given up on after MAX_DEFERRALS must say so: `failed` with only
+  // "BASE_URL is not configured" reads like one bad attempt, not like five days of
+  // an unfixed deployment.
+  const gaveUpOnDeferral = outcome.status === 'failed' && isDeferrable(result);
+  const recordedError = result.ok
+    ? null
+    : gaveUpOnDeferral
+      ? `${result.error || 'Deferred'} — gave up after ${outcome.deferrals} deferrals without a usable configuration`
+      : (result.error || null);
+
   const patch = {
     status: outcome.status,
     attempts: outcome.attempts,
-    lastError: result.ok ? null : (result.error || null),
+    deferrals: outcome.deferrals,
+    lastError: recordedError,
     lastAttemptAt: new Date().toISOString(),
     sentAt: outcome.status === 'sent' ? new Date().toISOString() : (row.sentAt ?? null),
     // A 429 is the provider asking to slow down, not refusing the message —
     // record what it asked for so an operator can see why a row is still pending.
     retryAfter: result.ok ? null : (result.retryAfter ?? null),
     // ...and turn it into an absolute deadline that the worker and the hourly
-    // redrive both enforce. Null for every other outcome, so an ordinary
-    // transient failure is retried at the next redrive as before.
-    nextAttemptAt: nextAttemptAt(result),
+    // redrive both enforce. The wait DOUBLES with each deferral of this row, so a
+    // stuck backlog stops being re-fired at the redrive's own cadence. Null for
+    // every other outcome, so an ordinary transient failure is retried at the next
+    // redrive as before.
+    nextAttemptAt: outcome.status === 'failed' ? null : nextAttemptAt(result, new Date(), priorDeferrals),
   };
 
   // DOUBLE-SEND WINDOW. The provider has already accepted the message; everything
