@@ -54,9 +54,12 @@ PW=choose-a-strong-password
 **1. It is alive**
 
 ```bash
-curl -s $U/health
+curl -s $U/status
 # {"ok":true,"service":"form-backend"}
 ```
+
+The route is `/status`, not `/health`: the platform serves its own `/health` (it returns `Alive`)
+and that shadows any route an app registers on the same path.
 
 **2. Admin auth rejects and accepts correctly**
 

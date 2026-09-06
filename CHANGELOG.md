@@ -10,6 +10,12 @@ Each template carries its own `version` in its `package.json`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`form-backend`** — the health endpoint moved from `/health` to `/status`. The platform serves its
+  own `/health` (returning `Alive`) which shadows any route an app registers there, so the template's
+  endpoint never ran. Caught by a fresh-install test after release.
+
 ### Added
 
 - **`form-backend`** — headless form backend. One endpoint per form (`POST /f/:formId`), works with no

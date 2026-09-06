@@ -22,7 +22,7 @@ import { randomUUID } from 'crypto';
   }
 })();
 
-app.auth('/health', (req, res, next) => next());
+app.auth('/status', (req, res, next) => next());
 app.auth('/admin/login', (req, res, next) => next());
 app.auth('/admin/logout', (req, res, next) => next());
 app.auth('/f/*', (req, res, next) => next());
@@ -35,7 +35,9 @@ app.auth('/admin/api/*', (req, res, next) => {
   res.end();
 });
 
-app.get('/health', (req, res) => {
+// NOT /health: the platform serves its own `/health` (returning "Alive") and it
+// shadows any route an app registers there, so an app-level /health never runs.
+app.get('/status', (req, res) => {
   res.json({ ok: true, service: 'form-backend' });
 });
 
