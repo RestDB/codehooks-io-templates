@@ -108,6 +108,32 @@ app.get('/admin/api/forms/:id/snippet', async (req, res) => {
   res.json({ ok: true, snippet: buildSnippet(form, resolveBaseUrl(req)) });
 });
 
+// Setup diagnostics: the last few delivery attempts for one form, so a customer can
+// see WHY a notification did not arrive without dropping to curl. Deliberately not a
+// submissions view — this reports on the thing being configured, nothing more.
+app.get('/admin/api/forms/:id/deliveries', async (req, res) => {
+  const form = await resolveForm(req.params.id);
+  if (!form) return res.status(404).json({ ok: false, error: 'Form not found' });
+
+  const conn = await Datastore.open();
+  const rows = await conn
+    .getMany('deliveries', { formId: form.uuid }, { sort: { created: -1 }, limit: 5 })
+    .toArray();
+
+  res.json({
+    ok: true,
+    data: (rows as any[]).map((r) => ({
+      channel: r.channel,
+      target: r.target,
+      status: r.status,
+      attempts: r.attempts,
+      lastError: r.lastError,
+      created: r.created,
+      sentAt: r.sentAt,
+    })),
+  });
+});
+
 app.patch('/admin/api/forms/:id', async (req, res) => {
   const conn = await Datastore.open();
   const existing = await conn.findOneOrNull('forms', req.params.id);

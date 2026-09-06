@@ -266,6 +266,62 @@
     margin-bottom: 0.5rem;
   }
 
+  .deliveries-panel {
+    border: 1px solid var(--line);
+    border-radius: 0.5rem;
+    padding: 0.75rem 0.9rem;
+    margin: 0.75rem 0 1rem;
+    background: var(--bg);
+  }
+
+  .deliveries-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .deliveries-header h4 {
+    margin: 0;
+    font-size: 0.85rem;
+  }
+
+  .deliveries-header button {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.8rem;
+  }
+
+  .deliveries-list {
+    list-style: none;
+    margin: 0.6rem 0 0;
+    padding: 0;
+  }
+
+  .delivery-row {
+    padding: 0.5rem 0;
+    border-top: 1px solid var(--line);
+    font-size: 0.85rem;
+  }
+
+  .delivery-row:first-child { border-top: none; }
+
+  .delivery-top strong { text-transform: capitalize; }
+
+  .delivery-row.status-sent .delivery-top strong { color: var(--ok); }
+  .delivery-row.status-failed .delivery-top strong { color: var(--danger); }
+  .delivery-row.status-pending .delivery-top strong { color: var(--warn); }
+
+  .delivery-error {
+    color: var(--danger);
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-line);
+    border-radius: 0.4rem;
+    padding: 0.4rem 0.6rem;
+    margin-top: 0.35rem;
+    font-size: 0.8rem;
+    word-break: break-word;
+  }
+
   @media (max-width: 30rem) {
     .wrap { padding: 1.5rem 0.75rem 4rem; }
     .form-summary { flex-direction: column; align-items: flex-start; gap: 0.25rem; }
@@ -370,6 +426,16 @@
             variables). Save your settings, then submit the form once through the snippet above
             to confirm the email arrives &mdash; if it doesn't, check those environment variables.
           </p>
+
+          <div class="deliveries-panel">
+            <div class="deliveries-header">
+              <h4>Recent delivery attempts</h4>
+              <button type="button" class="refresh-deliveries">Refresh</button>
+            </div>
+            <p class="deliveries-empty help" hidden>No delivery attempts yet &mdash; submit the form once to test.</p>
+            <ul class="deliveries-list"></ul>
+            <div class="deliveries-msg" role="alert"></div>
+          </div>
         </fieldset>
 
         <fieldset>
@@ -585,6 +651,7 @@
     loadSnippet(detail, form);
     initCopy(detail, form);
     initSettingsForm(detail, form);
+    initDeliveries(detail, form);
   }
 
   // ---- Create form ----
@@ -739,6 +806,79 @@
         saveBtn.disabled = false;
         saveBtn.textContent = 'Save settings';
       });
+    });
+  }
+
+  // ---- Recent delivery attempts ----
+  // Read-only diagnostics for the notifications being configured above — not a
+  // submissions view. Shows why an email did or didn't arrive, so a customer never
+  // has to drop to curl on the /admin/api/forms/:id/deliveries collection.
+
+  function initDeliveries(detail, form) {
+    var list = detail.querySelector('.deliveries-list');
+    var empty = detail.querySelector('.deliveries-empty');
+    var msg = detail.querySelector('.deliveries-msg');
+    var refreshBtn = detail.querySelector('.refresh-deliveries');
+
+    function load() {
+      clearMsg(msg);
+      refreshBtn.disabled = true;
+      var originalLabel = refreshBtn.textContent;
+      refreshBtn.textContent = 'Refreshing…';
+      api('/admin/api/forms/' + encodeURIComponent(form._id) + '/deliveries')
+        .then(function (body) {
+          renderDeliveries(list, empty, body.data || []);
+        })
+        .catch(function (err) {
+          handleAuthFailure(err, function () { setMsg(msg, err.message, 'error'); });
+        })
+        .finally(function () {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = originalLabel;
+        });
+    }
+
+    refreshBtn.addEventListener('click', load);
+    load();
+  }
+
+  function renderDeliveries(list, empty, rows) {
+    list.textContent = '';
+    empty.hidden = rows.length !== 0;
+
+    rows.forEach(function (row) {
+      var li = document.createElement('li');
+      li.className = 'delivery-row status-' + (row.status || 'unknown');
+
+      var top = document.createElement('div');
+      top.className = 'delivery-top';
+      var statusEl = document.createElement('strong');
+      statusEl.textContent = row.status || 'unknown';
+      top.appendChild(statusEl);
+      top.appendChild(document.createTextNode(' → '));
+      var targetEl = document.createElement('span');
+      targetEl.textContent = row.target || '';
+      top.appendChild(targetEl);
+      li.appendChild(top);
+
+      // The diagnosis a customer actually needs: why a failed or still-pending
+      // attempt hasn't produced an email (e.g. "BASE_URL is not configured", a
+      // rejected Brevo/Mailgun sender, a 4xx from the provider).
+      if ((row.status === 'failed' || row.status === 'pending') && row.lastError) {
+        var errEl = document.createElement('div');
+        errEl.className = 'delivery-error';
+        errEl.textContent = row.lastError;
+        li.appendChild(errEl);
+      }
+
+      var meta = document.createElement('div');
+      meta.className = 'help';
+      var metaText = 'Attempt ' + (row.attempts || 0);
+      if (row.created) metaText += ' · ' + row.created;
+      meta.textContent = metaText;
+      li.appendChild(meta);
+
+      list.appendChild(li);
     });
   }
 
