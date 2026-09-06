@@ -16,6 +16,7 @@ import { emailChannel } from '#lib/channels/email';
 import type { Channel } from '#lib/channels/types';
 import type { SendResult } from '#lib/providers/types';
 import { classify, planRetry } from '#lib/delivery';
+import { checkRecipients } from '#lib/recipients';
 import { verifyFileToken } from '#lib/signed-links';
 import { buildSnippet } from '#lib/snippet';
 
@@ -182,6 +183,20 @@ app.patch('/admin/api/forms/:id', async (req, res) => {
   for (const key of allowed) {
     if (req.body && key in req.body) patch[key] = req.body[key];
   }
+
+  // Validate recipients HERE, at the moment the customer can still fix them.
+  // Delivery-time filtering alone let `team.customer.example` save cleanly and
+  // then silently produce no email. Rejecting the whole update rather than
+  // dropping the bad entry: a half-saved recipient list is the same failure in
+  // quieter clothing.
+  if (patch.notify) {
+    const check = checkRecipients(patch.notify?.email?.recipients);
+    if (!check.ok) {
+      return res.status(400).json({ ok: false, error: check.error });
+    }
+    if (patch.notify.email) patch.notify.email.recipients = check.recipients;
+  }
+
   const updated = await conn.updateOne('forms', req.params.id, { $set: patch });
   res.json({ ok: true, data: updated });
 });
@@ -572,11 +587,42 @@ app.worker('processSubmission', async (req, res) => {
       if (existing) continue;
 
       const row = await conn.insertOne('deliveries', {
+        // NAMING TRAP: this `submissionId` is the submission's Mongo `_id`, NOT the
+        // `submissionId` field on the submissions document — that one is an
+        // unrelated randomUUID (see the insertOne in the submit handler). Two
+        // fields, one name, different values across two collections. A join on
+        // `deliveries.submissionId === submissions.submissionId` matches NOTHING
+        // and reports no error. The `deliver` worker reads this back with
+        // findOneOrNull('submissions', row.submissionId), which is an _id lookup.
         submissionId, formId: submission.formId, channel: channel.name, target,
         status: 'pending', attempts: 0, lastError: null, lastAttemptAt: null,
         retryAfter: null, created: new Date().toISOString(), sentAt: null,
       });
       await conn.enqueue('deliver', { deliveryId: (row as any)._id });
+    }
+
+    // A recipient the channel cannot send to gets a TERMINAL row rather than
+    // vanishing. Without it, a mistyped address produced no artefact at all and the
+    // setup page's delivery panel — the one place an owner looks to find out why no
+    // email arrived — was empty, which looks exactly like "notifications are off".
+    // `failed`, not `skipped`: the spec reserves `skipped` for "the channel had
+    // nothing to do", and a rejected address is something to do that cannot be done.
+    for (const bad of channel.rejectedTargets(form)) {
+      const existing = await conn.findOneOrNull('deliveries', {
+        submissionId, channel: channel.name, target: bad.target,
+      });
+      if (existing) continue;
+
+      // See the NAMING TRAP note above: `submissionId` here is a submission _id.
+      await conn.insertOne('deliveries', {
+        submissionId, formId: submission.formId, channel: channel.name, target: bad.target,
+        status: 'failed', attempts: 0, lastError: bad.reason,
+        lastAttemptAt: new Date().toISOString(), retryAfter: null,
+        created: new Date().toISOString(), sentAt: null,
+      });
+      // Deliberately NOT enqueued: there is nothing a send attempt could achieve.
+      // The row exists to be read, and `POST /admin/api/deliveries/:id/retry` can
+      // re-drive it once the owner corrects the address.
     }
   }
   res.end();

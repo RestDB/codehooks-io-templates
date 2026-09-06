@@ -254,6 +254,12 @@ type `email` in the form's schema, or otherwise the first submitted value that l
 address — never to `FROM_EMAIL`. Replying to a notification reaches the person who submitted the
 form, not the sender account.
 
+Recipient addresses are validated when you save them. `PATCH /admin/api/forms/:id` rejects the whole
+update and names the offending address, rather than storing it and dropping it at send time — a
+mistyped recipient used to produce no email and no delivery row, which looks exactly like
+notifications being switched off. An unusable address that reaches delivery by another route now
+produces a terminal `failed` delivery row with the reason, so the panel says what happened.
+
 A submission caught by the honeypot is stored with `status: "spam"` and never reaches the
 notification pipeline at all — no delivery row is created and no email is sent for it, by design.
 

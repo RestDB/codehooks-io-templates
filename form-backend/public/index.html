@@ -838,6 +838,24 @@
       var recipients = recipientsInput.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
       var allowedDomains = allowlistInput.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
 
+      // Same rule the server enforces (lib/recipients.ts RECIPIENT_RE), checked
+      // here only to fail instantly and point at the field. The server is the
+      // authority: it rejects the PATCH regardless of what this does.
+      var badRecipients = recipients.filter(function (r) {
+        return !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r);
+      });
+      if (badRecipients.length) {
+        setMsg(
+          settingsMsg,
+          'Not a valid email address: ' + badRecipients.join(', '),
+          'error'
+        );
+        recipientsInput.focus();
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save settings';
+        return;
+      }
+
       var patch = {
         notify: {
           email: {

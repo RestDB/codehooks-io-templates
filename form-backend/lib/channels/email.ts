@@ -10,6 +10,8 @@ import type { Channel, DeliveryContext } from '#lib/channels/types';
 import type { FormDoc } from '#lib/forms';
 import type { SendResult } from '#lib/providers/types';
 import type { Attachment } from '#lib/providers/types';
+import { partitionRecipients } from '#lib/recipients';
+import type { RejectedRecipient } from '#lib/recipients';
 
 function budgetBytes(): number {
   return (Number(process.env.MAX_ATTACH_MB) || MAX_ATTACH_MB_DEFAULT) * 1024 * 1024;
@@ -21,7 +23,17 @@ export const emailChannel: Channel = {
   targets(form: FormDoc): string[] {
     const cfg: any = (form as any).notify?.email;
     if (!cfg?.enabled) return [];
-    return (cfg.recipients || []).filter((r: string) => typeof r === 'string' && r.includes('@'));
+    return partitionRecipients(cfg.recipients).valid;
+  },
+
+  // An address that cannot be sent to is NOT "nothing to do" — the spec reserves
+  // `skipped` for that — so these become `failed` rows with the reason recorded.
+  // PATCH now rejects such an address up front, but a form saved before that
+  // validation existed, or written straight to the datastore, still reaches here.
+  rejectedTargets(form: FormDoc): RejectedRecipient[] {
+    const cfg: any = (form as any).notify?.email;
+    if (!cfg?.enabled) return [];
+    return partitionRecipients(cfg.recipients).rejected;
   },
 
   async deliver(ctx: DeliveryContext): Promise<SendResult> {
