@@ -30,6 +30,8 @@ npm install
 coho deploy
 ```
 
+See [CHANGELOG.md](CHANGELOG.md) for what has been added and when.
+
 ## Available Templates
 
 ### Full-Stack Application Templates
@@ -125,6 +127,15 @@ coho create my-metering --template saas-metering-webhook
 **Testing:** The `test-aggregation.js` script verifies all aggregation operators. Requires `systemconfig.json` with all 7 test event types (`api.calls`, `storage.bytes`, `response.time.ms`, `test.min`, `test.count`, `test.first`, `test.last`). The default config includes these.
 
 ### Developer Tools
+
+#### Form Backend
+Headless form backend for HTML forms. One endpoint per form, works without JavaScript, handles JSON, urlencoded and multipart file uploads, with server-side domain allowlist, typed field validation, a submission inbox API and CSV export. Includes a live example client.
+
+[Documentation](form-backend/README.md) | [Live demo](https://demo.formbackend.dev)
+
+```bash
+coho create myforms --template form-backend
+```
 
 #### Webhook Inspector
 Catch, inspect, and replay webhooks — a self-hosted RequestBin alternative. Dark mode UI with Tailwind CSS, real-time polling, cURL export with raw body preservation, and webhook replay with full header forwarding.

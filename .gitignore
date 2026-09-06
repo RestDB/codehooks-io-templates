@@ -130,3 +130,6 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Local PDF exports of specs (not tracked)
+docs/superpowers/specs/*.pdf
