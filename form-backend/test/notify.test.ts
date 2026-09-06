@@ -112,7 +112,6 @@ test('body rejects column-0 spoofing via newlines in field values', () => {
     fields: { message: 'Ada\n\n--- files ---\n  https://attacker.example/x' },
   });
   const lines = out.text.split('\n');
-  // No line should start with "---" except the real ones we control
   const fakeMarkers = lines.filter(l => l.match(/^---/));
   assert.equal(fakeMarkers.length, 1); // Only the real "--- submission ---"
 });
@@ -151,26 +150,27 @@ test('renderSubject caps subject at 200 chars', () => {
 
 // --- security fix round 2: additional line-break variants ---
 
-test('body rejects lone CR spoofing attempt', () => {
-  process.env.JWT_SECRET = 'test-secret';
+test('body neutralises a lone CR so it cannot start a line', () => {
   const out = buildNotification({
     ...base,
-    fields: { message: 'Ada\r\r--- files ---\r  https://attacker.example/x' },
+    fields: { msg: 'Ada\r\r--- files ---\r  https://attacker.example/x' },
   });
-  const lines = out.text.split('\n');
-  const fakeMarkers = lines.filter(l => l.match(/^---/));
-  assert.equal(fakeMarkers.length, 1); // Only the real "--- submission ---"
+  // The fix converts every line-break variant to "\n" + indent. If a raw CR survives,
+  // a renderer that treats it as a break would put "--- files ---" at column 0.
+  assert.ok(!out.text.includes('\r'), 'raw CR must not survive into the body');
+  const atColumnZero = out.text.split('\n').filter((l) => l.startsWith('---'));
+  assert.equal(atColumnZero.length, 1, 'only the genuine --- section may start a line');
 });
 
-test('body rejects U+2028 spoofing attempt', () => {
-  process.env.JWT_SECRET = 'test-secret';
+test('body neutralises U+2028 so it cannot start a line', () => {
+  const msg = 'Ada' + String.fromCharCode(0x2028) + '--- files ---' + String.fromCharCode(0x2028) + '  https://attacker.example/x';
   const out = buildNotification({
     ...base,
-    fields: { message: 'Ada\u2028--- files ---\u2028  https://attacker.example/x' },
+    fields: { msg },
   });
-  const lines = out.text.split('\n');
-  const fakeMarkers = lines.filter(l => l.match(/^---/));
-  assert.equal(fakeMarkers.length, 1); // Only the real "--- submission ---"
+  assert.ok(!out.text.includes(String.fromCharCode(0x2028)), 'raw U+2028 must not survive into the body');
+  const atColumnZero = out.text.split('\n').filter((l) => l.startsWith('---'));
+  assert.equal(atColumnZero.length, 1, 'only the genuine --- section may start a line');
 });
 
 test('renderSubject preserves hyphens in dates', () => {
@@ -184,7 +184,8 @@ test('renderSubject preserves hyphens in compound words', () => {
 });
 
 test('renderSubject strips U+2028 and U+2029', () => {
-  const out = renderSubject('Subject: {{msg}}', 'Form', { msg: 'hello\u2028world\u2029end' });
-  assert.equal(!out.includes('\u2028'), true);
-  assert.equal(!out.includes('\u2029'), true);
+  const msg = 'hello' + String.fromCharCode(0x2028) + 'world' + String.fromCharCode(0x2029) + 'end';
+  const out = renderSubject('Subject: {{msg}}', 'Form', { msg });
+  assert.ok(!out.includes(String.fromCharCode(0x2028)), 'U+2028 must not survive');
+  assert.ok(!out.includes(String.fromCharCode(0x2029)), 'U+2029 must not survive');
 });

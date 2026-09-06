@@ -59,7 +59,7 @@ export function buildNotification(input: NotificationInput): {
 } {
   const lines: string[] = [];
 
-  // Every character a renderer may treat as a line break: CRLF, lone CR, LF, and the
+  // CRLF, lone CR, LF, and the Unicode line/paragraph separators—which browsers and webmail treat as line breaks: CRLF, lone CR, LF, and the
   // Unicode line/paragraph separators. Untrusted values must never begin a line at
   // column 0, where a forged "--- files ---" marker would look genuine.
   const LINE_BREAKS = /\r\n|[\r\n\u2028\u2029]/g;
