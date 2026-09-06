@@ -606,20 +606,32 @@ app.get('/admin/api/forms', async (req, res) => {
 });
 ```
 
-- [ ] **Step 7: Stop `stats.total` drifting**
+- [ ] **Step 7: Do NOT touch the stats counters — read this instead**
 
-In `app.delete('/admin/api/submissions/:id', ...)`, after `await conn.removeOne('submissions', req.params.id);` and before the response, add:
+An earlier draft of this plan told you to decrement `stats.total` on submission delete, with
+`$inc: { 'stats.total': -1 }`. **Do not do that.** It was wrong twice over, and both reasons matter
+for the rest of this task:
 
-```ts
-  // stats.total is incremented on insert; without this it only ever grows, so a
-  // form that has had submissions deleted reports a count that was never true.
-  try {
-    await conn.updateOne('forms', { uuid: row.formId }, { $inc: { 'stats.total': -1 } });
-  } catch (err: any) {
-    // Best effort: the submission is already gone, and no UI reads this field.
-    console.error('Failed to decrement stats.total for', row.formId, err?.message);
-  }
-```
+1. **Dot notation is not a path on this datastore.** `$inc: { 'stats.total': -1 }` creates or
+   updates a top-level field literally *named* `stats.total`. It never touches `total` inside
+   `stats`, and it raises no error. This is a general rule, not an `$inc` quirk — `$set` behaves the
+   same way. See `lib/stats.ts`, which documents the full probe.
+2. **The counters have since moved.** They are now flat atomic fields — `statsTotal`, `statsSpam`,
+   `statsLastSubmissionAt` — composed back into the public `stats` object on read by
+   `composeStats()` in `lib/stats.ts`. Nothing in this task should write them.
+
+`stats.total` is a **lifetime-received** counter: how many submissions this form has ever accepted.
+That is a genuinely useful number and it is correct as it stands. It is NOT the number of
+submissions currently stored, and decrementing it would destroy the stat to approximate something
+`countCapped` already answers exactly.
+
+**So: this step is a no-op on the backend.** Every place the dashboard shows "how many are stored
+right now" — the rail badge, the list footer, any delete confirmation — uses `countCapped` from
+Step 4. Where the UI wants "received all time", it may read `form.stats.total`, which is now
+accurate.
+
+Confirm before moving on: `grep -rn "stats\." form-backend/index.ts form-backend/lib` should show
+no dotted update key anywhere. If it does, that write is silently inert.
 
 - [ ] **Step 8: Verify**
 

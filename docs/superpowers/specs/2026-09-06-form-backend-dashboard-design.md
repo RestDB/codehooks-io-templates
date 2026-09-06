@@ -151,11 +151,18 @@ an honest ceiling, not a lie, and consistent with how search already reports `tr
    `GET /admin/api/forms`, counted as above over `{ formId: uuid, status: 'new' }`. This is one
    scan per form; the forms list is small by nature, and `newCount` is capped at 999 for display.
 
-3. **`forms.stats.total` drifts upward.** It is incremented on insert and never decremented by
-   `DELETE /admin/api/submissions/:id`, so it is already wrong on any form where a submission has
-   been deleted. **Displayed counts come from the scans above, never from `stats.total`.** The
-   delete route also decrements the stored field so it stops drifting further, but no part of the
-   UI depends on it being right.
+3. **`forms.stats.total` is a lifetime-received counter, not a live count.** An earlier draft of
+   this spec said it "drifts upward" because nothing decrements it on delete. That was wrong on the
+   facts: it never incremented at all. This datastore does not treat dot notation as a path, so
+   `$inc: { 'stats.total': 1 }` had been writing a top-level field literally *named* `stats.total`
+   while the nested value the API returned stayed at zero — silently, since the release. It is fixed
+   (flat atomic counters composed back into `stats` on read; see `lib/stats.ts`) and now reports
+   correctly.
+
+   It still answers a different question from the one the dashboard asks. `stats.total` is how many
+   submissions the form has ever received; the rail badge and the list footer need how many are
+   stored right now. **Every displayed count comes from the scans above.** The dashboard may show
+   `stats.total` where it genuinely means "received all time", and must not write it.
 
 No other route changes. Everything else the dashboard needs already exists.
 
