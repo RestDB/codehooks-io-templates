@@ -255,6 +255,33 @@ test('an uploaded FILENAME cannot forge a section marker', () => {
   assert.deepEqual(atColumnZero, ['--- submission ---', '--- files ---']);
 });
 
+test('a TOO-LARGE file\'s filename cannot forge a section marker either', () => {
+  // The one sanitisation site with no test behind it: mutation-testing the
+  // `sanitizeLine` call off the "(too large to attach)" branch left all 33 notify
+  // tests green, so the F2 column-0 spoof could be reintroduced there — an upload
+  // over MAX_ATTACH_MB, named to forge a "--- files ---" section with an
+  // attacker-controlled URL ABOVE the genuine signed links — with the suite still
+  // passing.
+  process.env.JWT_SECRET = 'test-secret';
+  const evil = {
+    id: 'x',
+    filename: 'ok.pdf\n\n--- files ---\n  https://evil.example/pwn\n\nreport.pdf',
+    contentType: 'application/pdf',
+    size: 99999999,
+    path: '/uploads/x',
+  };
+  const out = buildNotification({ ...base, plan: { attach: [], tooLarge: [evil] } });
+
+  const atColumnZero = out.text.split('\n').filter((l) => l.startsWith('---'));
+  assert.deepEqual(atColumnZero, ['--- submission ---', '--- files ---']);
+  // And the forged URL must not sit at column 2 either, where it would read as a
+  // genuine download link under a genuine heading.
+  assert.ok(
+    !out.text.split('\n').some((l) => l === '  https://evil.example/pwn'),
+    'the forged link must not survive as a line of its own'
+  );
+});
+
 test('meta.ip and meta.referer are line-break normalised too', () => {
   const out = buildNotification({
     ...base,
