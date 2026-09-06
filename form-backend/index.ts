@@ -15,7 +15,7 @@ import { randomUUID } from 'crypto';
 import { emailChannel } from '#lib/channels/email';
 import type { Channel } from '#lib/channels/types';
 import type { SendResult } from '#lib/providers/types';
-import { classify, planRetry } from '#lib/delivery';
+import { classify, planRetry, isDue, nextAttemptAt } from '#lib/delivery';
 import { checkRecipients } from '#lib/recipients';
 import { verifyFileToken } from '#lib/signed-links';
 import { buildSnippet } from '#lib/snippet';
@@ -596,7 +596,11 @@ app.worker('processSubmission', async (req, res) => {
         // findOneOrNull('submissions', row.submissionId), which is an _id lookup.
         submissionId, formId: submission.formId, channel: channel.name, target,
         status: 'pending', attempts: 0, lastError: null, lastAttemptAt: null,
-        retryAfter: null, created: new Date().toISOString(), sentAt: null,
+        // `retryAfter` is what the provider asked for, in seconds, kept for the
+        // operator to read; `nextAttemptAt` is the absolute deadline the worker
+        // and the hourly redrive actually enforce. A new row is due immediately.
+        retryAfter: null, nextAttemptAt: null,
+        created: new Date().toISOString(), sentAt: null,
       });
       await conn.enqueue('deliver', { deliveryId: (row as any)._id });
     }
@@ -617,7 +621,7 @@ app.worker('processSubmission', async (req, res) => {
       await conn.insertOne('deliveries', {
         submissionId, formId: submission.formId, channel: channel.name, target: bad.target,
         status: 'failed', attempts: 0, lastError: bad.reason,
-        lastAttemptAt: new Date().toISOString(), retryAfter: null,
+        lastAttemptAt: new Date().toISOString(), retryAfter: null, nextAttemptAt: null,
         created: new Date().toISOString(), sentAt: null,
       });
       // Deliberately NOT enqueued: there is nothing a send attempt could achieve.
@@ -634,6 +638,15 @@ app.worker('deliver', async (req, res) => {
   const conn = await Datastore.open();
   const row: any = await conn.findOneOrNull('deliveries', deliveryId);
   if (!row || row.status === 'sent' || row.status === 'skipped') return res.end();
+
+  // A row the provider asked us to wait on is left COMPLETELY untouched: still
+  // `pending`, same attempt count, same deadline. Re-firing it would be the exact
+  // behaviour that turned a 429 into an hourly amplifier — a 429 does not burn an
+  // attempt, so nothing else ever excluded these rows from the redrive.
+  if (!isDue(row)) {
+    console.log('Delivery not due until', row.nextAttemptAt, '— leaving pending:', deliveryId);
+    return res.end();
+  }
 
   const channel = CHANNELS.find((c) => c.name === row.channel);
   const submission: any = await conn.findOneOrNull('submissions', row.submissionId);
@@ -688,6 +701,10 @@ app.worker('deliver', async (req, res) => {
       // A 429 is the provider asking to slow down, not refusing the message —
       // record what it asked for so an operator can see why a row is still pending.
       retryAfter: result.ok ? null : (result.retryAfter ?? null),
+      // ...and turn it into an absolute deadline that the worker and the hourly
+      // redrive both enforce. Null for every other outcome, so an ordinary
+      // transient failure is retried at the next redrive as before.
+      nextAttemptAt: nextAttemptAt(result),
     },
   });
   res.end();
@@ -697,9 +714,21 @@ app.worker('deliver', async (req, res) => {
 // this only picks up transient failures.
 app.job('0 * * * *', async (req, res) => {
   const conn = await Datastore.open();
+  // Rows still inside a provider-requested cooldown are excluded here as well as
+  // in the worker. The worker's guard alone would be correct but wasteful — it
+  // would wake every rate-limited row once an hour only to put it straight back.
+  // `{ nextAttemptAt: null }` also matches rows written before the field existed,
+  // so nothing from before this change is stranded.
   await conn.enqueueFromQuery(
     'deliveries',
-    { status: 'pending', attempts: { $lt: MAX_SEND_ATTEMPTS } },
+    {
+      status: 'pending',
+      attempts: { $lt: MAX_SEND_ATTEMPTS },
+      $or: [
+        { nextAttemptAt: null },
+        { nextAttemptAt: { $lte: new Date().toISOString() } },
+      ],
+    },
     'deliver',
     { limit: 1000 }
   );

@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { classify, planRetry } from '#lib/delivery';
+import {
+  classify,
+  planRetry,
+  cooldownSeconds,
+  nextAttemptAt,
+  isDue,
+  RATE_LIMIT_COOLDOWN_SECONDS,
+  MAX_COOLDOWN_SECONDS,
+} from '#lib/delivery';
 
 const MAX = 5;
 
@@ -58,7 +66,7 @@ test('a failed row may be retried, and its attempt budget is restored', () => {
   assert.equal(decision.allowed, true);
   assert.deepEqual(
     decision.patch,
-    { status: 'pending', attempts: 0, lastError: null, retryAfter: null }
+    { status: 'pending', attempts: 0, lastError: null, retryAfter: null, nextAttemptAt: null }
   );
 });
 
@@ -97,4 +105,91 @@ test('a missing BASE_URL reaches classify with no statusCode and stays pending',
   const outcome = classify({ ok: false, error: 'BASE_URL is not configured' } as any, 0, MAX);
   assert.equal(outcome.status, 'pending');
   assert.equal(outcome.attempts, 1);
+});
+
+// --- 429 backoff (final review, finding 5) ---
+//
+// classify() already keeps a 429 pending without burning an attempt. Because
+// attempts never increment, `attempts: {$lt: MAX}` never excludes such a row, so
+// before this the hourly redrive re-fired every rate-limited row at once, every
+// hour, indefinitely — ignoring the Retry-After the provider asked for.
+
+const NOW = new Date('2026-09-06T12:00:00.000Z');
+
+test('a 429 with a Retry-After header produces exactly that wait', () => {
+  assert.equal(cooldownSeconds({ ok: false, statusCode: 429, retryAfter: 120 }), 120);
+  assert.equal(
+    nextAttemptAt({ ok: false, statusCode: 429, retryAfter: 120 }, NOW),
+    '2026-09-06T12:02:00.000Z'
+  );
+});
+
+test('a 429 with no Retry-After still backs off, rather than re-firing immediately', () => {
+  assert.equal(cooldownSeconds({ ok: false, statusCode: 429 }), RATE_LIMIT_COOLDOWN_SECONDS);
+  assert.notEqual(nextAttemptAt({ ok: false, statusCode: 429 }, NOW), null);
+});
+
+test('an absurd Retry-After is clamped rather than parking the row forever', () => {
+  assert.equal(
+    cooldownSeconds({ ok: false, statusCode: 429, retryAfter: 99999999 }),
+    MAX_COOLDOWN_SECONDS
+  );
+});
+
+test('a negative or zero Retry-After falls back to the default cooldown', () => {
+  assert.equal(cooldownSeconds({ ok: false, statusCode: 429, retryAfter: 0 }), RATE_LIMIT_COOLDOWN_SECONDS);
+  assert.equal(cooldownSeconds({ ok: false, statusCode: 429, retryAfter: -5 }), RATE_LIMIT_COOLDOWN_SECONDS);
+});
+
+test('a success sets no cooldown', () => {
+  assert.equal(cooldownSeconds({ ok: true }), 0);
+  assert.equal(nextAttemptAt({ ok: true }, NOW), null);
+});
+
+test('an ordinary transient failure sets no cooldown — it retries at the next redrive', () => {
+  assert.equal(cooldownSeconds({ ok: false, statusCode: 503 }), 0);
+  assert.equal(nextAttemptAt({ ok: false }, NOW), null);
+});
+
+test('a permanent 4xx sets no cooldown', () => {
+  assert.equal(cooldownSeconds({ ok: false, statusCode: 400 }), 0);
+});
+
+test('a row inside its cooldown is NOT due', () => {
+  assert.equal(isDue({ nextAttemptAt: '2026-09-06T12:05:00.000Z' }, NOW), false);
+});
+
+test('a row whose cooldown has elapsed is due', () => {
+  assert.equal(isDue({ nextAttemptAt: '2026-09-06T11:59:59.000Z' }, NOW), true);
+});
+
+test('a row due at exactly now is due', () => {
+  assert.equal(isDue({ nextAttemptAt: NOW.toISOString() }, NOW), true);
+});
+
+test('a row with no deadline is due — including one written before the field existed', () => {
+  assert.equal(isDue({ nextAttemptAt: null }, NOW), true);
+  assert.equal(isDue({}, NOW), true);
+  assert.equal(isDue(null, NOW), true);
+});
+
+test('an unparseable deadline means due now, never stranded forever', () => {
+  assert.equal(isDue({ nextAttemptAt: 'not a date' }, NOW), true);
+});
+
+test('the 429 loop terminates: the row is not re-attempted until its deadline', () => {
+  // The whole failure in one assertion. A 429 leaves attempts untouched, so the
+  // redrive's attempts filter can never exclude the row; only the deadline can.
+  const outcome = classify({ ok: false, statusCode: 429 }, 3, MAX);
+  assert.deepEqual(outcome, { status: 'pending', attempts: 3 });
+  const deadline = nextAttemptAt({ ok: false, statusCode: 429, retryAfter: 300 }, NOW);
+  assert.equal(isDue({ nextAttemptAt: deadline }, NOW), false);
+  assert.equal(isDue({ nextAttemptAt: deadline }, new Date(NOW.getTime() + 301_000)), true);
+});
+
+test('an operator retry clears the cooldown', () => {
+  const decision = planRetry({ status: 'pending', nextAttemptAt: '2099-01-01T00:00:00.000Z' } as any);
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.patch.nextAttemptAt, null);
+  assert.equal(isDue(decision.patch, NOW), true);
 });

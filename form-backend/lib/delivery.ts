@@ -39,6 +39,7 @@ export type RetryPatch = {
   attempts: number;
   lastError: null;
   retryAfter: null;
+  nextAttemptAt: null;
 };
 
 // A flat shape rather than a discriminated union: this project's tsconfig has
@@ -79,6 +80,67 @@ export function planRetry(row: { status?: string } | null | undefined): RetryDec
   }
   return {
     allowed: true,
-    patch: { status: 'pending', attempts: 0, lastError: null, retryAfter: null },
+    patch: { status: 'pending', attempts: 0, lastError: null, retryAfter: null, nextAttemptAt: null },
   };
+}
+
+
+// --- Rate-limit backoff -------------------------------------------------------
+//
+// `classify` keeps a 429 row `pending` without burning an attempt, and the row
+// records the `Retry-After` the provider asked for. Nothing used to read it: the
+// hourly redrive re-fired every such row at once, every hour, forever, so a
+// provider that started rate-limiting turned the outbox into an amplifier that
+// never drained and never terminated.
+//
+// The wait is held PER ROW rather than as a global cooldown. Both were on the
+// table; per-row wins because the deadline already lives in the document that
+// gates the send, so there is no second store to read, no keyspace to keep in
+// sync, and no new outage mode — a global cooldown key that cannot be read leaves
+// you choosing between blocking every send and silently not backing off at all.
+// Rows that were rate-limited together do come due together, which is exactly
+// what the provider's Retry-After asked for.
+
+/** Applied to a 429 that carries no usable Retry-After header. */
+export const RATE_LIMIT_COOLDOWN_SECONDS = 15 * 60;
+
+/** A hostile or fat-fingered Retry-After must not park a row past any useful horizon. */
+export const MAX_COOLDOWN_SECONDS = 24 * 60 * 60;
+
+export type BackoffInput = { ok: boolean; statusCode?: number; retryAfter?: number };
+
+/** How long this result asks us to wait before trying the same row again. Pure. */
+export function cooldownSeconds(result: BackoffInput): number {
+  if (!result || result.ok) return 0;
+  if (result.statusCode !== 429) return 0;
+  const asked = Number(result.retryAfter);
+  const seconds = Number.isFinite(asked) && asked > 0 ? asked : RATE_LIMIT_COOLDOWN_SECONDS;
+  return Math.min(Math.ceil(seconds), MAX_COOLDOWN_SECONDS);
+}
+
+/**
+ * The absolute instant this row may next be attempted, or null for "now".
+ * Absolute rather than a duration because the row is read back by a different
+ * process at an unknown later time — a stored "120 seconds" answers nothing.
+ * ISO-8601 so it sorts and compares in the datastore query as it does here.
+ */
+export function nextAttemptAt(result: BackoffInput, now: Date = new Date()): string | null {
+  const seconds = cooldownSeconds(result);
+  return seconds > 0 ? new Date(now.getTime() + seconds * 1000).toISOString() : null;
+}
+
+/**
+ * May this row be attempted yet? A row that is not due is left completely
+ * untouched by the worker — it stays `pending`, keeps its attempt count, and is
+ * picked up again by a later redrive.
+ *
+ * An absent or unparseable deadline means due NOW: a bad value must never strand
+ * a notification forever, which is the failure mode this whole finding is about.
+ */
+export function isDue(row: { nextAttemptAt?: string | null } | null | undefined, now: Date = new Date()): boolean {
+  const at = row?.nextAttemptAt;
+  if (!at) return true;
+  const due = Date.parse(at);
+  if (!Number.isFinite(due)) return true;
+  return due <= now.getTime();
 }

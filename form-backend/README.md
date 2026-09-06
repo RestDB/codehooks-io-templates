@@ -270,6 +270,11 @@ retried. `GET /admin/api/forms/:id/deliveries` shows the last 5 attempts per for
 `status`, `attempts` and `lastError`, so a missing email can be diagnosed without dropping to
 provider-side logs.
 
+A provider rate limit (`429`) is handled separately: the row stays `pending` without burning an
+attempt, and the `Retry-After` the provider asked for becomes an absolute deadline on the row. Both
+the worker and the hourly job skip a row that is not yet due, so a rate-limited backlog backs off
+instead of re-firing in full every hour. A `429` with no `Retry-After` header waits 15 minutes.
+
 A missing `BASE_URL` is treated as a **transient** failure, not a permanent one: it is the most
 likely first-run misconfiguration, and hard-failing it would mean every notification queued before
 you noticed was lost for good. Set `BASE_URL` and the hourly job delivers the backlog.
