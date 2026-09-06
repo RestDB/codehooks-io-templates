@@ -174,6 +174,7 @@ app.delete('/admin/api/forms/:id', async (req, res) => {
     }
   }
   await conn.removeMany('submissions', { formId: form.uuid });
+  await conn.removeMany('deliveries', { formId: form.uuid });
   await conn.removeOne('forms', req.params.id);
   res.json({ ok: true, deleted: true });
 });

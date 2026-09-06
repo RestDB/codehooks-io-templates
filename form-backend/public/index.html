@@ -326,6 +326,46 @@
     .wrap { padding: 1.5rem 0.75rem 4rem; }
     .form-summary { flex-direction: column; align-items: flex-start; gap: 0.25rem; }
   }
+
+  /* Delete is destructive and deliberately visually subordinate: tucked below a
+     divider, muted until hovered, never styled like the primary Save action. */
+  .delete-zone {
+    border-top: 1px solid var(--line);
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    text-align: right;
+  }
+
+  .delete-btn {
+    border: none;
+    background: none;
+    padding: 0.3rem 0;
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-decoration: underline;
+  }
+
+  .delete-btn:hover { color: var(--danger); background: none; }
+
+  .delete-confirm { text-align: left; }
+
+  .delete-confirm-text {
+    color: var(--danger);
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-line);
+    border-radius: 0.5rem;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.85rem;
+    margin: 0 0 0.6rem;
+  }
+
+  .delete-confirm-btn {
+    border-color: var(--danger-line);
+    background: var(--danger-bg);
+    color: var(--danger);
+  }
+
+  .delete-confirm-btn:hover { background: var(--danger); color: #fff; }
 </style>
 
 <div class="wrap">
@@ -454,6 +494,16 @@
         <button type="submit" class="primary save-btn">Save settings</button>
       </form>
       <div class="settings-msg" role="alert"></div>
+
+      <div class="delete-zone">
+        <button type="button" class="delete-btn">Delete form</button>
+        <div class="delete-confirm" hidden>
+          <p class="delete-confirm-text"></p>
+          <button type="button" class="delete-confirm-btn">Yes, delete</button>
+          <button type="button" class="delete-cancel-btn">Cancel</button>
+        </div>
+        <div class="delete-msg" role="alert"></div>
+      </div>
     </div>
   </li>
 </template>
@@ -652,6 +702,7 @@
     initCopy(detail, form);
     initSettingsForm(detail, form);
     initDeliveries(detail, form);
+    initDelete(detail, form);
   }
 
   // ---- Create form ----
@@ -879,6 +930,60 @@
       li.appendChild(meta);
 
       list.appendChild(li);
+    });
+  }
+
+  // ---- Delete form ----
+  // Two-step inline confirmation, never a native confirm(): it's blocked in some
+  // embedded contexts and can't name what's actually being lost. First click
+  // reveals the cost (name + submission count); second click performs it; a
+  // third control lets the customer back out at any point before that.
+
+  function initDelete(detail, form) {
+    var li = detail.closest('li');
+    var deleteBtn = detail.querySelector('.delete-btn');
+    var confirmBlock = detail.querySelector('.delete-confirm');
+    var confirmText = detail.querySelector('.delete-confirm-text');
+    var confirmBtn = detail.querySelector('.delete-confirm-btn');
+    var cancelBtn = detail.querySelector('.delete-cancel-btn');
+    var msg = detail.querySelector('.delete-msg');
+
+    deleteBtn.addEventListener('click', function () {
+      clearMsg(msg);
+      var count = (form.stats && form.stats.total) || 0;
+      var name = form.name || 'Untitled';
+      confirmText.textContent = "Delete '" + name + "' and its " + count +
+        " submissions and uploaded files? This cannot be undone.";
+      deleteBtn.hidden = true;
+      confirmBlock.hidden = false;
+    });
+
+    cancelBtn.addEventListener('click', function () {
+      confirmBlock.hidden = true;
+      deleteBtn.hidden = false;
+      clearMsg(msg);
+    });
+
+    confirmBtn.addEventListener('click', function () {
+      clearMsg(msg);
+      confirmBtn.disabled = true;
+      cancelBtn.disabled = true;
+      confirmBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span>Deleting&hellip;';
+
+      api('/admin/api/forms/' + encodeURIComponent(form._id), { method: 'DELETE' })
+        .then(function () {
+          li.remove();
+          formsEmpty.hidden = formsList.children.length !== 0;
+          setMsg(formsMsg, "'" + (form.name || 'Untitled') + "' was deleted.", 'ok');
+        })
+        .catch(function (err) {
+          handleAuthFailure(err, function () {
+            setMsg(msg, err.message, 'error');
+            confirmBtn.disabled = false;
+            cancelBtn.disabled = false;
+            confirmBtn.textContent = 'Yes, delete';
+          });
+        });
     });
   }
 
