@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Send an email for every submission — with the uploaded files attached and signed download links — and add the honeypot enforcement and per-IP rate limiting that make it safe to leave switched on.
+**Goal:** Send an email for every submission — with the uploaded files attached and signed download links — add the honeypot enforcement and per-IP rate limiting that make it safe to leave switched on, and give a new customer a setup page so they can go from deploy to a working form without touching curl.
 
 **Architecture:** A durable outbox. The submit handler stays fast and enqueues `processSubmission`, which writes one `deliveries` row per configured channel and enqueues a generic `deliver` task each. `deliver` owns all retry logic; channels are adapters behind one `Channel` interface, and email is the only one this release implements.
 
@@ -1639,6 +1639,293 @@ git commit -m "docs(form-backend): notification configuration and Brevo setup"
 
 ---
 
+### Task 10: Form snippet
+
+**Files:**
+- Create: `form-backend/lib/snippet.ts`, `form-backend/test/snippet.test.ts`
+- Modify: `form-backend/index.ts`
+
+**Interfaces:**
+- Consumes: `FormDoc` from `#lib/forms`.
+- Produces:
+  - `buildSnippet(form: FormDoc, baseUrl: string): string`
+  - `GET /admin/api/forms/:id/snippet` returning `{ ok: true, snippet: string }`
+
+The snippet reflects the form's actual field schema, so a customer pastes working markup rather than hand-assembling an action URL. It was listed in the original spec's API surface and never built.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `form-backend/test/snippet.test.ts`:
+
+```ts
+import { test } from 'node:test';
+import assert from 'node:assert';
+import { buildSnippet } from '#lib/snippet';
+
+const form: any = {
+  uuid: 'abc-123',
+  name: 'Contact',
+  honeypot: '_gotcha',
+  fields: [],
+};
+
+test('the action points at this form endpoint', () => {
+  const html = buildSnippet(form, 'https://api.example.com');
+  assert.match(html, /action="https:\/\/api\.example\.com\/f\/abc-123"/);
+});
+
+test('it posts as multipart so file inputs work', () => {
+  const html = buildSnippet(form, 'https://api.example.com');
+  assert.match(html, /method="POST"/);
+  assert.match(html, /enctype="multipart\/form-data"/);
+});
+
+test('it always includes the honeypot, hidden and untabbable', () => {
+  const html = buildSnippet(form, 'https://api.example.com');
+  assert.match(html, /name="_gotcha"/);
+  assert.match(html, /display:none/);
+  assert.match(html, /tabindex="-1"/);
+});
+
+test('the honeypot uses the form-configured name', () => {
+  const html = buildSnippet({ ...form, honeypot: 'website' }, 'https://api.example.com');
+  assert.match(html, /name="website"/);
+  assert.ok(!html.includes('name="_gotcha"'));
+});
+
+test('a schema-less form still yields a usable starter form', () => {
+  const html = buildSnippet(form, 'https://api.example.com');
+  assert.match(html, /name="name"/);
+  assert.match(html, /name="email"/);
+  assert.match(html, /<button/);
+});
+
+test('declared fields are rendered with the right input types', () => {
+  const html = buildSnippet(
+    { ...form, fields: [
+      { name: 'email', type: 'email', required: true },
+      { name: 'message', type: 'textarea' },
+      { name: 'cv', type: 'file' },
+    ] },
+    'https://api.example.com'
+  );
+  assert.match(html, /<input[^>]*type="email"[^>]*name="email"[^>]*required/);
+  assert.match(html, /<textarea[^>]*name="message"/);
+  assert.match(html, /<input[^>]*type="file"[^>]*name="cv"/);
+});
+
+test('a select renders its options', () => {
+  const html = buildSnippet(
+    { ...form, fields: [{ name: 'plan', type: 'select', options: ['free', 'pro'] }] },
+    'https://api.example.com'
+  );
+  assert.match(html, /<select[^>]*name="plan"/);
+  assert.match(html, /<option value="free">/);
+});
+
+test('field names are escaped so a crafted name cannot break out of the attribute', () => {
+  const html = buildSnippet(
+    { ...form, fields: [{ name: 'a" onfocus="alert(1)', type: 'text' }] },
+    'https://api.example.com'
+  );
+  assert.ok(!html.includes('onfocus="alert(1)"'));
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `cd form-backend && node --test test/snippet.test.ts`
+Expected: FAIL — cannot find module `#lib/snippet`.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `form-backend/lib/snippet.ts`:
+
+```ts
+import type { FormDoc } from '#lib/forms';
+
+// Field names come from an admin-set schema, but they land inside HTML attributes
+// in markup a customer pastes into their own site. Escape them.
+function attr(value: string): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+const INPUT_TYPE: Record<string, string> = {
+  email: 'email',
+  url: 'url',
+  number: 'number',
+  date: 'date',
+  rating: 'number',
+  phone: 'tel',
+  file: 'file',
+  text: 'text',
+};
+
+function renderField(def: any): string {
+  const name = attr(def.name);
+  const required = def.required ? ' required' : '';
+
+  if (def.type === 'textarea') {
+    return `  <label>${name}<br><textarea name="${name}"${required}></textarea></label>`;
+  }
+  if (def.type === 'select') {
+    const opts = (def.options || [])
+      .map((o: string) => `      <option value="${attr(o)}">${attr(o)}</option>`)
+      .join('\n');
+    return `  <label>${name}<br>\n    <select name="${name}"${required}>\n${opts}\n    </select>\n  </label>`;
+  }
+  const type = INPUT_TYPE[def.type] || 'text';
+  return `  <label>${name}<br><input type="${type}" name="${name}"${required}></label>`;
+}
+
+/**
+ * Ready-to-paste HTML for this form. Reflects the declared schema; falls back to a
+ * sensible starter form when no schema is set (which is the default, since a
+ * schema-less form accepts anything).
+ */
+export function buildSnippet(form: FormDoc, baseUrl: string): string {
+  const action = `${String(baseUrl).replace(/\/+$/, '')}/f/${attr(form.uuid)}`;
+  const honeypot = attr(form.honeypot || '_gotcha');
+
+  const defs = (form.fields || []) as any[];
+  const body = defs.length
+    ? defs.map(renderField).join('\n\n')
+    : [
+        '  <label>name<br><input type="text" name="name" required></label>',
+        '',
+        '  <label>email<br><input type="email" name="email" required></label>',
+        '',
+        '  <label>message<br><textarea name="message"></textarea></label>',
+      ].join('\n');
+
+  return [
+    `<form action="${action}" method="POST" enctype="multipart/form-data">`,
+    body,
+    '',
+    '  <!-- Bots fill this in; people never see it. Leave it in. -->',
+    `  <input name="${honeypot}" style="display:none" tabindex="-1" autocomplete="off" aria-hidden="true">`,
+    '',
+    '  <button type="submit">Send</button>',
+    '</form>',
+  ].join('\n');
+}
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `cd form-backend && node --test test/snippet.test.ts`
+Expected: PASS — 8 passing.
+
+- [ ] **Step 5: Add the endpoint to `index.ts`**
+
+Add the import and the route (it falls under the existing `/admin/api/*` auth hook):
+
+```ts
+import { buildSnippet } from '#lib/snippet';
+```
+
+```ts
+app.get('/admin/api/forms/:id/snippet', async (req, res) => {
+  const form = await resolveForm(req.params.id);
+  if (!form) return res.status(404).json({ ok: false, error: 'Form not found' });
+  res.json({ ok: true, snippet: buildSnippet(form, resolveBaseUrl(req)) });
+});
+```
+
+- [ ] **Step 6: Deploy and verify**
+
+Run: `cd form-backend && coho deploy && sleep 3`, then fetch the snippet for a real form with the admin cookie and confirm the action URL matches that form's uuid.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add form-backend/lib/snippet.ts form-backend/test/snippet.test.ts form-backend/index.ts
+git commit -m "feat(form-backend): generated copy-paste form snippet"
+```
+
+---
+
+### Task 11: Setup page
+
+**Files:**
+- Create: `form-backend/public/index.html`
+- Modify: `form-backend/index.ts`
+
+**Interfaces:**
+- Consumes: every `/admin/api/*` endpoint, plus `GET /admin/api/forms/:id/snippet`.
+- Produces: a page at `/setup/` that takes a customer from deploy to a working form.
+
+**This is a setup page, not the admin dashboard.** It does exactly four things: log in, create a form, show its endpoint and snippet, and configure notifications. It deliberately has no inbox, search, or submission browsing — email notifications make the emails the record, so that can wait for its own plan. Do not add those here.
+
+- [ ] **Step 1: Serve the page**
+
+In `form-backend/index.ts`, add the auth bypass with the others:
+
+```ts
+app.auth('/setup/*', (req, res, next) => next());
+```
+
+and, **after every API route** and before `export default app.init();`:
+
+```ts
+// The setup page is a static file. Everything it does goes through /admin/api/*,
+// which requires the session cookie, so serving the page itself is not sensitive.
+app.static({ route: '/setup', directory: '/public', default: 'index.html' });
+```
+
+- [ ] **Step 2: Write the page**
+
+Create `form-backend/public/index.html` — a single self-contained file, no build step, no CDN dependencies. It must:
+
+1. **Log in** — POST `/admin/login` with `{password}`; the cookie is set automatically. Show an error on 401, and a distinct message on 429 (rate limited) using the `Retry-After` header.
+2. **List forms** — GET `/admin/api/forms`, showing each form's name and endpoint URL.
+3. **Create a form** — POST `/admin/api/forms` with `{name}`.
+4. **Show the snippet** — GET `/admin/api/forms/:id/snippet`, in a `<pre>` with a copy button.
+5. **Configure notifications** — PATCH `/admin/api/forms/:id` with `notify.email` (`enabled`, `recipients` as a comma-separated field, `attachFiles`). Show whether `FROM_EMAIL`/provider env vars are configured by surfacing a warning if a test send fails.
+6. **Configure the allowlist** — PATCH `allowedDomains`, with help text explaining that empty means any origin, and that matching is exact so `example.com` does not cover `www.example.com`.
+
+Requirements on the page itself:
+- Responsive down to mobile; visible keyboard focus; `prefers-reduced-motion` respected.
+- Every fetch handles a non-2xx by showing the server's `error` field, never a silent failure.
+- Escape all server-provided values before inserting into the DOM — form names are admin-set but the page should not model bad practice for people copying it.
+- Match the visual language of the hosted `/thanks` page in `lib/pages.ts` so the template looks like one product.
+
+- [ ] **Step 3: Deploy and walk the whole customer path**
+
+Run: `cd form-backend && coho deploy && sleep 3`
+
+Then, in a browser at `https://<your-space>.codehooks.io/setup/`, complete the entire journey without touching curl:
+- log in with `ADMIN_PASSWORD`
+- create a form
+- copy the snippet, paste it into a local HTML file, open it, and submit with a file attached
+- confirm the notification email arrives with the attachment
+- set an allowlist entry and confirm a submission from a different origin is refused
+
+- [ ] **Step 4: Confirm the page cannot be used without logging in**
+
+With no cookie, confirm `/setup/` still loads (it is a static file) but every action fails with 401 and the page shows the login prompt rather than an empty dashboard.
+
+- [ ] **Step 5: Run the full unit suite**
+
+Run: `cd form-backend && node --test test/*.test.ts`
+
+- [ ] **Step 6: Update the README**
+
+Replace the curl-driven "Quick start" with the setup page as the primary path, keeping the curl calls as the API reference for people automating it.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add form-backend/public form-backend/index.ts form-backend/README.md
+git commit -m "feat(form-backend): setup page for form creation and notifications"
+```
+
+---
+
 ## Done when
 
 - `npm test` passes, with unit coverage on signed links, the attachment budget, spam decisions, notification composition, and both providers.
@@ -1647,3 +1934,4 @@ git commit -m "docs(form-backend): notification configuration and Brevo setup"
 - Exceeding the rate limit returns 429 with `Retry-After`.
 - A signed link downloads the file byte-identically; a tampered or expired token returns 404.
 - A provider failure leaves the delivery `pending` and the hourly job re-drives it.
+- A new customer can go from `coho deploy` to a working form **entirely through the setup page**, without running a single curl command.
