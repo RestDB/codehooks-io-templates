@@ -16,6 +16,7 @@ import { emailChannel } from '#lib/channels/email';
 import type { Channel } from '#lib/channels/types';
 import type { SendResult } from '#lib/providers/types';
 import { classify } from '#lib/delivery';
+import { verifyFileToken } from '#lib/signed-links';
 
 // Boot-time guard — a missing JWT_SECRET would make admin sessions forgeable.
 (function checkConfig() {
@@ -32,6 +33,7 @@ app.auth('/admin/login', (req, res, next) => next());
 app.auth('/admin/logout', (req, res, next) => next());
 app.auth('/f/*', (req, res, next) => next());
 app.auth('/thanks/*', (req, res, next) => next());
+app.auth('/files/*', (req, res, next) => next());
 
 // Admin API — bypass the platform API key, require our JWT cookie instead.
 app.auth('/admin/api/*', (req, res, next) => {
@@ -591,6 +593,46 @@ app.job('0 * * * *', async (req, res) => {
     { limit: 1000 }
   );
   res.end();
+});
+
+// Public, token-scoped file download for links in notification emails. The admin
+// route needs a session cookie, which an email cannot carry.
+//
+// The token grants ONE file and expires, so a leaked email exposes those files
+// until exp rather than forever. The response is still attachment + nosniff,
+// because the bytes are attacker-supplied.
+app.get('/files/:token', async (req, res) => {
+  const claims = verifyFileToken(req.params.token);
+  if (!claims) return res.status(404).json({ ok: false, error: 'Link is invalid or has expired' });
+
+  const conn = await Datastore.open();
+  const row: any = await conn.findOneOrNull('submissions', claims.sid);
+  if (!row) return res.status(404).json({ ok: false, error: 'File not found' });
+  const file = (row.files || []).find((f: any) => f.id === claims.fid);
+  if (!file) return res.status(404).json({ ok: false, error: 'File not found' });
+
+  // Obtain the stream BEFORE writing headers: once they are flushed, a failure
+  // would reach the client as a misleading 200 with an error body.
+  let stream: any;
+  try {
+    stream = await filestore.getReadStream(file.path);
+  } catch (err: any) {
+    console.error('Signed download error:', err.message);
+    return res.status(404).json({ ok: false, error: 'File not found' });
+  }
+
+  res.set('x-content-type-options', 'nosniff');
+  res.set('content-type', file.contentType || 'application/octet-stream');
+  res.set('content-disposition', `attachment; filename="${String(file.filename).replace(/["\r\n\\]/g, '')}"`);
+
+  // The platform's stream has no .pipe(); this matches codehooks-js's own app.static.
+  stream
+    .on('data', (buf: any) => res.write(buf, 'buffer'))
+    .on('end', () => res.end())
+    .on('error', (err: any) => {
+      console.error('Signed download stream error:', err.message);
+      res.end();
+    });
 });
 
 export default app.init();
