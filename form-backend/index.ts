@@ -15,7 +15,7 @@ import { randomUUID } from 'crypto';
 import { emailChannel } from '#lib/channels/email';
 import type { Channel } from '#lib/channels/types';
 import type { SendResult } from '#lib/providers/types';
-import { classify } from '#lib/delivery';
+import { classify, planRetry } from '#lib/delivery';
 import { verifyFileToken } from '#lib/signed-links';
 import { buildSnippet } from '#lib/snippet';
 
@@ -123,6 +123,7 @@ app.get('/admin/api/forms/:id/deliveries', async (req, res) => {
   res.json({
     ok: true,
     data: (rows as any[]).map((r) => ({
+      _id: r._id,
       channel: r.channel,
       target: r.target,
       status: r.status,
@@ -132,6 +133,36 @@ app.get('/admin/api/forms/:id/deliveries', async (req, res) => {
       sentAt: r.sentAt,
     })),
   });
+});
+
+// Re-drive ONE delivery row, including a `failed` one. Specified by the design
+// ("Delivery, retries and failure") and the only way back out of `failed`: the
+// hourly job redrives `pending` rows only, so without this a fixable
+// misconfiguration — an unset BASE_URL, a rotated provider key — permanently
+// discarded every notification queued before it was noticed.
+//
+// Under /admin/api/*, so it carries the same session-cookie auth as every other
+// admin route.
+app.post('/admin/api/deliveries/:id/retry', async (req, res) => {
+  const conn = await Datastore.open();
+  let row: any = null;
+  try {
+    row = await conn.findOneOrNull('deliveries', req.params.id);
+  } catch {
+    // A malformed _id makes the driver throw rather than return null.
+    row = null;
+  }
+  if (!row) return res.status(404).json({ ok: false, error: 'Delivery not found' });
+
+  const decision = planRetry(row);
+  if (!decision.allowed) {
+    return res.status(409).json({ ok: false, error: decision.reason });
+  }
+
+
+  await conn.updateOne('deliveries', req.params.id, { $set: decision.patch });
+  await conn.enqueue('deliver', { deliveryId: req.params.id });
+  res.json({ ok: true, data: { _id: req.params.id, status: 'pending' } });
 });
 
 app.patch('/admin/api/forms/:id', async (req, res) => {
@@ -570,20 +601,7 @@ app.worker('deliver', async (req, res) => {
   // x-forwarded-host or host header, so it would resolve to '' and every signed
   // download link in the email would come out relative and broken. BASE_URL is
   // therefore required for notifications, not merely a nice-to-have fallback.
-  const configuredBaseUrl = process.env.BASE_URL;
-  if (!configuredBaseUrl) {
-    console.error('Cannot deliver notification: BASE_URL is not configured');
-    await conn.updateOne('deliveries', deliveryId, {
-      $set: {
-        status: 'failed',
-        attempts: (row.attempts || 0) + 1,
-        lastError: 'BASE_URL is not configured',
-        lastAttemptAt: new Date().toISOString(),
-      },
-    });
-    return res.end();
-  }
-
+  //
   // A channel is expected to catch its own errors and resolve a SendResult, but a
   // provider misconfiguration (e.g. no EMAIL_PROVIDER credentials) throws
   // SYNCHRONOUSLY by design (see lib/providers/index.ts, Task 5: "a misconfiguration
@@ -592,13 +610,25 @@ app.worker('deliver', async (req, res) => {
   // misconfiguration (the operator sets the missing key) then self-heals through
   // the hourly redrive instead of permanently discarding every queued
   // notification; a genuinely permanent one still terminates once attempts run out.
+  //
+  // A missing BASE_URL takes the SAME path, and deliberately so: it is the single
+  // most likely first-run misconfiguration, and hard-setting `failed` here made it
+  // unrecoverable — only `pending` rows are redriven, so setting BASE_URL
+  // afterwards brought nothing back. Routed through classify() it is transient,
+  // so the hourly redrive delivers the backlog once the operator fixes the config.
+  const configuredBaseUrl = process.env.BASE_URL;
   let result: SendResult;
-  try {
-    result = await channel.deliver({
-      form, submission, target: row.target, baseUrl: configuredBaseUrl.replace(/\/+$/, ''),
-    });
-  } catch (err: any) {
-    result = { ok: false, error: err.message };
+  if (!configuredBaseUrl) {
+    console.error('Cannot deliver notification: BASE_URL is not configured');
+    result = { ok: false, error: 'BASE_URL is not configured' };
+  } else {
+    try {
+      result = await channel.deliver({
+        form, submission, target: row.target, baseUrl: configuredBaseUrl.replace(/\/+$/, ''),
+      });
+    } catch (err: any) {
+      result = { ok: false, error: err.message };
+    }
   }
 
   const outcome = classify(result, row.attempts || 0, MAX_SEND_ATTEMPTS);

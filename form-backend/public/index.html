@@ -311,6 +311,12 @@
   .delivery-row.status-failed .delivery-top strong { color: var(--danger); }
   .delivery-row.status-pending .delivery-top strong { color: var(--warn); }
 
+  .delivery-retry {
+    margin-top: 0.35rem;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.78rem;
+  }
+
   .delivery-error {
     color: var(--danger);
     background: var(--danger-bg);
@@ -878,7 +884,7 @@
       refreshBtn.textContent = 'Refreshing…';
       api('/admin/api/forms/' + encodeURIComponent(form._id) + '/deliveries')
         .then(function (body) {
-          renderDeliveries(list, empty, body.data || []);
+          renderDeliveries(list, empty, body.data || [], msg, load);
         })
         .catch(function (err) {
           handleAuthFailure(err, function () { setMsg(msg, err.message, 'error'); });
@@ -893,7 +899,7 @@
     load();
   }
 
-  function renderDeliveries(list, empty, rows) {
+  function renderDeliveries(list, empty, rows, msg, reload) {
     list.textContent = '';
     empty.hidden = rows.length !== 0;
 
@@ -928,6 +934,33 @@
       if (row.created) metaText += ' · ' + row.created;
       meta.textContent = metaText;
       li.appendChild(meta);
+
+      // The way back out of `failed`. The hourly redrive only picks up `pending`
+      // rows, so without this a notification queued before BASE_URL (or a
+      // provider key) was set could never be recovered from the UI.
+      // Deliberately absent on `sent` and `skipped`: the API refuses both, and
+      // retrying a sent row would mean a duplicate email.
+      if (row._id && (row.status === 'failed' || row.status === 'pending')) {
+        var retryBtn = document.createElement('button');
+        retryBtn.type = 'button';
+        retryBtn.className = 'secondary delivery-retry';
+        retryBtn.textContent = 'Retry now';
+        retryBtn.addEventListener('click', function () {
+          retryBtn.disabled = true;
+          retryBtn.textContent = 'Retrying…';
+          api('/admin/api/deliveries/' + encodeURIComponent(row._id) + '/retry', { method: 'POST' })
+            .then(function () {
+              setMsg(msg, 'Queued for another attempt. Refresh in a moment to see the result.', 'ok');
+              reload();
+            })
+            .catch(function (err) {
+              handleAuthFailure(err, function () { setMsg(msg, err.message, 'error'); });
+              retryBtn.disabled = false;
+              retryBtn.textContent = 'Retry now';
+            });
+        });
+        li.appendChild(retryBtn);
+      }
 
       list.appendChild(li);
     });

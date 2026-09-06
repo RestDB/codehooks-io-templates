@@ -264,6 +264,15 @@ retried. `GET /admin/api/forms/:id/deliveries` shows the last 5 attempts per for
 `status`, `attempts` and `lastError`, so a missing email can be diagnosed without dropping to
 provider-side logs.
 
+A missing `BASE_URL` is treated as a **transient** failure, not a permanent one: it is the most
+likely first-run misconfiguration, and hard-failing it would mean every notification queued before
+you noticed was lost for good. Set `BASE_URL` and the hourly job delivers the backlog.
+
+Anything that did reach `failed` can still be re-driven: **Retry now** in the delivery panel on
+`/setup/`, or `POST /admin/api/deliveries/:id/retry`. The retry restores the attempt budget and
+re-queues the row. A `sent` row is refused (it would duplicate the email) and so is a `skipped` one
+(terminal by design — the channel had nothing to do).
+
 ### Deliverability
 
 This template sends through **your own** provider account under **your own** sender address — it
