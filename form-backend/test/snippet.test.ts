@@ -25,6 +25,7 @@ test('it always includes the honeypot, hidden and untabbable', () => {
   assert.match(html, /name="_gotcha"/);
   assert.match(html, /display:none/);
   assert.match(html, /tabindex="-1"/);
+  assert.match(html, /autocomplete="off"/);
 });
 
 test('the honeypot uses the form-configured name', () => {
@@ -69,4 +70,27 @@ test('field names are escaped so a crafted name cannot break out of the attribut
     'https://api.example.com'
   );
   assert.ok(!html.includes('onfocus="alert(1)"'));
+});
+
+test('field names containing < > & are escaped', () => {
+  const html = buildSnippet(
+    { ...form, fields: [{ name: '<img src=x onerror="alert(1)">', type: 'text' }] },
+    'https://api.example.com'
+  );
+  assert.ok(!html.includes('<img src=x'), 'raw tag must not appear');
+  assert.ok(html.includes('&lt;img'), 'must appear escaped');
+});
+
+test('select options are escaped as thoroughly as field names', () => {
+  const html = buildSnippet(
+    { ...form, fields: [{ name: 'plan', type: 'select', options: ['<b>free</b>', 'a" onfocus="x'] }] },
+    'https://api.example.com'
+  );
+  assert.ok(!html.includes('<b>free</b>'), 'raw option markup must not appear');
+  assert.ok(!html.includes('onfocus="x"'), 'option must not break out of the attribute');
+});
+
+test('a hostile base URL cannot break out of the action attribute', () => {
+  const html = buildSnippet(form, 'https://evil.test" onclick="alert(1)');
+  assert.ok(!html.includes('onclick="alert(1)"'), 'base URL must be escaped');
 });

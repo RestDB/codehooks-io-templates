@@ -44,7 +44,7 @@ function renderField(def: any): string {
  * schema-less form accepts anything).
  */
 export function buildSnippet(form: FormDoc, baseUrl: string): string {
-  const action = `${String(baseUrl).replace(/\/+$/, '')}/f/${attr(form.uuid)}`;
+  const action = attr(`${String(baseUrl).replace(/\/+$/, '')}/f/${form.uuid}`);
   const honeypot = attr(form.honeypot || '_gotcha');
 
   const defs = (form.fields || []) as any[];
