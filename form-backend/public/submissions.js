@@ -520,6 +520,7 @@ function buildNotesBlock(sub) {
   const addRow = el('div', 'flex gap-1.5 pt-1');
   const input = document.createElement('input');
   input.type = 'text';
+  input.autocomplete = 'off';
   input.className = 'field text-sm';
   input.placeholder = 'Add a note';
   input.setAttribute('aria-label', 'Add a note');

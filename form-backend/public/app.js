@@ -144,6 +144,8 @@ function openNewFormPrompt() {
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'field';
+  // Browser history from other sites is noise in a field like this.
+  input.autocomplete = 'off';
   input.placeholder = 'Contact form';
   input.setAttribute('aria-label', 'Form name');
 

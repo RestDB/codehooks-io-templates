@@ -362,6 +362,9 @@ function buildNotifySection(form) {
   recipientsInput.type = 'text';
   recipientsInput.className = 'field';
   recipientsInput.placeholder = 'you@example.com, team@example.com';
+  // Not autocomplete='email': this is the form's notification list, not the
+  // signed-in person's own address, so browser-remembered addresses are noise.
+  recipientsInput.autocomplete = 'off';
   recipientsInput.value = (notify.recipients || []).join(', ');
   recipientsField.appendChild(recipientsInput);
   notifyForm.appendChild(recipientsField);
@@ -373,6 +376,7 @@ function buildNotifySection(form) {
   subjectInput.type = 'text';
   subjectInput.className = 'field';
   subjectInput.placeholder = 'New submission: {{form}}';
+  subjectInput.autocomplete = 'off';
   subjectInput.value = notify.subjectTemplate || '';
   subjectField.appendChild(subjectInput);
 
