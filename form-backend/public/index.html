@@ -106,7 +106,7 @@
       <button class="border-b-2 border-transparent px-2 pb-2 pt-1 text-sm text-muted transition hover:text-body aria-selected:border-primary aria-selected:font-medium aria-selected:text-ink" role="tab" id="tab-settings" aria-selected="false" type="button">Settings</button>
     </div>
 
-    <div class="flex items-center gap-1.5 border-y border-cream px-3 py-2">
+    <div class="flex items-center gap-1.5 border-y border-cream px-3 py-2" id="filter-bar">
       <div class="relative min-w-0 flex-1">
         <svg class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
         <input type="search" id="q" class="field pl-8" placeholder="Search" aria-label="Search submissions">
@@ -125,7 +125,7 @@
 
     <div class="min-h-0 flex-1 overflow-y-auto" id="rows"></div>
 
-    <div class="flex items-center justify-between border-t border-cream bg-paper px-3 py-2">
+    <div class="flex items-center justify-between border-t border-cream bg-paper px-3 py-2" id="list-foot">
       <span class="font-mono text-[11px] tabular-nums text-muted" id="count"></span>
       <span class="flex gap-1">
         <button type="button" id="prev" class="btn btn-quiet px-1.5 py-1" aria-label="Previous page">

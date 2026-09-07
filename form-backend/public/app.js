@@ -26,8 +26,13 @@ const tabSettings = document.getElementById('tab-settings');
 const recordEl = document.getElementById('record');
 const paneSettings = document.getElementById('pane-settings');
 const rowsEl = document.getElementById('rows');
-const filterRows = document.querySelectorAll('.filters');
-const listFoot = document.querySelector('.list-foot');
+// Bind by id, not by utility class. These were `.filters` and `.list-foot`
+// until the UI moved to Tailwind, at which point both selectors silently matched
+// nothing: listFoot became null and threw on the Settings tab, and the filter bar
+// stopped hiding. Utility classes change whenever the design does; ids are the
+// contract every view module already binds to.
+const filterRows = [document.getElementById('filter-bar'), document.getElementById('dates')].filter(Boolean);
+const listFoot = document.getElementById('list-foot');
 
 // Every api call funnels through here so a rejection becomes a toast rather
 // than an unhandled promise rejection. Returns undefined on failure.
