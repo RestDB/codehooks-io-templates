@@ -20,8 +20,11 @@ async function call(path, options = {}) {
     throw new Error('The server returned a response this page could not read.');
   }
 
-  if (!res.ok || payload.ok === false) {
-    throw new Error(payload && payload.error ? String(payload.error) : 'Request failed.');
+  // The platform answers an unhandled exception with HTTP 200 and {fatal: true}.
+  // All three clauses are needed: !res.ok for network errors, payload.ok for
+  // explicit failures, and payload.fatal for crashed routes.
+  if (!res.ok || payload.ok === false || payload.fatal === true) {
+    throw new Error(payload && payload.error ? String(payload.error) : (payload && payload.text ? String(payload.text) : ('Request failed (' + res.status + ')')));
   }
   return payload;
 }
