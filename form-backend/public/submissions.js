@@ -16,7 +16,7 @@
 import { state, refreshForms } from './app.js';
 import { listSubmissions, patchSubmission, getSubmission, deleteSubmission, fileUrl, exportUrl } from './api.js';
 import { el, clear, toast, setBusy, confirmInline, emptyState } from './ui.js';
-import { pickWho, pickSnippet, relativeTime, buildQuery, rangeLabel, actionsFor, formatBytes } from './format.js';
+import { pickWho, pickSnippet, relativeTime, buildQuery, rangeLabel, actionsFor, formatBytes, mailtoHref } from './format.js';
 
 const rowsEl = document.getElementById('rows');
 const countEl = document.getElementById('count');
@@ -206,6 +206,16 @@ async function markRead(sub, btn) {
       // cleared and rebuilt `#rows`, detaching `btn`. Resolve the row fresh.
       paintRowById(sub._id, previous);
       toast(message, 'error');
+      // The record pane may already be showing this submission as "read" —
+      // either `onSubmissionSelected()` trusted this same optimistic flip
+      // over a still-"new" GET response, or the success path below already
+      // synced it. A failed PATCH means the server never agreed; revert the
+      // pane too, or it keeps showing "read" with the wrong action buttons
+      // while the row right next to it, and the server, both say "new".
+      if (currentSub && currentSub._id === sub._id && currentSub.status !== previous) {
+        currentSub.status = previous;
+        renderRecord();
+      }
     }
   );
 
@@ -511,11 +521,16 @@ function buildActions(sub, fields, confirmHost) {
   wrap.appendChild(star);
 
   const email = pickEmail(sub.data, fields);
-  if (email) {
+  const replyHref = mailtoHref(email);
+  if (replyHref) {
     // A real mailto: link, not a send feature — composing and sending mail to
-    // an attacker-controlled address is deliberately out of scope.
+    // an attacker-controlled address is deliberately out of scope. The
+    // address itself is attacker-controlled too — mailtoHref() refuses one
+    // carrying a query string (a `?subject=&body=` phishing payload aimed at
+    // whoever clicks Reply) and percent-encodes the rest, so no raw `?`/`&`
+    // ever reaches this href.
     const reply = el('a', 'btn btn-primary', 'Reply');
-    reply.href = 'mailto:' + email;
+    reply.href = replyHref;
     wrap.appendChild(reply);
   }
 
@@ -626,9 +641,16 @@ function requestDelete(sub, fields, host) {
     // confirmInline's own try/catch surfaces a thrown error inline and
     // leaves the host open — no local try/catch needed here.
     await deleteSubmission(sub._id);
-    currentSub = null;
+    // The user may have selected a different submission while this DELETE
+    // was in flight — the same guard applyPatch() uses. Only clear the pane
+    // if it is still the one just removed; the list still needs refreshing
+    // either way, since the deleted row must disappear regardless of what
+    // the pane is currently showing.
+    if (currentSub && currentSub._id === sub._id) {
+      currentSub = null;
+      renderRecord();
+    }
     await fetchAndRender();
-    renderRecord();
     toast('Submission deleted.');
     await refreshForms();
   });

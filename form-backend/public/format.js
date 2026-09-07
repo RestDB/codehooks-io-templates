@@ -84,6 +84,24 @@ export function pickSnippet(data, fields) {
   return best;
 }
 
+// An address the submitter typed is attacker-controlled: the person filling
+// in a public contact form can put a `?subject=...&body=...` query string on
+// the end of it. A bare `'mailto:' + email` lets that ride straight into the
+// href, opening a pre-composed message in the *operator's* mail client that
+// looks like it came from the sender — a phishing vector aimed at whoever
+// clicks Reply, not at the person who typed the address. Refuse outright on
+// the characters that matter (a mangled address is worse mailed than not
+// offered at all), and percent-encode what's left as a second, independent
+// layer — so nothing this function returns can ever carry a raw `?` or `&`,
+// even for a separator neither this check nor the field validators anticipated.
+const MAILTO_UNSAFE = /[?&#\s]/;
+
+export function mailtoHref(email) {
+  const s = typeof email === 'string' ? email.trim() : '';
+  if (!s || MAILTO_UNSAFE.test(s)) return null;
+  return 'mailto:' + encodeURIComponent(s);
+}
+
 export function formatBytes(n) {
   const bytes = Number(n);
   if (!Number.isFinite(bytes) || bytes < 0) return '';
@@ -129,7 +147,10 @@ export function actionsFor(status) {
   if (s === 'spam') {
     out.push({ label: 'Not spam', next: 'new', kind: 'normal' });
   } else {
-    if (s !== 'read') out.push({ label: 'Mark read', next: 'read', kind: 'normal' });
+    // 'archived' gets its own "Move to inbox" label for this same
+    // new/read transition below — "Mark read" here as well would be two
+    // buttons for one transition.
+    if (s !== 'read' && s !== 'archived') out.push({ label: 'Mark read', next: 'read', kind: 'normal' });
     if (s !== 'archived') out.push({ label: 'Archive', next: 'archived', kind: 'normal' });
     out.push({ label: 'Spam', next: 'spam', kind: 'normal' });
   }

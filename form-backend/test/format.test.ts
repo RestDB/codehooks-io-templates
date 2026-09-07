@@ -9,6 +9,7 @@ import {
   rangeLabel,
   buildQuery,
   actionsFor,
+  mailtoHref,
 } from '../public/format.js';
 
 const NOW = new Date('2026-09-06T21:00:00.000Z');
@@ -194,4 +195,69 @@ test('actionsFor always offers delete', () => {
 test('actionsFor tolerates an unknown status rather than throwing', () => {
   const out = actionsFor('wat');
   assert.ok(Array.isArray(out) && out.length > 0);
+});
+
+test('actionsFor never offers two buttons for the same transition', () => {
+  for (const s of ['new', 'read', 'archived', 'spam']) {
+    const nexts = actionsFor(s)
+      .filter((a) => a.next !== null)
+      .map((a) => a.next);
+    assert.equal(nexts.length, new Set(nexts).size, `actionsFor('${s}') duplicated a transition: ${nexts}`);
+  }
+});
+
+test('actionsFor offers exactly one way back to the inbox from archived, labelled "Move to inbox"', () => {
+  const toRead = actionsFor('archived').filter((a) => a.next === 'read');
+  assert.equal(toRead.length, 1);
+  assert.equal(toRead[0].label, 'Move to inbox');
+});
+
+// --- mailtoHref -------------------------------------------------------------
+// The submitter's address is attacker-controlled: the person filling in a
+// public contact form can type a `?subject=...&body=...` query string onto
+// the end of it. A bare `'mailto:' + email` lets that ride straight into the
+// href, opening a pre-composed message in the *operator's* mail client that
+// looks like it came from the sender — a phishing vector aimed at whoever
+// clicks Reply.
+
+test('mailtoHref refuses an address carrying a mailto query string (header injection)', () => {
+  const malicious = 'boss@example.com?subject=URGENT&body=Please+wire+50000+today';
+  assert.equal(mailtoHref(malicious), null);
+});
+
+test('the naive concatenation this replaces really was exploitable', () => {
+  // Not testing mailtoHref here — this documents the vulnerability the fix
+  // above addresses, so the regression stays legible without re-reading the
+  // finding: the pre-fix code was exactly `'mailto:' + email`.
+  const malicious = 'boss@example.com?subject=URGENT&body=Please+wire+50000+today';
+  const vulnerableHref = 'mailto:' + malicious;
+  assert.ok(vulnerableHref.includes('?') && vulnerableHref.includes('&'));
+});
+
+test('mailtoHref refuses an address carrying whitespace or a fragment', () => {
+  assert.equal(mailtoHref('boss@example.com#x'), null);
+  assert.equal(mailtoHref('boss@example.com\nBcc:evil@example.com'), null);
+  assert.equal(mailtoHref('boss @example.com'), null);
+});
+
+test('mailtoHref never returns a value with a raw ? or & — even for edge-case addresses', () => {
+  const addresses = ['boss@example.com?x=1', 'a&b@example.com', 'plain@example.com', '', undefined, null];
+  for (const address of addresses) {
+    const href = mailtoHref(address as any);
+    if (href !== null) {
+      assert.ok(!href.includes('?'), address + ' -> ' + href);
+      assert.ok(!href.includes('&'), address + ' -> ' + href);
+    }
+  }
+});
+
+test('mailtoHref builds an encoded mailto: link for an ordinary address', () => {
+  assert.equal(mailtoHref('person@example.com'), 'mailto:person%40example.com');
+});
+
+test('mailtoHref returns null for empty or non-string input', () => {
+  assert.equal(mailtoHref(''), null);
+  assert.equal(mailtoHref('   '), null);
+  assert.equal(mailtoHref(undefined as any), null);
+  assert.equal(mailtoHref(null as any), null);
 });
