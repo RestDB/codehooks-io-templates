@@ -58,19 +58,18 @@ coho info
 This prints your API endpoints and the environment variables currently set on the space. Note the
 endpoint — you need it in the next step, and this is why `coho info` comes *before* deploying.
 
-### 3. Set the required secrets
+### 3. Set the two required secrets
 
 ```bash
 coho set-env JWT_SECRET "$(openssl rand -hex 32)" --encrypted
 coho set-env ADMIN_PASSWORD 'choose-a-strong-password' --encrypted
-coho set-env BASE_URL 'https://your-space.codehooks.io'
 ```
 
-`JWT_SECRET` signs both admin sessions and the file-download links in notification emails.
-`ADMIN_PASSWORD` is the entire admin credential — there is no user list and no password reset.
-`BASE_URL` is the endpoint from step 2, with no trailing slash.
+That is all two of them. `JWT_SECRET` signs admin sessions and the file-download links in
+notification emails. `ADMIN_PASSWORD` is the entire admin credential — there is no user list and no
+password reset.
 
-**Use `--encrypted` for both secrets.** Without it the values are readable from the CLI.
+**Use `--encrypted` for both.** Without it the values are readable from the CLI.
 
 ### 4. Deploy
 
@@ -105,8 +104,14 @@ Notifications need an email provider on the deployment. With Brevo:
 coho set-env EMAIL_PROVIDER brevo
 coho set-env BREVO_API_KEY 'your-api-key' --encrypted
 coho set-env FROM_EMAIL 'forms@yourdomain.com'
+coho set-env BASE_URL 'https://your-space.codehooks.io'   # the endpoint from step 2
 coho deploy
 ```
+
+`BASE_URL` belongs here rather than with the secrets above because **only notifications need it**.
+Every request-handling route works it out from the incoming request; a notification is sent from a
+background worker, which has no request to work from, so the signed download links in the email
+have nothing to build on without it.
 
 Then in the form's **Settings** tab, tick *Send an email when this form receives a submission* and
 list the recipients.
