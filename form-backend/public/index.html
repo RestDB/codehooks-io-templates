@@ -70,7 +70,10 @@
 </div>
 
 <!-- app -->
-<div class="grid h-screen grid-cols-1 lg:grid-cols-[15rem_22rem_minmax(0,1fr)]" id="app" hidden>
+<!-- The middle column carries the submissions list. On the Settings tab that list is
+     hidden, so the column collapses to zero rather than leaving 22rem of blank white
+     beside the settings pane. -->
+<div class="grid h-screen grid-cols-1 lg:grid-cols-[15rem_22rem_minmax(0,1fr)] lg:data-[tab=settings]:grid-cols-[15rem_minmax(0,1fr)]" id="app" data-tab="submissions" hidden>
 
   <nav class="flex flex-col gap-5 border-b border-cream bg-sunk p-3 lg:border-b-0 lg:border-r" aria-label="Forms">
     <div class="flex items-center gap-2 px-1 pt-1">
@@ -100,7 +103,7 @@
     </div>
   </nav>
 
-  <section class="flex min-w-0 flex-col border-b border-cream bg-white lg:border-b-0 lg:border-r" aria-label="Submissions">
+  <section class="flex min-w-0 flex-col border-b border-cream bg-white lg:border-b-0 lg:border-r" id="list-pane" aria-label="Submissions">
     <div class="flex gap-1 px-3 pt-2" role="tablist">
       <button class="border-b-2 border-transparent px-2 pb-2 pt-1 text-sm text-muted transition hover:text-body aria-selected:border-primary aria-selected:font-medium aria-selected:text-ink" role="tab" id="tab-submissions" aria-selected="true" type="button">Submissions</button>
       <button class="border-b-2 border-transparent px-2 pb-2 pt-1 text-sm text-muted transition hover:text-body aria-selected:border-primary aria-selected:font-medium aria-selected:text-ink" role="tab" id="tab-settings" aria-selected="false" type="button">Settings</button>

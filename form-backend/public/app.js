@@ -36,6 +36,7 @@ const filterBar = document.getElementById('filter-bar');
 const datesToggle = document.getElementById('dates-toggle');
 const datesRow = document.getElementById('dates');
 const listFoot = document.getElementById('list-foot');
+const listPane = document.getElementById('list-pane');
 
 // Every api call funnels through here so a rejection becomes a toast rather
 // than an unhandled promise rejection. Returns undefined on failure.
@@ -241,6 +242,15 @@ function setTab(tab) {
 
   tabSubmissions.setAttribute('aria-selected', submissionsActive ? 'true' : 'false');
   tabSettings.setAttribute('aria-selected', submissionsActive ? 'false' : 'true');
+
+  // Drives the grid: on Settings the list column collapses instead of sitting
+  // empty. Toggling `hidden` alone left 22rem of blank white beside the pane.
+  appEl.setAttribute('data-tab', tab);
+
+  // Hide the whole list SECTION, not just its children — it is a grid item, so
+  // leaving it in place kept a stretched empty column and squeezed the settings
+  // pane into the rail's width.
+  listPane.hidden = !submissionsActive;
 
   recordEl.hidden = !submissionsActive;
   paneSettings.hidden = submissionsActive;
