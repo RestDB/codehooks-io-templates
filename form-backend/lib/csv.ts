@@ -18,10 +18,22 @@ function escapeCell(value: unknown): string {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+// `created` and `status` are admin-owned export columns (the real submission
+// timestamp and triage status), not submitted data. A submission can carry a
+// field literally named "status" or "created" — any input's `name` attribute
+// is submitter-controlled — so those two names are excluded here rather than
+// collected as data columns. Excluding them stops the export header from
+// duplicating ("created,status,name,status,created"); the caller must still
+// build each row with the admin fields applied AFTER `...r.data`, so a
+// same-named submitted value can never overwrite the real one (see index.ts's
+// export route).
+const RESERVED_COLUMNS = new Set(['created', 'status']);
+
 export function collectColumns(rows: Array<{ data: Record<string, string> }>): string[] {
   const seen: string[] = [];
   for (const row of rows) {
     for (const key of Object.keys(row.data || {})) {
+      if (RESERVED_COLUMNS.has(key)) continue;
       if (!seen.includes(key)) seen.push(key);
     }
   }

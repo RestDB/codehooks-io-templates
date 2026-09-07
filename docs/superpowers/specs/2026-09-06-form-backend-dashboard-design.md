@@ -130,7 +130,7 @@ replace it.
 | `--star` | `#B45309` | starred only |
 
 Deep teal rather than notification-blue: this is an archive of correspondence received from
-strangers, and the accent should read as archival ink rather than as an alert. Status rides a **3px
+strangers, and the accent should read as archival ink rather than as an alert. Status rides a **2px
 left edge on a list row**, never a badge — `new` takes the accent edge and a heavier name, `read`
 takes neither, `archived` recedes into muted text, `spam` takes the red edge and muted text. Two
 colours in the list, total.
@@ -267,5 +267,5 @@ Nothing here loosens the existing posture, and two things need saying explicitly
 | ES modules fail to load on the platform | Verified before design: `.js` serves as `application/javascript`; `.mjs` 404s, so no file uses it |
 | Counts shown are wrong | Counts come from count queries, never from the drifting `stats.total` |
 | Untrusted content escapes into the DOM | `textContent` only; a review gate on any `innerHTML` |
-| Three panes are unusable on a phone | Rail collapses to a select and panes stack below 1040px |
+| Three panes are unusable on a phone | Rail collapses to the `dropdown()` listbox and panes stack below the `lg` breakpoint (1024px) |
 | The page grows into another 2,000-line file | Eight files, each with one responsibility, split at design time rather than after |

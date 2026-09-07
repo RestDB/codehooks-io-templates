@@ -6,6 +6,7 @@ import {
   pickSnippet,
   formatBytes,
   formatCount,
+  railBadgeText,
   rangeLabel,
   buildQuery,
   actionsFor,
@@ -142,6 +143,25 @@ test('formatBytes never renders NaN for junk', () => {
 test('formatCount marks a capped count rather than lying', () => {
   assert.equal(formatCount(214, true), '214');
   assert.equal(formatCount(5000, false), '5000+');
+});
+
+// --- railBadgeText: the rail badge decision, in the three states a form's
+// unread count can arrive in -------------------------------------------
+
+test('railBadgeText renders nothing for a genuinely zero count', () => {
+  assert.equal(railBadgeText(0, true), null);
+});
+
+test('railBadgeText renders nothing for a failed count query (0, inexact)', () => {
+  assert.equal(railBadgeText(0, false), null);
+});
+
+test('railBadgeText renders a capped count as "999+"', () => {
+  assert.equal(railBadgeText(999, false), '999+');
+});
+
+test('railBadgeText renders a real positive count as-is', () => {
+  assert.equal(railBadgeText(17, true), '17');
 });
 
 test('rangeLabel describes the visible window', () => {

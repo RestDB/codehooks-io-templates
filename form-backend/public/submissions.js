@@ -219,13 +219,18 @@ async function markRead(sub, btn) {
     }
   );
 
-  // The rail badge (`newCount`) is server-derived and lives in app.js's
-  // `state`, rendered by app.js's own (unexported) rail renderer. Rather than
-  // reach into that module's internals, resync through the same public
-  // `refreshForms()` app.js already exposes and already guards — it re-fetches
-  // the true count rather than guessing at a decrement that could drift under
-  // a second admin session.
+  // Same treatment applyPatch() gives every other status change: resync the
+  // list (its rows AND its total/footer — under the `New` filter this read
+  // row no longer belongs in the page at all) and the rail badge, rather than
+  // leaving read-on-select as the one status transition that only patches the
+  // row and the badge. The rail badge (`newCount`) is server-derived and lives
+  // in app.js's `state`, rendered by app.js's own (unexported) rail renderer;
+  // rather than reach into that module's internals, resync through the same
+  // public `refreshForms()` app.js already exposes and already guards — it
+  // re-fetches the true count rather than guessing at a decrement that could
+  // drift under a second admin session.
   if (ok) {
+    await refreshListPreservingSelection();
     await refreshForms();
     // This fires in the same click that opens the record pane, and the two
     // requests race: `onSubmissionSelected`'s getSubmission() can resolve

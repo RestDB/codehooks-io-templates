@@ -197,3 +197,41 @@ test('GET submissions: the search path narrows by data content and reports exact
   assert.equal(res.body.exact, true);
   assert.deepEqual(new Set(res.body.data.map((d: any) => d._id)), new Set(['m1', 'm3']));
 });
+
+// --- date range: `to` is inclusive of the whole day it names -----------------
+// The dashboard sends bare `YYYY-MM-DD` values for both `from` and `to`, and
+// `created` is stored as a full ISO timestamp. `from` (>=) already includes
+// the whole day for free — a bare date sorts before any timestamp on that
+// day. `to` (<=) does not: a bare date sorts before every timestamp on that
+// day except exact midnight, so without normalising it, a submission made at
+// 14:30 on the `to` day is wrongly excluded from both the rows and `total`.
+
+test('GET submissions: a bare `to` date includes a submission made midday on that date', async () => {
+  const subs = [
+    submission('boundary', { created: '2026-09-06T14:30:00.000Z' }),
+  ];
+  const res = await callList({ forms: [FORM], submissions: subs }, { from: '2026-09-05', to: '2026-09-06' });
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.total, 1);
+  assert.deepEqual(res.body.data.map((d: any) => d._id), ['boundary']);
+});
+
+test('GET submissions: a bare `to` date excludes a submission made the following day', async () => {
+  const subs = [
+    submission('next-day', { created: '2026-09-07T00:00:01.000Z' }),
+  ];
+  const res = await callList({ forms: [FORM], submissions: subs }, { from: '2026-09-05', to: '2026-09-06' });
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.total, 0);
+  assert.deepEqual(res.body.data, []);
+});
+
+test('GET submissions: a bare `from` date already includes a submission made midday on that date', async () => {
+  const subs = [
+    submission('from-boundary', { created: '2026-09-05T14:30:00.000Z' }),
+  ];
+  const res = await callList({ forms: [FORM], submissions: subs }, { from: '2026-09-05', to: '2026-09-06' });
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.total, 1);
+  assert.deepEqual(res.body.data.map((d: any) => d._id), ['from-boundary']);
+});

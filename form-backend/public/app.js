@@ -4,9 +4,9 @@
 
 import { login, logout, listForms, createForm } from './api.js';
 import { el, clear, toast, setBusy, openModal, closeModal, modalError, dropdown } from './ui.js';
-import { relativeTime, formatCount } from './format.js';
+import { relativeTime, railBadgeText } from './format.js';
 import { initList } from './submissions.js';
-import { initSettings } from './settings.js';
+import { initSettings, renderSettings } from './settings.js';
 
 export const state = { forms: [], formId: null, tab: 'submissions' };
 
@@ -57,14 +57,6 @@ function dispatchFormChanged() {
   window.dispatchEvent(new CustomEvent('form-changed'));
 }
 
-// The one place newCount/newCountExact turn into what the rail shows. A
-// failed count query reports {newCount: 0, newCountExact: false} — that must
-// never render as a confident "0", so it renders no badge at all.
-function badgeText(form) {
-  if (form.newCountExact === false && form.newCount === 0) return null;
-  return formatCount(form.newCount, form.newCountExact);
-}
-
 function buildRailItem(form) {
   const btn = el('button', 'flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-body transition hover:bg-white/70 aria-[current=true]:bg-white aria-[current=true]:font-medium aria-[current=true]:text-ink aria-[current=true]:shadow-sm');
   btn.type = 'button';
@@ -72,11 +64,9 @@ function buildRailItem(form) {
   btn.setAttribute('aria-current', current ? 'true' : 'false');
   btn.appendChild(el('span', null, form.name));
 
-  const text = badgeText(form);
+  const text = railBadgeText(form.newCount, form.newCountExact);
   if (text !== null) {
-    const badge = el('span', 'chip', text);
-    badge.setAttribute('data-zero', text === '0' ? 'true' : 'false');
-    btn.appendChild(badge);
+    btn.appendChild(el('span', 'chip', text));
   }
 
   btn.addEventListener('click', () => selectForm(form._id));
@@ -261,6 +251,13 @@ function setTab(tab) {
   // customer had asked for it.
   filterBar.hidden = !submissionsActive;
   datesRow.hidden = !submissionsActive || datesToggle.getAttribute('aria-expanded') !== 'true';
+
+  // settings.js only fetches (snippet, deliveries) while its own `form-changed`
+  // listener sees this tab active — see its initSettings() for why. That means
+  // switching TO this tab, with no form change involved, needs its own trigger,
+  // or the pane would sit on whatever it last rendered (possibly the empty
+  // state from boot, or a stale form) until the next rail click.
+  if (!submissionsActive) renderSettings();
 }
 
 tabSubmissions.addEventListener('click', () => setTab('submissions'));
@@ -310,14 +307,55 @@ logoutBtn.addEventListener('click', async () => {
   });
   if (!ok) return;
   state.forms = [];
-  state.tab = 'submissions';
+  // `setTab`, not a bare `state.tab =` assignment: the tab is DOM state
+  // (aria-selected, `data-tab`, pane visibility) that only `setTab` actually
+  // moves. A plain field write here was silently doing nothing — sign back in
+  // after logging out from Settings and the app reappeared on Settings, not
+  // Submissions, even though nothing on screen said so.
+  setTab('submissions');
   setFormId(null);
   showLogin();
 });
 
+// Ported from the legacy login page's `startRetryCountdown` (deleted with the
+// old index.html during the Tailwind rebuild — api.js's fetch wrapper never
+// picked it back up, so a throttled visitor saw only the server's static
+// "Too many login attempts. Try again later." with no sense of when trying
+// again might actually work).
+let retryTimer = null;
+
+function stopRetryCountdown() {
+  if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
+}
+
+function startRetryCountdown(seconds) {
+  if (seconds === null) {
+    loginError.textContent = 'Too many login attempts. Try again later.';
+    return;
+  }
+  let remaining = seconds;
+  const render = () => {
+    const mins = Math.floor(remaining / 60);
+    const secs = remaining % 60;
+    const readable = mins > 0 ? (mins + 'm ' + secs + 's') : (secs + 's');
+    loginError.textContent = 'Too many login attempts. Try again in ' + readable + '.';
+  };
+  render();
+  retryTimer = setInterval(() => {
+    remaining -= 1;
+    if (remaining <= 0) {
+      stopRetryCountdown();
+      loginError.textContent = '';
+      return;
+    }
+    render();
+  }, 1000);
+}
+
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   loginError.textContent = '';
+  stopRetryCountdown();
   const submitBtn = loginForm.querySelector('button[type="submit"]');
   const password = passwordInput.value;
 
@@ -327,7 +365,11 @@ loginForm.addEventListener('submit', async (e) => {
     passwordInput.value = '';
     await boot();
   } catch (err) {
-    loginError.textContent = err.message;
+    if (err.status === 429) {
+      startRetryCountdown(err.retryAfter);
+    } else {
+      loginError.textContent = err.message;
+    }
     passwordInput.focus();
   } finally {
     setBusy(submitBtn, false);

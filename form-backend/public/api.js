@@ -32,7 +32,15 @@ async function call(path, options = {}) {
   // All three clauses are needed: !res.ok for network errors, payload.ok for
   // explicit failures, and payload.fatal for crashed routes.
   if (!res.ok || payload.ok === false || payload.fatal === true) {
-    throw new Error(payload.error || payload.text || ('Request failed (' + res.status + ')'));
+    const err = new Error(payload.error || payload.text || ('Request failed (' + res.status + ')'));
+    err.status = res.status;
+    // The login throttle (index.ts) sends `Retry-After` on a 429 so the caller
+    // can tell a visitor when retrying becomes useful, rather than just "later".
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get('Retry-After'), 10);
+      err.retryAfter = Number.isFinite(retryAfter) ? retryAfter : null;
+    }
+    throw err;
   }
   return payload;
 }

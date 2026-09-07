@@ -7,6 +7,11 @@ test('collectColumns unions keys across rows in first-seen order', () => {
   assert.deepEqual(collectColumns(rows), ['name', 'email', 'phone']);
 });
 
+test('collectColumns excludes "created" and "status" — those are admin-owned export columns, not data', () => {
+  const rows = [{ data: { name: 'Eve', status: 'read', created: '2001-01-01' } }];
+  assert.deepEqual(collectColumns(rows), ['name']);
+});
+
 test('toCsv writes a header row and values in column order', () => {
   const csv = toCsv([{ name: 'Ada', email: 'ada@example.com' }], ['name', 'email']);
   assert.equal(csv, 'name,email\r\nAda,ada@example.com');

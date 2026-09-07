@@ -577,7 +577,7 @@ function endpointUrl(form) {
   return window.location.origin + '/f/' + form.uuid;
 }
 
-function renderSettings() {
+export function renderSettings() {
   clear(paneEl);
   shownDeliveries = DELIVERY_PAGE;
 
@@ -599,9 +599,21 @@ function renderSettings() {
 }
 
 export function initSettings() {
-  window.addEventListener('form-changed', renderSettings);
+  // `form-changed` fires on every rail click regardless of which tab is
+  // showing (app.js owns the rail; it has no notion of "don't bother, I'm
+  // hidden"). Rendering here unconditionally used to mean every rail click,
+  // Submissions tab or not, fired `getSnippet` + `listDeliveries` into a pane
+  // nobody could see — including their errors, which rendered into that
+  // hidden pane and were never shown to anyone. Only render (and therefore
+  // only fetch) while this tab is actually the one on screen; app.js calls
+  // `renderSettings()` itself, below, the moment the Settings tab is switched
+  // to, so the pane is never left stale when it becomes visible.
+  window.addEventListener('form-changed', () => {
+    if (state.tab === 'settings') renderSettings();
+  });
   // Paint an initial state synchronously, exactly as submissions.js does for
   // #record — there is no form yet when this runs (boot() hasn't resolved),
-  // so the pane shows the empty state until `form-changed` fires.
+  // so the pane shows the empty state until `form-changed` fires. Harmless
+  // while hidden: `currentForm()` is null at boot, so this never fetches.
   renderSettings();
 }

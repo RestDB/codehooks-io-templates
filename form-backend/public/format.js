@@ -122,6 +122,22 @@ export function formatCount(total, exact) {
   return exact ? String(n) : n + '+';
 }
 
+// The one place a rail form's unread count turns into what the badge shows —
+// or whether it shows at all. Three states reach here:
+//   {0, exact:false}  — a failed count query. Must never render as a
+//                       confident "0".
+//   {0, exact:true}   — genuinely zero unread. Renders no badge either: a
+//                       chip is an "unread waiting for you" signal, and a
+//                       solid teal "0" reads as one when it is the opposite.
+//   {n>0, exact:*}    — a real count (capped counts render "999+" via
+//                       formatCount's `exact: false` path).
+// Only the last case renders anything.
+export function railBadgeText(count, exact) {
+  const n = Number(count);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return formatCount(n, exact);
+}
+
 export function rangeLabel(offset, shown, total, exact) {
   const off = Number(offset) || 0;
   const count = Number(shown) || 0;

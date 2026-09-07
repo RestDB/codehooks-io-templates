@@ -535,6 +535,21 @@ app.get('/thanks/:formId', async (req, res) => {
 // turn one request into an unbounded read.
 const SEARCH_SCAN_CAP = 1000;
 
+// `created` is stored as a full ISO timestamp and this route's date range is
+// compared against it lexicographically ($gte/$lte), so a bare `YYYY-MM-DD`
+// behaves differently depending on which side it's on:
+//   - `from` (>=): a bare date already sorts before every timestamp on that
+//     day (`'2026-09-06' < '2026-09-06T00:00:00.000Z'`), so it correctly
+//     includes the whole day as a lower bound. No change needed.
+//   - `to` (<=): a bare date sorts before every timestamp on that day except
+//     exact midnight, so it silently excludes the day it names. Normalise it
+//     to the end of that day so `to` is inclusive the way a human reading
+//     "through 2026-09-06" expects.
+const BARE_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function inclusiveTo(value: string): string {
+  return BARE_DATE_RE.test(value) ? value + 'T23:59:59.999Z' : value;
+}
+
 app.get('/admin/api/forms/:formId/submissions', async (req, res) => {
   // Accepts either the _id used by /admin/api/forms/:id or the uuid.
   const form = await resolveForm(req.params.formId);
@@ -550,7 +565,7 @@ app.get('/admin/api/forms/:formId/submissions', async (req, res) => {
   if (from || to) {
     query.created = {};
     if (from) query.created.$gte = from;
-    if (to) query.created.$lte = to;
+    if (to) query.created.$lte = inclusiveTo(to);
   }
 
   // Search scans a bounded window from the DB, then filters and pages it in
@@ -674,10 +689,15 @@ app.get('/admin/api/forms/:formId/export.csv', async (req, res) => {
 
   const dataColumns = collectColumns(rows as any);
   const columns = ['created', 'status', ...dataColumns];
+  // Admin fields are spread LAST so a submitted field literally named "status"
+  // or "created" (any <input name="..."> is submitter-controlled) can never
+  // overwrite the real triage status or timestamp — collectColumns already
+  // excludes those two names from dataColumns, so this is belt and braces
+  // against the same collision at the value level, not just the header.
   const flat = (rows as any[]).map((r) => ({
+    ...r.data,
     created: r.created,
     status: r.status,
-    ...r.data,
   }));
 
   res.set('content-type', 'text/csv; charset=utf-8');
