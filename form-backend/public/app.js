@@ -6,6 +6,7 @@ import { login, logout, listForms, createForm } from './api.js';
 import { el, clear, toast, setBusy, openModal, closeModal, modalError, dropdown } from './ui.js';
 import { relativeTime, formatCount } from './format.js';
 import { initList } from './submissions.js';
+import { initSettings } from './settings.js';
 
 export const state = { forms: [], formId: null, tab: 'submissions' };
 
@@ -324,4 +325,5 @@ loginForm.addEventListener('submit', async (e) => {
 });
 
 initList();
+initSettings();
 boot();
