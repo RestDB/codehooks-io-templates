@@ -496,7 +496,9 @@ body {
 @media (max-width: 1040px) {
   .panes { grid-template-columns: 1fr; min-height: 0; }
   .rail { border-right: 0; border-bottom: 1px solid var(--rule); }
-  .rail-foot { display: none; }
+  /* .rail-foot { display: none; } consolidated into the narrow-screen
+     form switcher's `.rail-list, .rail-foot { display: none; }` below —
+     one rule owning the property instead of two. */
   .list { border-right: 0; border-bottom: 1px solid var(--rule); }
   .rows { max-height: 320px; }
 }

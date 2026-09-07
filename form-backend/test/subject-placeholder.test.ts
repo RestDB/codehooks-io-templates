@@ -25,32 +25,29 @@ test('{{fieldName}} interpolates a submitted field', () => {
 });
 
 // The dashboard rebuild (2026-09-06) moves the settings UI out of index.html
-// and into public/settings.js (landing in a later task). Until that lands,
-// index.html's #pane-settings is an empty placeholder and documents nothing —
-// so the guard below checks both locations rather than pinning to one file,
-// and treats "neither documents a placeholder yet" as a clean skip, not a
-// failure. Once the settings markup is ported, whichever file carries the
-// notify-subject help text is the one this test will start reading again.
-function findSubjectHelp() {
-  for (const rel of ['../public/index.html', '../public/settings.js']) {
-    let content;
-    try {
-      content = readFileSync(new URL(rel, import.meta.url), 'utf8');
-    } catch {
-      continue; // file doesn't exist yet — not an error, just not ported here
-    }
-    const help = content.split('class="notify-subject"')[1]?.split('</p>')[0];
-    if (help) return help;
+// and into public/settings.js (landing in a later task), and this plan's view
+// layer builds text with el()/textContent rather than innerHTML — so a guard
+// that string-splits on HTML structure like `class="notify-subject"` can
+// never match a plain text node, and would sleep forever once Task 8 lands.
+// Instead, scan the RAW SOURCE BYTES of both files for every {{token}}: a
+// literal {{form}} appears in the file whether it was authored as markup or
+// passed as a string argument to el(), so this works regardless of how the
+// DOM gets built. Until either file mentions a {{token}} at all, there is
+// nothing to check yet, so that state is a clean skip, not a failure.
+function readIfExists(rel: string): string {
+  try {
+    return readFileSync(new URL(rel, import.meta.url), 'utf8');
+  } catch {
+    return ''; // file doesn't exist yet — not an error, just not ported here
   }
-  return '';
 }
 
-test('every placeholder the setup page documents is one renderSubject supports', (t) => {
-  const help = findSubjectHelp();
-  const documented = help ? [...help.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]) : [];
+test('every {{placeholder}} documented in the setup page or settings script is one renderSubject supports', (t) => {
+  const source = readIfExists('../public/index.html') + '\n' + readIfExists('../public/settings.js');
+  const documented = [...source.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]);
 
   if (documented.length === 0) {
-    t.skip('settings markup (notify-subject help text) has not been ported to index.html or settings.js yet');
+    t.skip('no {{placeholder}} found in index.html or settings.js — settings markup has not been ported yet');
     return;
   }
 
@@ -62,7 +59,7 @@ test('every placeholder the setup page documents is one renderSubject supports',
     assert.notEqual(
       out,
       'X Y',
-      `the setup page documents {{${key}}}, but renderSubject drops it and renders nothing`
+      `the setup page/settings script documents {{${key}}}, but renderSubject drops it and renders nothing`
     );
   }
 });
