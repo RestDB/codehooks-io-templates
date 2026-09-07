@@ -39,35 +39,94 @@ bulk selection/actions, and saved views.
 
 ## Quick start
 
+Five minutes from nothing to a working form, assuming you have the Codehooks CLI installed
+(`npm install -g codehooks`) and are logged in (`coho login`).
+
+### 1. Create the project
+
 ```bash
 coho create myforms --template form-backend
 cd myforms && npm install
-
-coho set-env JWT_SECRET "$(openssl rand -hex 32)" --encrypted
-coho set-env ADMIN_PASSWORD 'choose-a-strong-password' --encrypted
-coho set-env BASE_URL 'https://your-space.codehooks.io'   # required for notification emails
-
-coho deploy
-coho info          # note your endpoint URL
 ```
 
-Then open `https://your-space.codehooks.io/setup/` in a browser and:
+### 2. Find your endpoint URL
 
-1. **Log in** with the `ADMIN_PASSWORD` you set above.
-2. **Create a form** — give it a name in the rail on the left.
-3. Switch to its **Settings** tab and **copy the snippet** shown there, then paste it into your
-   site. It already points at the right endpoint and includes the honeypot field.
-4. Still in Settings, **configure notifications** — turn on email, list recipient addresses, and
-   optionally a subject template. This needs an email provider configured on the deployment (see
-   [Configuration](#configuration)) — if a test submission doesn't produce an email, that is almost
-   always a missing `FROM_EMAIL` or provider credential, not a bug in the form.
-5. **Set the domain allowlist** if you want to restrict which sites can submit — the same tab
-   explains the exact-match behaviour described below.
+```bash
+coho info
+```
 
-That is the whole setup. Submitting the pasted form is the same request `curl` would make below.
-Switch back to the **Submissions** tab to watch entries arrive — see [Dashboard](#dashboard) below.
-Everything after this point in this document is optional — useful for automating deployment or for
-CI, not required to get a form working.
+This prints your API endpoints and the environment variables currently set on the space. Note the
+endpoint — you need it in the next step, and this is why `coho info` comes *before* deploying.
+
+### 3. Set the required secrets
+
+```bash
+coho set-env JWT_SECRET "$(openssl rand -hex 32)" --encrypted
+coho set-env ADMIN_PASSWORD 'choose-a-strong-password' --encrypted
+coho set-env BASE_URL 'https://your-space.codehooks.io'
+```
+
+`JWT_SECRET` signs both admin sessions and the file-download links in notification emails.
+`ADMIN_PASSWORD` is the entire admin credential — there is no user list and no password reset.
+`BASE_URL` is the endpoint from step 2, with no trailing slash.
+
+**Use `--encrypted` for both secrets.** Without it the values are readable from the CLI.
+
+### 4. Deploy
+
+```bash
+coho deploy
+```
+
+### 5. Create your first form
+
+Open `https://your-space.codehooks.io/setup/`, sign in with the password from step 3, and click
+**New form**. Name it after the page it will live on — "Contact", "Careers" — so submissions are
+easy to place later.
+
+![The dashboard: forms in the rail, submissions in the middle, the selected record on the right](docs/dashboard.png)
+
+### 6. Paste the snippet into your site
+
+Switch to the form's **Settings** tab and press **Copy snippet**. It is a complete, ordinary HTML
+form already pointed at the right endpoint, with the honeypot field included.
+
+![The Settings tab: the ready-made snippet, notification settings, and delivery diagnostics](docs/settings.png)
+
+Paste it into your page and submit it once. The submission appears under **Submissions**.
+
+That is the whole setup for capturing submissions. Everything below is optional.
+
+### 7. Optional: email on every submission
+
+Notifications need an email provider on the deployment. With Brevo:
+
+```bash
+coho set-env EMAIL_PROVIDER brevo
+coho set-env BREVO_API_KEY 'your-api-key' --encrypted
+coho set-env FROM_EMAIL 'forms@yourdomain.com'
+coho deploy
+```
+
+Then in the form's **Settings** tab, tick *Send an email when this form receives a submission* and
+list the recipients.
+
+Three things that cause almost every "the email never arrived":
+
+- **`FROM_EMAIL` must be an address your provider has verified as a sender.** An unverified sender
+  is rejected with a `4xx` and the delivery is recorded `failed` with the reason. No amount of
+  retrying fixes it.
+- **`BASE_URL` must be set.** Notifications are sent from a background worker with no incoming
+  request to read a host header from, so the download links in the email have nothing to build on.
+- **If your Brevo account has IP authorisation enabled, turn it off.** Serverless egress addresses
+  rotate, and that rejection arrives as a `4xx` — treated as permanent, so notifications stop
+  silently rather than retrying. Allowlisting an address only postpones it.
+
+You do not have to guess which one bit you: the **Recent delivery attempts** panel in Settings shows
+each attempt with its status and the provider's own error message, and offers **Retry now**.
+
+See [Configuration](#configuration) for every environment variable, and
+[Notifications](#notifications) for per-form settings and the retry behaviour.
 
 ## Dashboard
 
