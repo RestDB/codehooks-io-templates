@@ -5,6 +5,7 @@
 import { login, logout, listForms, createForm } from './api.js';
 import { el, clear, toast, setBusy, openModal, closeModal, modalError, emptyState, dropdown } from './ui.js';
 import { relativeTime, formatCount } from './format.js';
+import { initList } from './submissions.js';
 
 export const state = { forms: [], formId: null, tab: 'submissions' };
 
@@ -223,16 +224,13 @@ if (datesToggle && datesRow) {
   });
 }
 
-// --- placeholder panes -------------------------------------------------------
-// Tasks 6 and 7 own these panes. Until then they carry an empty state, because a
-// blank third of the screen reads as broken rather than as waiting.
+// --- placeholder pane ----------------------------------------------------------
+// Task 7 owns #record. Until then it carries an empty state, because a blank
+// third of the screen reads as broken rather than as waiting. #rows is owned
+// entirely by submissions.js (see initList()) as of Task 6.
 
 function renderPlaceholders() {
-  const rows = document.getElementById('rows');
   const record = document.getElementById('record');
-  if (rows && !rows.children.length) {
-    rows.appendChild(emptyState('No submissions yet', 'Point a form on your site at this endpoint and they will land here.'));
-  }
   if (record && !record.children.length) {
     record.appendChild(emptyState('Nothing selected', 'Choose a submission from the list to read it.'));
   }
@@ -331,4 +329,5 @@ loginForm.addEventListener('submit', async (e) => {
   }
 });
 
+initList();
 boot();
