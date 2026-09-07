@@ -9,7 +9,7 @@ import { validateFields } from '#lib/validation';
 import { isHoneypotFilled, controlFieldsFor, checkSubmitRate, checkHoneypotName } from '#lib/spam';
 import { saveUploads } from '#lib/files';
 import { originOf, corsHeaders, safeRedirect } from '#lib/security';
-import { toCsv, collectColumns } from '#lib/csv';
+import { toCsv, mapDataColumns } from '#lib/csv';
 import { thanksPage, errorPage } from '#lib/pages';
 import { filterAndPaginate, clampInt } from '#lib/search';
 import { randomUUID } from 'crypto';
@@ -687,18 +687,26 @@ app.get('/admin/api/forms/:formId/export.csv', async (req, res) => {
     .getMany('submissions', { formId: form.uuid }, { sort: { created: -1 } })
     .toArray();
 
-  const dataColumns = collectColumns(rows as any);
-  const columns = ['created', 'status', ...dataColumns];
-  // Admin fields are spread LAST so a submitted field literally named "status"
-  // or "created" (any <input name="..."> is submitter-controlled) can never
-  // overwrite the real triage status or timestamp — collectColumns already
-  // excludes those two names from dataColumns, so this is belt and braces
-  // against the same collision at the value level, not just the header.
-  const flat = (rows as any[]).map((r) => ({
-    ...r.data,
-    created: r.created,
-    status: r.status,
-  }));
+  // One shared key->header decision (lib/csv.ts's mapDataColumns) for both
+  // the header row and every value row below, so a submitted field literally
+  // named "status" or "created" gets its OWN header (e.g. "status
+  // (submitted)") rather than either overwriting the real admin column or —
+  // the earlier version of this fix — silently vanishing from the export.
+  const headerForKey = mapDataColumns(rows as any);
+  const columns = ['created', 'status', ...Array.from(headerForKey.values())];
+  const flat = (rows as any[]).map((r) => {
+    const row: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(r.data || {})) {
+      row[headerForKey.get(key) as string] = value;
+    }
+    // Admin fields are assigned LAST so a submitted field renamed to
+    // anything other than "created"/"status" above can never reach these two
+    // keys, and even a hypothetical future key collision still can't
+    // overwrite the real triage status or timestamp.
+    row.created = r.created;
+    row.status = r.status;
+    return row;
+  });
 
   res.set('content-type', 'text/csv; charset=utf-8');
   // Neutralise the interpolated identifier — never trust a path param in a header.

@@ -177,6 +177,11 @@ function paintRowById(id, status) {
 }
 
 function selectRow(sub, btn) {
+  // Set synchronously, before either of the two requests below starts — see
+  // the comment on `selectedId`'s declaration for why a rebuild-triggered
+  // highlight restore must read this instead of `currentSub`.
+  selectedId = sub._id;
+
   for (const node of rowsEl.querySelectorAll('[aria-current="true"]')) {
     node.setAttribute('aria-current', 'false');
   }
@@ -366,8 +371,33 @@ function scheduleFetch() {
 // `getSubmission` on selection, and replaced with the response of every
 // mutation — never a value patched by hand, so the pane can never drift from
 // what is actually stored.
+//
+// `selectedId`, below, is a DIFFERENT thing and exists for a reason four
+// separate fixes on this file have now circled without naming it: clicking a
+// row is one synchronous action (`selectRow`) that kicks off TWO independent
+// async requests racing each other — `onSubmissionSelected`'s GET (which is
+// what eventually sets `currentSub`) and, for a `new` row, `markRead`'s PATCH.
+// Anything that rebuilds `#rows` (a filter refetch, a list resync after a
+// status change) wipes every `aria-current` and must restore it on the right
+// row — but if that restore reads `currentSub._id`, it is reading a value
+// that only exists once the GET has won the race. When the PATCH's list
+// resync lands first (plausible — it is the lighter request), `currentSub`
+// is still null or still the PREVIOUS selection, so the rebuilt list
+// re-highlights the wrong row, or nothing, until the GET catches up. That is
+// exactly the shape of the bug `refreshListPreservingSelection` was written
+// to prevent, reintroduced by widening what could trigger a rebuild.
+// `selectedId` is set synchronously in `selectRow`, in the same tick as the
+// click, before either request starts — so it is always the click's own
+// answer to "which row is selected right now", independent of which
+// in-flight request a rebuild happens to race against. Anything that
+// restores `aria-current` after a rebuild must read `selectedId`, not
+// `currentSub`; anything that decides what the RECORD PANE'S CONTENT shows
+// must keep reading `currentSub`, because that has to wait for the real
+// server data. Two different questions, two different variables — collapsing
+// them back into one is what caused this bug.
 
 let currentSub = null;
+let selectedId = null;
 let recordSeq = 0;
 
 const EMAILISH = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -594,12 +624,18 @@ function renderRecord() {
 // marking a "new" row read while the status filter is "New" — disappears
 // exactly like it would on the next natural fetch, and the total/pagination
 // stay honest. `#rows` is fully rebuilt by that fetch, which drops
-// `aria-current`; if the submission still shown in the record pane is still
-// in the (possibly narrower) list, its row gets it back.
+// `aria-current`; if the row for the selected submission is still in the
+// (possibly narrower) list, its highlight gets restored.
+//
+// Reads `selectedId`, NOT `currentSub._id`: this can be called from a path
+// that races `currentSub` being set (markRead's PATCH vs. onSubmissionSelected's
+// GET — see the comment on `selectedId`'s declaration). `selectedId` is set
+// synchronously at click time regardless of which request wins, so the
+// restore is correct no matter which caller triggers it or when.
 async function refreshListPreservingSelection() {
   await fetchAndRender();
-  if (!currentSub) return;
-  const btn = rowsEl.querySelector('[data-id="' + CSS.escape(currentSub._id) + '"]');
+  if (!selectedId) return;
+  const btn = rowsEl.querySelector('[data-id="' + CSS.escape(selectedId) + '"]');
   if (!btn) return;
   for (const node of rowsEl.querySelectorAll('[aria-current="true"]')) node.setAttribute('aria-current', 'false');
   btn.setAttribute('aria-current', 'true');
@@ -655,6 +691,9 @@ function requestDelete(sub, fields, host) {
       currentSub = null;
       renderRecord();
     }
+    // The row is gone for good — nothing should be restored as "selected"
+    // for this id if something rebuilds `#rows` after this point.
+    if (selectedId === sub._id) selectedId = null;
     await fetchAndRender();
     toast('Submission deleted.');
     await refreshForms();
@@ -697,6 +736,7 @@ export function initList() {
     // switch and repaint the pane with a submission from the form just left.
     recordSeq++;
     currentSub = null;
+    selectedId = null;
     renderRecord();
   });
   window.addEventListener('submission-selected', (e) => onSubmissionSelected(e.detail));
