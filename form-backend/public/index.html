@@ -79,9 +79,9 @@
 <!-- The middle column carries the submissions list. On the Settings tab that list is
      hidden, so the column collapses to zero rather than leaving 22rem of blank white
      beside the settings pane. -->
-<div class="grid h-screen grid-cols-1 lg:grid-cols-[15rem_22rem_minmax(0,1fr)] lg:data-[tab=settings]:grid-cols-[15rem_minmax(0,1fr)]" id="app" data-tab="submissions" hidden>
+<div class="grid h-screen grid-cols-1 lg:grid-cols-[15rem_22rem_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)] lg:data-[tab=settings]:grid-cols-[15rem_minmax(0,1fr)]" id="app" data-tab="submissions" hidden>
 
-  <nav class="flex flex-col gap-5 border-b border-cream bg-sunk p-3 lg:border-b-0 lg:border-r" aria-label="Forms">
+  <nav class="flex flex-col gap-5 border-b border-cream bg-sunk p-3 lg:row-span-2 lg:border-b-0 lg:border-r" aria-label="Forms">
     <div class="flex items-center gap-2 px-1 pt-1">
       <span class="grid h-7 w-7 place-items-center rounded-md bg-primary text-white">
         <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
@@ -109,11 +109,16 @@
     </div>
   </nav>
 
+  <!-- The tab bar is deliberately NOT inside #list-pane: that section is hidden on
+       the Settings tab, and a tab bar that disappears with the pane it controls
+       leaves no way back except reloading. It spans from column 2 to the end so it
+       still fits when the list column collapses. -->
+  <div class="flex gap-1 border-b border-cream bg-white px-3 pt-2 lg:[grid-column:2/-1]" role="tablist">
+    <button class="border-b-2 border-transparent px-2 pb-2 pt-1 text-sm text-muted transition hover:text-body aria-selected:border-primary aria-selected:font-medium aria-selected:text-ink" role="tab" id="tab-submissions" aria-selected="true" type="button">Submissions</button>
+    <button class="border-b-2 border-transparent px-2 pb-2 pt-1 text-sm text-muted transition hover:text-body aria-selected:border-primary aria-selected:font-medium aria-selected:text-ink" role="tab" id="tab-settings" aria-selected="false" type="button">Settings</button>
+  </div>
+
   <section class="flex min-w-0 flex-col border-b border-cream bg-white lg:border-b-0 lg:border-r" id="list-pane" aria-label="Submissions">
-    <div class="flex gap-1 px-3 pt-2" role="tablist">
-      <button class="border-b-2 border-transparent px-2 pb-2 pt-1 text-sm text-muted transition hover:text-body aria-selected:border-primary aria-selected:font-medium aria-selected:text-ink" role="tab" id="tab-submissions" aria-selected="true" type="button">Submissions</button>
-      <button class="border-b-2 border-transparent px-2 pb-2 pt-1 text-sm text-muted transition hover:text-body aria-selected:border-primary aria-selected:font-medium aria-selected:text-ink" role="tab" id="tab-settings" aria-selected="false" type="button">Settings</button>
-    </div>
 
     <div class="flex items-center gap-1.5 border-y border-cream px-3 py-2" id="filter-bar">
       <div class="relative min-w-0 flex-1">
