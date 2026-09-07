@@ -83,14 +83,29 @@ let shownDeliveries = DELIVERY_PAGE;
 // submissions.js uses for the record pane.
 let deliverySeq = 0;
 
+// Form ids with a DELETE currently in flight. Module-scoped (not local to
+// buildDeleteZone) because it has to survive a pane rebuild: navigating away
+// from a form mid-delete and back before the request resolves rebuilds the
+// delete zone from scratch, handing back a fresh, enabled "Delete form"
+// button while the first request is still outstanding. Without this, a
+// second click issues a second DELETE for the same form — not
+// data-corrupting (the second call just 404s against an already-removed
+// form), but the same staleness shape this branch has guarded elsewhere
+// (the record pane's patch/delete races, the deliveries fetch above).
+const deletingFormIds = new Set();
+
 function currentForm() {
   return state.forms.find((f) => f._id === state.formId) || null;
 }
 
-function showMsg(node, text, kind) {
+// Inline placement only, for messages that belong next to the control or field
+// they concern — a validation rejection, a save/retry/delete failure. Success
+// acknowledgements are toasts (see the `toast(...)` calls throughout this
+// file), so this only ever renders an error.
+function showMsg(node, text) {
   node.hidden = false;
   node.textContent = text;
-  node.className = 'mt-2 text-xs ' + (kind === 'error' ? 'text-flag' : 'text-primary');
+  node.className = 'mt-2 text-xs text-flag';
 }
 
 function hideMsg(node) {
@@ -209,9 +224,14 @@ function renderDeliveryRows(refs, rows, form) {
       retryBtn.type = 'button';
       retryBtn.addEventListener('click', async () => {
         setBusy(retryBtn, true);
-        const ok = await guarded(() => retryDelivery(row._id), (msg) => showMsg(refs.msg, msg, 'error'));
+        const ok = await guarded(() => retryDelivery(row._id), (msg) => showMsg(refs.msg, msg));
         if (ok) {
-          await loadDeliveries(form, refs, 'Queued for another attempt. Refresh in a moment to see the result.');
+          // Success reads as a toast, matching "Form created." / "Settings
+          // saved." / delete's own confirmation — named after the control
+          // that triggered it ("Retry now" -> "Queued for another attempt.").
+          // Errors stay inline, next to this panel, via guarded()'s onError above.
+          toast('Queued for another attempt.');
+          await loadDeliveries(form, refs);
         } else {
           setBusy(retryBtn, false);
         }
@@ -226,7 +246,7 @@ function renderDeliveryRows(refs, rows, form) {
   }
 }
 
-async function loadDeliveries(form, refs, notice) {
+async function loadDeliveries(form, refs) {
   const seq = ++deliverySeq;
   hideMsg(refs.msg);
   setBusy(refs.refreshBtn, true);
@@ -240,10 +260,9 @@ async function loadDeliveries(form, refs, notice) {
     // rows as `pending` with a growing wait, and that is exactly the backlog
     // this button exists for.
     refs.retryAllBtn.hidden = !rows.some((r) => r.retryable);
-    if (notice) showMsg(refs.msg, notice, 'ok');
   } catch (err) {
     if (seq !== deliverySeq) return;
-    showMsg(refs.msg, err.message, 'error');
+    showMsg(refs.msg, err.message);
   } finally {
     if (seq === deliverySeq) setBusy(refs.refreshBtn, false);
   }
@@ -296,13 +315,16 @@ function buildDeliveriesPanel(form) {
   // forty submissions failed over a weekend because BASE_URL was unset.
   retryAllBtn.addEventListener('click', async () => {
     setBusy(retryAllBtn, true);
-    const body = await guarded(() => retryAllDeliveries(form._id), (msg2) => showMsg(msg, msg2, 'error'));
+    const body = await guarded(() => retryAllDeliveries(form._id), (msg2) => showMsg(msg, msg2));
     if (body) {
       const d = body.data || {};
+      // Toast, named after the control ("Retry all failed" -> "Queued N
+      // delivery attempts."), matching the rest of the success-acknowledgement
+      // convention. Errors stay inline via guarded()'s onError above.
       let text = 'Queued ' + (d.queued || 0) + ' delivery attempt' + (d.queued === 1 ? '' : 's') + '.';
       if (d.skipped) text += ' ' + d.skipped + ' could not be retried (see the reasons below).';
-      text += ' Refresh in a moment to see the results.';
-      await loadDeliveries(form, refs, text);
+      toast(text);
+      await loadDeliveries(form, refs);
     }
     setBusy(retryAllBtn, false);
   });
@@ -422,7 +444,7 @@ function buildNotifySection(form) {
     // authority: it rejects the PATCH regardless of what this does.
     const badRecipients = recipients.filter((r) => !RECIPIENT_RE.test(r));
     if (badRecipients.length) {
-      showMsg(settingsMsg, 'Not a valid email address: ' + badRecipients.join(', '), 'error');
+      showMsg(settingsMsg, 'Not a valid email address: ' + badRecipients.join(', '));
       recipientsInput.focus();
       return;
     }
@@ -440,10 +462,18 @@ function buildNotifySection(form) {
     };
 
     setBusy(saveBtn, true);
-    const ok = await guarded(() => patchForm(form._id, patch), (msg) => showMsg(settingsMsg, msg, 'error'));
+    const ok = await guarded(() => patchForm(form._id, patch), (msg) => showMsg(settingsMsg, msg));
     setBusy(saveBtn, false);
     if (ok) {
-      showMsg(settingsMsg, 'Settings saved.', 'ok');
+      // A bare inline line next to a button that is simultaneously reverting
+      // from "Working…" back to "Save settings" gives the eye nothing to
+      // catch — a successful save read as nothing having happened. Toast
+      // instead, matching "Form created." / delete's own confirmation /
+      // Retry's, and named after the control: "Save settings" -> "Settings
+      // saved." Validation and server rejections stay inline, next to this
+      // form, via guarded()'s onError above and the recipient check below.
+      hideMsg(settingsMsg);
+      toast('Settings saved.');
       // Keeps state.forms current for the NEXT render of this pane (e.g. after
       // switching forms and back) — does not repaint the pane now, so the
       // fields the customer just set stay exactly as they typed them.
@@ -507,18 +537,30 @@ function buildDeleteZone(form) {
     });
 
     yesBtn.addEventListener('click', async () => {
+      // Refuses a SECOND delete for this same form id while the first is
+      // still in flight — see the comment on `deletingFormIds` above for why
+      // this button being enabled at all does not mean it is safe to click.
+      if (deletingFormIds.has(form._id)) {
+        showMsg(msg, 'This form is already being deleted.');
+        return;
+      }
+      deletingFormIds.add(form._id);
       hideMsg(msg);
       setBusy(yesBtn, true);
       cancelBtn.disabled = true;
-      const ok = await guarded(() => deleteForm(form._id), (m) => showMsg(msg, m, 'error'));
-      if (ok) {
-        toast("'" + name + "' was deleted.");
-        // Removes the form from the rail and selects whatever is next (or
-        // null), dispatching `form-changed` — which repaints this pane.
-        await refreshForms();
-      } else {
-        setBusy(yesBtn, false);
-        cancelBtn.disabled = false;
+      try {
+        const ok = await guarded(() => deleteForm(form._id), (m) => showMsg(msg, m));
+        if (ok) {
+          toast("'" + name + "' was deleted.");
+          // Removes the form from the rail and selects whatever is next (or
+          // null), dispatching `form-changed` — which repaints this pane.
+          await refreshForms();
+        } else {
+          setBusy(yesBtn, false);
+          cancelBtn.disabled = false;
+        }
+      } finally {
+        deletingFormIds.delete(form._id);
       }
     });
   });
