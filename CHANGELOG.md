@@ -103,6 +103,26 @@ Each template carries its own `version` in its `package.json`.
   `BASE_URL`, and a live provider send reaching `status: "sent"` through Brevo. See the deliverability
   notes in `form-backend/README.md`.
 
+## 2026-09-07
+
+### Added
+
+- **`form-backend`** — an admin dashboard at `/setup/` replaces the old settings-only page. Three
+  panes: a forms rail with an unread count per form, a submission list with search, status and date
+  filters and pagination, and a record pane showing every submitted field, uploaded files, metadata
+  and notes, with triage actions (star, reply by `mailto:`, mark read, archive, spam, delete).
+  Settings — the snippet, notifications, delivery diagnostics, the allowed-origins list and delete —
+  moves into a tab of the same page rather than being the whole page. Below the `lg` breakpoint
+  (1024px) the forms rail collapses into a listbox and the list and record panes stack. Built on
+  Tailwind's play CDN and DM Sans from Google Fonts rather than a self-contained stylesheet: three
+  third-party requests (`cdn.tailwindcss.com`, `fonts.googleapis.com`, `fonts.gstatic.com`), which
+  means the dashboard needs network access to render styled — blocked, it still loads, signs in and
+  works, just unstyled. Nothing else is affected: the submit endpoint, `/admin/api/*` and stored
+  submissions are untouched either way. Two small backend additions carry the new UI: the
+  submissions list route now reports `total`/`exact` outside search too, and
+  `GET /admin/api/forms` reports each form's unread count — both from a capped, projected scan, since
+  the datastore has no filtered `count()`. 383 unit tests.
+
 ## 2026-07-05
 
 ### Added

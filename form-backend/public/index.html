@@ -46,6 +46,12 @@
     .eyebrow     { @apply font-mono text-[10px] uppercase tracking-[0.09em] text-muted; }
   }
   [hidden] { display: none !important; }
+  /* One consistent, on-brand ring for every focusable element that doesn't
+     already draw its own (`.field` replaces the outline with a matching
+     box-shadow ring; this covers plain buttons, tabs, rail items, links and
+     the dropdown's option buttons, none of which style :focus themselves).
+     :focus-visible, not :focus, so a mouse click never shows it. */
+  :focus-visible { outline: 2px solid #0F5C5C; outline-offset: 2px; }
 </style>
 </head>
 <body class="bg-paper font-sans text-body antialiased">
@@ -87,7 +93,7 @@
       <div class="eyebrow mb-1.5 px-1">Forms</div>
       <input type="hidden" id="rail-select" value="">
       <div class="mb-2 lg:hidden" id="rail-select-slot"></div>
-      <div class="flex flex-col gap-0.5" id="rail"></div>
+      <div class="hidden flex-col gap-0.5 lg:flex" id="rail"></div>
       <button class="btn btn-quiet mt-1.5 w-full justify-start border-dashed border-cream text-primary" type="button" id="new-form">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
         New form

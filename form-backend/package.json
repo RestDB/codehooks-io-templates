@@ -1,6 +1,6 @@
 {
   "name": "form-backend",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Headless form backend \u2014 collect submissions, validate, store files, and notify",
   "main": "index.ts",
   "imports": {

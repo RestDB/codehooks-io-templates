@@ -28,12 +28,14 @@ deployment. Its source is in [`example/`](example/).
 
 - **Email notifications** — an owner gets emailed on submission, with the file attached (within a
   size budget) and a signed download link. Retried automatically on a transient provider failure.
-- **A setup page** — `/setup/` walks a new customer from deploy to a working form: log in, create a
-  form, copy a ready-to-paste snippet, and configure notifications and the domain allowlist. No curl
-  required.
+- **An admin dashboard** — `/setup/` is a three-pane inbox: every form with its unread count, a
+  searchable/filterable submission list, and a record pane with the payload, files and notes.
+  Settings (snippet, notifications, allowlist, delete) lives as one tab of it. See
+  [Dashboard](#dashboard) below.
 
-Not built yet: webhook/Slack notifications, spam scoring beyond the honeypot, and AI triage. The
-inbox is an API today — the setup page is deliberately not a dashboard (see below).
+Not built yet: webhook/Slack notifications, spam scoring beyond the honeypot, AI triage, a UI for
+the field schema (the backend accepts `fields` via `PATCH`; nothing in the dashboard edits it),
+bulk selection/actions, and saved views.
 
 ## Quick start
 
@@ -52,19 +54,48 @@ coho info          # note your endpoint URL
 Then open `https://your-space.codehooks.io/setup/` in a browser and:
 
 1. **Log in** with the `ADMIN_PASSWORD` you set above.
-2. **Create a form** — give it a name.
-3. **Copy the snippet** shown for that form and paste it into your site. It already points at the
-   right endpoint and includes the honeypot field.
-4. **Configure notifications** — turn on email, list recipient addresses, and optionally a subject
-   template. This needs an email provider configured on the deployment (see
+2. **Create a form** — give it a name in the rail on the left.
+3. Switch to its **Settings** tab and **copy the snippet** shown there, then paste it into your
+   site. It already points at the right endpoint and includes the honeypot field.
+4. Still in Settings, **configure notifications** — turn on email, list recipient addresses, and
+   optionally a subject template. This needs an email provider configured on the deployment (see
    [Configuration](#configuration)) — if a test submission doesn't produce an email, that is almost
    always a missing `FROM_EMAIL` or provider credential, not a bug in the form.
-5. **Set the domain allowlist** if you want to restrict which sites can submit — the page explains
-   the exact-match behaviour described below.
+5. **Set the domain allowlist** if you want to restrict which sites can submit — the same tab
+   explains the exact-match behaviour described below.
 
-That is the whole setup. Submitting the pasted form is the same request `curl` would make below, so
-everything after this point is optional — useful for automating deployment or for CI, not required
-to get a form working.
+That is the whole setup. Submitting the pasted form is the same request `curl` would make below.
+Switch back to the **Submissions** tab to watch entries arrive — see [Dashboard](#dashboard) below.
+Everything after this point in this document is optional — useful for automating deployment or for
+CI, not required to get a form working.
+
+## Dashboard
+
+`/setup/` is a three-pane inbox, not a bare settings form:
+
+- **Rail** (left) — every form you've created, each with an unread count, and a button to create
+  another. Below 1024px wide, the rail collapses into a dropdown in the header instead.
+- **Submissions tab** (middle + right) — a list of that form's submissions with a search box,
+  a status filter (New/Read/Archived/Spam), and a collapsible date range, paginated 50 at a time.
+  Selecting a row opens it in the **record pane**: every submitted field, uploaded files with a
+  download link each, submission metadata (timestamp, IP, referer, user agent), notes, and the
+  triage actions — Star, Reply (a `mailto:` link to the submitter, never a send feature), Mark
+  read, Archive, Spam / Not spam, Move to inbox, and Delete. **Export CSV** sits in the list
+  footer next to the pager and exports whatever the current form holds. Below 1024px wide the list
+  and record pane stack instead of sitting side by side.
+- **Settings tab** — everything described under [Configuration](#configuration) and
+  [Notifications](#notifications) below: the snippet, per-form settings, the allowed-origins list,
+  recent delivery attempts with retry, and deleting the form. There is no field-schema editor here
+  — `fields` is set via `PATCH /admin/api/forms/:id` only (see the table below).
+
+**The dashboard needs network access to render correctly.** It loads Tailwind's CSS from
+`cdn.tailwindcss.com` and the DM Sans typeface from `fonts.googleapis.com`/`fonts.gstatic.com` — the
+only three third-party requests the page makes. Deployed behind a proxy or firewall that blocks
+those hosts, `/setup/` still loads and works — every control is still there and every action still
+reaches `/admin/api/*` — but it renders with no styling and the system font instead of DM Sans.
+Nothing else is affected: the `POST /f/:formId` submit endpoint, the whole `/admin/api/*` surface
+and every stored submission are served by this deployment itself and don't touch those hosts at
+all, whether or not anyone ever opens the dashboard.
 
 ## Verify your deployment
 
@@ -203,7 +234,8 @@ Environment variables:
 
 Admin login is throttled to 8 attempts per IP per 15 minutes; a successful login clears the counter.
 
-Per-form settings — set from `/setup/`, or via `PATCH /admin/api/forms/:id` for automation:
+Per-form settings — set from the dashboard's Settings tab (`/setup/`), or via
+`PATCH /admin/api/forms/:id` for automation:
 
 | Field | Meaning |
 |---|---|
@@ -240,7 +272,8 @@ sent until you configure it.
 rejected by the provider with a `4xx`, and the delivery row is recorded `failed` with that reason in
 `lastError` — it is not a bug in the form, and no amount of retrying will fix it.
 
-**Per-form settings** — `notify.email`, set from `/setup/` or via `PATCH /admin/api/forms/:id`:
+**Per-form settings** — `notify.email`, set from the dashboard's Settings tab (`/setup/`) or via
+`PATCH /admin/api/forms/:id`:
 
 | Field | Meaning |
 |---|---|
@@ -320,7 +353,8 @@ carries up to 25% jitter — and is then `failed` with a reason
 that says how many deferrals it took, so "keeps the row alive until you fix it" cannot quietly mean
 "forever". The same bound terminates a provider that rate-limits indefinitely.
 
-Anything that reached `failed` can be re-driven: **Retry now** in the delivery panel on `/setup/`,
+Anything that reached `failed` can be re-driven: **Retry now** in the delivery panel of the
+dashboard's Settings tab,
 `POST /admin/api/deliveries/:id/retry` for one row, or **Retry all failed** /
 `POST /admin/api/forms/:id/deliveries/retry-all` for a whole form's backlog. A retry restores the
 attempt budget and re-queues the row. Four kinds of row are refused, and the panel prints the reason
@@ -352,7 +386,7 @@ never sends on anyone else's behalf, and nothing here is a shared or pre-warmed 
 
 ## Pointing a form at it
 
-The setup page's snippet button does this for you, already filled in with your form's endpoint and
+The dashboard's snippet button (Settings tab) does this for you, already filled in with your form's endpoint and
 schema. Shown here as reference, and for automation that generates its own HTML:
 
 ```html
@@ -382,7 +416,7 @@ schema. Shown here as reference, and for automation that generates its own HTML:
 - `_redirect` overrides are resolved against the allowlist, so `//evil.com` cannot escape.
 - CSV exports neutralise leading `=`, `+`, `-` and `@` so a submitted value cannot execute as a
   spreadsheet formula.
-- The setup page (`/setup/`) is a static file with no server-side session check of its own — it is
+- The dashboard (`/setup/`) is a static file with no server-side session check of its own — it is
   safe to serve unauthenticated because every action on it calls `/admin/api/*`, which enforces the
   session cookie exactly as it does for a curl-driven client. Visiting it with no cookie shows the
   login form, not any account's data.
@@ -462,45 +496,53 @@ closes the class. If you fork this template, keep that check.
 
 ## Verified against
 
-The five platform behaviours documented above are version-dependent. This template was built and verified against:
+The six platform behaviours documented above are version-dependent. This template was built and verified against:
 
 | | Version |
 |---|---|
-| `codehooks-js` | 1.4.10 |
+| `codehooks-js` | 1.4.11 |
 | `coho` CLI | 1.3.3 |
 | Node.js | 23.7 (type stripping, so tests run on `.ts` with no build step) |
 | `jsonwebtoken` | 9.0.3 |
 
 Dependency versions are pinned so a customer installing this template fresh gets the versions it was
-verified against. If you upgrade `codehooks-js`, re-check all five behaviours above — every
+verified against. If you upgrade `codehooks-js`, re-check all six behaviours above — every
 workaround in this codebase exists because of platform behaviour, not preference, and each one fails
 without an error message.
 
 ## Layout
 
 ```
-index.ts              route registration only
-public/index.html     the setup page, served at /setup/ — no build step, no dependencies
-lib/multipart.ts      raw request bytes -> fields + files
-lib/body.ts           content-type dispatch
-lib/validation.ts     field schema enforcement
-lib/security.ts       redirect, CORS and filename safety
-lib/forms.ts          forms collection
-lib/auth.ts           admin JWT
-lib/files.ts          filestore persistence
-lib/search.ts         inbox filter + pagination
-lib/csv.ts            CSV export
-lib/throttle.ts       admin login attempt limiting
-lib/pages.ts          hosted thank-you and error pages
-lib/snippet.ts        generates the paste-into-your-site HTML shown on the setup page
-lib/notify.ts         notification email composition
-lib/recipients.ts     what counts as a valid notification recipient
-lib/stats.ts          form counters — flat storage, composed API shape
-lib/delivery.ts       delivery retry classification, backoff and payload shape
-lib/channels/         notification channel adapters (email)
-lib/providers/        email provider adapters (Brevo, Mailgun)
-lib/attachments.ts    attachment size budgeting
-lib/signed-links.ts   token-scoped file download links for emails
-test/                 200 unit tests, run with node --test, no build step
-example/              the live demo client
+index.ts                route registration only
+public/index.html       dashboard shell markup, the Tailwind config and its @layer components block
+public/app.js           entry: boot, login gate, form rail, tabs
+public/api.js           one function per endpoint; the only place fetch appears
+public/ui.js            el(), dropdown(), modal, toast, confirm, empty states — no innerHTML
+public/submissions.js   the submission list pane and the record pane
+public/settings.js      the Settings tab: snippet, notifications, deliveries, allowlist, delete
+public/format.js        pure display logic (relative time, summaries, byte sizes) — no DOM, no fetch
+lib/multipart.ts        raw request bytes -> fields + files
+lib/body.ts             content-type dispatch
+lib/validation.ts       field schema enforcement
+lib/security.ts         redirect, CORS and filename safety
+lib/forms.ts            forms collection
+lib/auth.ts             admin JWT
+lib/files.ts            filestore persistence
+lib/search.ts           inbox filter + pagination
+lib/counting.ts         bounded, projected count queries (unread badges, list totals)
+lib/spam.ts             honeypot detection and submit-rate limiting
+lib/csv.ts              CSV export
+lib/throttle.ts         admin login attempt limiting
+lib/pages.ts            hosted thank-you and error pages
+lib/snippet.ts          generates the paste-into-your-site HTML shown in the dashboard
+lib/notify.ts           notification email composition
+lib/recipients.ts       what counts as a valid notification recipient
+lib/stats.ts            form counters — flat storage, composed API shape
+lib/delivery.ts         delivery retry classification, backoff and payload shape
+lib/channels/           notification channel adapters (email)
+lib/providers/          email provider adapters (Brevo, Mailgun)
+lib/attachments.ts      attachment size budgeting
+lib/signed-links.ts     token-scoped file download links for emails
+test/                   383 unit tests, run with node --test, no build step
+example/                the live demo client
 ```

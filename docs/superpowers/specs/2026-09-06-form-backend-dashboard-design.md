@@ -96,13 +96,15 @@ Three panes on desktop, the shape of an inbox because that is what this is:
 
 - **Rail** — every form, each with an unread count; a "New form" button.
 - **Tabs above the list** — `Submissions` | `Settings`. Settings is today's setup UI moved across
-  intact: fields, notifications, allowed domains, snippet, delete form.
+  intact: notifications, allowed domains, snippet, delete form. (There is no fields editor — the
+  old page never had one, and this UI does not add one; `fields` stays PATCH-only.)
 - **List** — one row per submission: who it is from, a content snippet, relative time, marks for
   starred and attachments. Search box, status filter, date range, and a footer showing the range and
   total with pagination.
 - **Record** — the submission itself, its files, its metadata, and its notes, with the actions.
 
-Below 1040px the rail collapses to a `<select>` in the header and the list and record stack.
+Below the `lg` breakpoint (1024px) the rail collapses to the `dropdown()` listbox (see below, not a
+native `<select>`) in the header, and the list and record stack.
 
 **The URL stays `/setup/`.** `/admin/` would collide with the `/admin/api/*` routes, and the README,
 the generated snippet, the landing page and the docs all already point at `/setup/`.
@@ -252,8 +254,10 @@ Nothing here loosens the existing posture, and two things need saying explicitly
 - **Browser walkthrough** of the panes against a live deploy: select a form, read a record,
   download a file, search, filter, star, archive, add a note, delete, and every Settings control
   that exists today — confirming nothing regressed in the port.
-- Verify in the browser that no request leaves the origin: the page must load with an empty network
-  allowlist beyond `/setup/` and `/admin/api/*`.
+- Verify in the browser that the network allowlist beyond `/setup/` and `/admin/api/*` is exactly
+  the three hosts named in Approach above (`cdn.tailwindcss.com`, `fonts.googleapis.com`,
+  `fonts.gstatic.com`) — nothing else — and that the page still loads, signs in, lists submissions
+  and opens a record with those three blocked, unstyled but functional.
 
 ## Risks
 
