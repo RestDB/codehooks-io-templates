@@ -16,7 +16,21 @@ export type FormDoc = {
   retentionDays: number;
   created: string;
   updated: string;
-  stats: { total: number; spam: number; lastSubmissionAt: string | null };
+  // Counters are stored as TOP-LEVEL, DOT-FREE fields. See lib/stats.ts for why
+  // they cannot live inside a nested object and still be counted correctly.
+  statsTotal: number;
+  statsSpam: number;
+  statsLastSubmissionAt: string | null;
+  /** Legacy nested object on documents written before the counters were flattened. */
+  stats?: { total: number; spam: number; lastSubmissionAt: string | null };
+  notify: {
+    email: {
+      enabled: boolean;
+      recipients: string[];
+      subjectTemplate: string;
+      attachFiles: boolean;
+    };
+  };
 };
 
 export function defaultForm(name: string): FormDoc {
@@ -34,7 +48,12 @@ export function defaultForm(name: string): FormDoc {
     retentionDays: 0,
     created: now,
     updated: now,
-    stats: { total: 0, spam: 0, lastSubmissionAt: null },
+    statsTotal: 0,
+    statsSpam: 0,
+    statsLastSubmissionAt: null,
+    notify: {
+      email: { enabled: false, recipients: [], subjectTemplate: '', attachFiles: true },
+    },
   };
 }
 
@@ -61,3 +80,4 @@ export async function resolveForm(idOrUuid: string): Promise<FormDoc | null> {
     return null;
   }
 }
+

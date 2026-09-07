@@ -12,10 +12,11 @@
   },
   "license": "ISC",
   "dependencies": {
-    "codehooks-js": "latest",
-    "jsonwebtoken": "latest"
+    "codehooks-js": "^1.4.10",
+    "jsonwebtoken": "^9.0.3"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.0.0"
   }
 }

@@ -1,0 +1,125 @@
+import { signFileToken } from '#lib/signed-links';
+import type { AttachmentPlan } from '#lib/attachments';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// CRLF, lone CR, LF, and the Unicode line/paragraph separators — which mail clients
+// and webmail treat as line breaks. Untrusted text must never begin a line at
+// column 0, where a forged "--- files ---" marker would look genuine. Deliberately
+// NOT a character class like `[\r\n\t -]`: an earlier version of that regex on
+// this branch silently deleted hyphens out of dates.
+const LINE_BREAKS = /\r\n|[\r\n\u2028\u2029]/g;
+
+/**
+ * Neutralise line breaks in untrusted text destined for the plain-text body.
+ * Indenting the continuation by four spaces keeps the text readable while making
+ * it impossible for it to forge a section header at column 0.
+ *
+ * Applied to field NAMES as well as values: a schema-less form accepts any key
+ * (`defaultForm()` ships `fields: []`, `strict: false`), multipart's
+ * `/name="([^"]*)"/` matches CR and LF, and a JSON body reaches `flattenFields()`
+ * with arbitrary keys — so keys are exactly as attacker-controlled as values.
+ */
+export function sanitizeLine(text: unknown): string {
+  return String(text ?? '').replace(LINE_BREAKS, '\n    ');
+}
+
+export type NotificationInput = {
+  formName: string;
+  subjectTemplate: string;
+  fields: Record<string, string>;
+  fieldDefs: Array<{ name: string; type: string }>;
+  meta: { created: string; ip: string; referer: string };
+  plan: AttachmentPlan;
+  submissionId: string;
+  baseUrl: string;
+};
+
+/**
+ * Whose address to reply to. A schema-declared email field wins; otherwise the
+ * first value that looks like an address. Deterministic so it can be tested.
+ */
+export function pickReplyTo(
+  fields: Record<string, string>,
+  defs: Array<{ name: string; type: string }>
+): string | null {
+  for (const def of defs || []) {
+    if (def.type === 'email') {
+      const v = (fields?.[def.name] || '').trim();
+      if (EMAIL_RE.test(v)) return v;
+    }
+  }
+  for (const v of Object.values(fields || {})) {
+    const s = String(v || '').trim();
+    if (EMAIL_RE.test(s)) return s;
+  }
+  return null;
+}
+
+export function renderSubject(
+  template: string,
+  formName: string,
+  fields: Record<string, string>
+): string {
+  const t = template && template.trim() ? template : 'New submission: {{form}}';
+  const rendered = t.replace(/\{\{(\w+)\}\}/g, (_m, key) => {
+    if (key === 'form') return formName;
+    return fields?.[key] ?? '';
+  });
+  // Control characters only. A subject legitimately contains hyphens (dates, compound
+  // words) and other punctuation, so they must survive — the goal is to stop CR/LF
+  // reaching a header, not to sanitise prose.
+  const CONTROL_CHARS = /[\x00-\x1f\x7f\u2028\u2029]/g;
+  return rendered.replace(CONTROL_CHARS, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+}
+
+export function buildNotification(input: NotificationInput): {
+  subject: string;
+  text: string;
+  replyTo: string | null;
+} {
+  const lines: string[] = [];
+
+  for (const [key, value] of Object.entries(input.fields || {})) {
+    lines.push(`${sanitizeLine(key)}: ${sanitizeLine(value)}`);
+  }
+
+  lines.push('');
+  lines.push('--- submission ---');
+  lines.push(`received: ${sanitizeLine(input.meta.created)}`);
+  // Defensive: Node decodes header values as latin1, so no line break has been
+  // shown to survive into these — but they are attacker-influenced strings
+  // rendered at column 0, so they go through the same normalisation as fields.
+  if (input.meta.ip) lines.push(`ip: ${sanitizeLine(input.meta.ip)}`);
+  if (input.meta.referer) lines.push(`referer: ${sanitizeLine(input.meta.referer)}`);
+  // The link to this submission in the inbox, which the design's "The notification
+  // email" section calls for. There is no inbox UI yet, so it points at the admin
+  // API route that returns the submission — it needs an admin session, unlike the
+  // file links above, which is why it is labelled rather than left bare.
+  if (input.baseUrl) {
+    lines.push(`view (admin sign-in required): ${input.baseUrl}/admin/api/submissions/${input.submissionId}`);
+  }
+
+  const all = [...input.plan.attach, ...input.plan.tooLarge];
+  if (all.length) {
+    lines.push('');
+    lines.push('--- files ---');
+    // An uploaded filename is stored verbatim (only the storage PATH goes through
+    // safeName), and multipart's `/filename="([^"]*)"/` matches CR and LF — so it
+    // is untrusted text rendered at column 0, exactly like a field name.
+    for (const file of input.plan.attach) {
+      lines.push(`${sanitizeLine(file.filename)} (attached)`);
+      lines.push(`  ${input.baseUrl}/files/${signFileToken(input.submissionId, file.id)}`);
+    }
+    for (const file of input.plan.tooLarge) {
+      lines.push(`${sanitizeLine(file.filename)} (too large to attach)`);
+      lines.push(`  ${input.baseUrl}/files/${signFileToken(input.submissionId, file.id)}`);
+    }
+  }
+
+  return {
+    subject: renderSubject(input.subjectTemplate, input.formName, input.fields),
+    text: lines.join('\n'),
+    replyTo: pickReplyTo(input.fields, input.fieldDefs),
+  };
+}

@@ -18,7 +18,7 @@ export type ValidationResult = {
 };
 
 // Fields the submit endpoint interprets itself; never part of a form's schema.
-const CONTROL_FIELDS = new Set(['_gotcha', '_redirect', '_subject', '_next']);
+const DEFAULT_CONTROL_FIELDS = ['_gotcha', '_redirect', '_subject', '_next'];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?[0-9][0-9\s().-]{5,}$/;
@@ -78,7 +78,8 @@ export function validateFields(
   defs: FieldDef[],
   data: Record<string, string>,
   strict = false,
-  fileFields: string[] = []
+  fileFields: string[] = [],
+  controlFields: string[] = DEFAULT_CONTROL_FIELDS
 ): ValidationResult {
   const errors: Array<{ field: string; message: string }> = [];
 
@@ -102,8 +103,9 @@ export function validateFields(
 
   if (strict) {
     const known = new Set(defs.map((d) => d.name));
+    const control = new Set(controlFields);
     for (const key of Object.keys(data)) {
-      if (!known.has(key) && !CONTROL_FIELDS.has(key)) {
+      if (!known.has(key) && !control.has(key)) {
         errors.push({ field: key, message: 'Unknown field' });
       }
     }
