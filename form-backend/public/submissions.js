@@ -129,6 +129,7 @@ function buildRow(sub, fields) {
 
   const top = el('div', 'flex items-baseline justify-between gap-2');
   const who = el('span', nameClassName(sub.status), pickWho(sub.data, fields));
+  who.dataset.role = 'who';
   const when = el('span', 'shrink-0 pl-2 font-mono text-[10px] text-muted', relativeTime(sub.created));
   top.appendChild(who);
   top.appendChild(when);
@@ -155,6 +156,24 @@ function buildRow(sub, fields) {
   return btn;
 }
 
+// Repaints a row found fresh, by submission id, rather than a node captured at
+// an earlier point in time. A row's DOM node is only valid for as long as
+// nothing has re-rendered `#rows` since — a filter/pagination change (or a
+// fresh `form-changed` fetch) clears and rebuilds the whole pane, which
+// detaches every button already in hand. If the row for this id isn't in the
+// DOM any more (filtered out, paged away, or the pane moved to another form
+// entirely), there's nothing to repaint — the state is already correct,
+// because whatever caused the row to change is what will show the truth on
+// its own next render.
+function paintRowById(id, status) {
+  const btn = rowsEl.querySelector('[data-id="' + CSS.escape(id) + '"]');
+  if (!btn) return;
+  btn.className = rowClassName(status);
+  btn.dataset.status = status;
+  const who = btn.querySelector('[data-role="who"]');
+  if (who) who.className = nameClassName(status);
+}
+
 function selectRow(sub, btn) {
   for (const node of rowsEl.querySelectorAll('[aria-current="true"]')) {
     node.setAttribute('aria-current', 'false');
@@ -172,13 +191,18 @@ function selectRow(sub, btn) {
 async function markRead(sub, btn) {
   const previous = sub.status;
   sub.status = 'read';
+  // Same tick as the click that produced `btn` — nothing has had a chance to
+  // re-render `#rows` yet, so the captured node is still the right one.
   btn._paint();
 
   const ok = await guarded(
     () => patchSubmission(sub._id, { status: 'read' }),
     (message) => {
       sub.status = previous;
-      btn._paint();
+      // NOT `btn._paint()`: this runs after an `await`, by which point a
+      // filter/pagination change (or a fresh fetch for another form) may have
+      // cleared and rebuilt `#rows`, detaching `btn`. Resolve the row fresh.
+      paintRowById(sub._id, previous);
       toast(message, 'error');
     }
   );
@@ -201,9 +225,27 @@ function renderEmpty(total, filtersActive) {
       'No submissions yet',
       'Point a form at this endpoint and they will appear here.'
     ));
-  } else {
-    rowsEl.appendChild(emptyState('No submissions match that filter.'));
+    return;
   }
+  // A zero-row page with no filter active and offset > 0 is not "no match" —
+  // there is no filter to not match. It means the page paged past a total
+  // that has since shrunk (rows deleted, elsewhere, since this page was
+  // reached), and "No submissions match that filter" would be a lie in a
+  // pane with no filter showing. Offer the honest way out: go back to the
+  // page that still exists.
+  if (!filtersActive && offset > 0) {
+    const empty = emptyState(
+      'You paged past the end',
+      'Some of these submissions were removed. Go back to the first page to see what is left.'
+    );
+    const back = el('button', 'btn btn-quiet mt-3', 'Back to first page');
+    back.type = 'button';
+    back.addEventListener('click', resetAndFetch);
+    empty.appendChild(back);
+    rowsEl.appendChild(empty);
+    return;
+  }
+  rowsEl.appendChild(emptyState('No submissions match that filter.'));
 }
 
 function renderFailure(message) {
@@ -222,6 +264,15 @@ function renderRows(rows, fields) {
 }
 
 async function fetchAndRender() {
+  // Bumped first, before any early return: every path that decides what the
+  // pane should be showing has to invalidate a fetch already in flight, not
+  // just the paths that start a new one. Deleting the only form while its
+  // fetch is in flight used to leave this branch's synchronous "No form
+  // selected" un-invalidating fetchSeq — the in-flight response would then
+  // pass the staleness check below and overwrite the placeholder with a
+  // deleted form's rows.
+  const seq = ++fetchSeq;
+
   const form = currentForm();
   if (!state.formId || !form) {
     clear(rowsEl);
@@ -234,7 +285,6 @@ async function fetchAndRender() {
 
   const filters = activeFilters();
   const query = buildQuery({ ...filters, limit: PAGE_SIZE, offset });
-  const seq = ++fetchSeq;
   let failure = '';
 
   const res = await guarded(
