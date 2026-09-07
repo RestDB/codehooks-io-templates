@@ -9,7 +9,7 @@ import { validateFields } from '#lib/validation';
 import { isHoneypotFilled, controlFieldsFor, checkSubmitRate, checkHoneypotName } from '#lib/spam';
 import { saveUploads } from '#lib/files';
 import { originOf, corsHeaders, safeRedirect } from '#lib/security';
-import { toCsv, collectColumns } from '#lib/csv';
+import { toCsv, mapDataColumns } from '#lib/csv';
 import { thanksPage, errorPage } from '#lib/pages';
 import { filterAndPaginate, clampInt } from '#lib/search';
 import { randomUUID } from 'crypto';
@@ -23,6 +23,7 @@ import {
 import { checkNotifyPatch } from '#lib/recipients';
 import { verifyFileToken } from '#lib/signed-links';
 import { buildSnippet } from '#lib/snippet';
+import { countCapped } from '#lib/counting';
 
 // Boot-time guard — a missing JWT_SECRET would make admin sessions forgeable.
 (function checkConfig() {
@@ -94,7 +95,15 @@ app.get('/admin/api/forms', async (req, res) => {
   // formView composes the `stats` object from the flat counter fields — see
   // lib/forms.ts. Every route that returns a form must go through it, or the
   // caller sees raw storage fields and a `stats` object that is missing or stale.
-  res.json({ ok: true, data: (forms as any[]).map(formView) });
+  //
+  // One bounded scan per form for newCount. The forms list is small by nature —
+  // this is a handful of documents, not a table scan per page view.
+  const withCounts = [];
+  for (const form of forms as any[]) {
+    const { total, exact } = await countCapped(conn, 'submissions', { formId: form.uuid, status: 'new' }, 999);
+    withCounts.push({ ...formView(form), newCount: total, newCountExact: exact });
+  }
+  res.json({ ok: true, data: withCounts });
 });
 
 app.post('/admin/api/forms', async (req, res) => {
@@ -526,6 +535,21 @@ app.get('/thanks/:formId', async (req, res) => {
 // turn one request into an unbounded read.
 const SEARCH_SCAN_CAP = 1000;
 
+// `created` is stored as a full ISO timestamp and this route's date range is
+// compared against it lexicographically ($gte/$lte), so a bare `YYYY-MM-DD`
+// behaves differently depending on which side it's on:
+//   - `from` (>=): a bare date already sorts before every timestamp on that
+//     day (`'2026-09-06' < '2026-09-06T00:00:00.000Z'`), so it correctly
+//     includes the whole day as a lower bound. No change needed.
+//   - `to` (<=): a bare date sorts before every timestamp on that day except
+//     exact midnight, so it silently excludes the day it names. Normalise it
+//     to the end of that day so `to` is inclusive the way a human reading
+//     "through 2026-09-06" expects.
+const BARE_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function inclusiveTo(value: string): string {
+  return BARE_DATE_RE.test(value) ? value + 'T23:59:59.999Z' : value;
+}
+
 app.get('/admin/api/forms/:formId/submissions', async (req, res) => {
   // Accepts either the _id used by /admin/api/forms/:id or the uuid.
   const form = await resolveForm(req.params.formId);
@@ -541,7 +565,7 @@ app.get('/admin/api/forms/:formId/submissions', async (req, res) => {
   if (from || to) {
     query.created = {};
     if (from) query.created.$gte = from;
-    if (to) query.created.$lte = to;
+    if (to) query.created.$lte = inclusiveTo(to);
   }
 
   // Search scans a bounded window from the DB, then filters and pages it in
@@ -551,14 +575,18 @@ app.get('/admin/api/forms/:formId/submissions', async (req, res) => {
       .getMany('submissions', query, { sort: { created: -1 }, limit: SEARCH_SCAN_CAP + 1 })
       .toArray();
     const page = filterAndPaginate(scanned as any[], String(search), off, lim, SEARCH_SCAN_CAP);
-    return res.json({ ok: true, ...page });
+    return res.json({ ok: true, ...page, exact: !page.truncated });
   }
 
   const rows = await conn
     .getMany('submissions', query, { sort: { created: -1 }, limit: lim, offset: off })
     .toArray();
 
-  res.json({ ok: true, data: rows });
+  // The same filter the page was drawn from, so the total can never describe a
+  // different set than the rows above it.
+  const { total, exact } = await countCapped(conn, 'submissions', query);
+
+  res.json({ ok: true, data: rows, total, exact });
 });
 
 app.get('/admin/api/submissions/:id', async (req, res) => {
@@ -659,13 +687,26 @@ app.get('/admin/api/forms/:formId/export.csv', async (req, res) => {
     .getMany('submissions', { formId: form.uuid }, { sort: { created: -1 } })
     .toArray();
 
-  const dataColumns = collectColumns(rows as any);
-  const columns = ['created', 'status', ...dataColumns];
-  const flat = (rows as any[]).map((r) => ({
-    created: r.created,
-    status: r.status,
-    ...r.data,
-  }));
+  // One shared key->header decision (lib/csv.ts's mapDataColumns) for both
+  // the header row and every value row below, so a submitted field literally
+  // named "status" or "created" gets its OWN header (e.g. "status
+  // (submitted)") rather than either overwriting the real admin column or —
+  // the earlier version of this fix — silently vanishing from the export.
+  const headerForKey = mapDataColumns(rows as any);
+  const columns = ['created', 'status', ...Array.from(headerForKey.values())];
+  const flat = (rows as any[]).map((r) => {
+    const row: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(r.data || {})) {
+      row[headerForKey.get(key) as string] = value;
+    }
+    // Admin fields are assigned LAST so a submitted field renamed to
+    // anything other than "created"/"status" above can never reach these two
+    // keys, and even a hypothetical future key collision still can't
+    // overwrite the real triage status or timestamp.
+    row.created = r.created;
+    row.status = r.status;
+    return row;
+  });
 
   res.set('content-type', 'text/csv; charset=utf-8');
   // Neutralise the interpolated identifier — never trust a path param in a header.

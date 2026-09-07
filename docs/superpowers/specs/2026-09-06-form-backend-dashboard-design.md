@@ -31,22 +31,56 @@ review surface now:
   the notifications spec's autoresponder non-goal. The mockup shows a Reply control; it ships as a
   `mailto:` link, not as a sending feature.
 
-## The approach, and what was rejected
+## The approach
 
-The sibling `email-newsletter` template gets its look from Tailwind's play CDN plus DM Sans on
-Google Fonts, in a single 2,031-line `admin.html` its own CLAUDE.md flags as a maintenance hazard.
-Copying that was considered and rejected on two counts: the play CDN is not intended for production
-by Tailwind's own documentation, and it would put a network dependency into a page that currently
-has none — breaking the admin UI offline, behind a strict proxy, or on an air-gapped deployment,
-which is exactly the kind of place a self-hosted form backend gets deployed.
+**Tailwind via the play CDN, DM Sans, and our own components — no build step.**
 
-So: **several focused static files, ES modules, no build step, no CDN, no webfont.** Static hosting
-serves them; the browser resolves the imports. Verified against the live platform before committing
-to it — `app.static` serves `.css` as `text/css` and `.js` as `application/javascript`, both
-correct. `.mjs` returns 404, so **every module file must end in `.js`**.
+An earlier revision of this spec argued the opposite: self-contained CSS, no CDN, no webfont, on
+the grounds that a self-hosted form backend may run offline or behind a strict proxy. That version
+was built and reviewed on screen, and it was not good enough — the type was flat, spacing was
+inconsistent, controls the design system never covered (date fields) fell back to raw browser
+chrome, and empty panes read as broken. The operator compared it against the sibling
+`email-newsletter` admin and chose that approach instead. This section records what we actually
+build, so the document stops describing a page that no longer exists.
 
-The visual lift comes from the palette, the type scale, and the record layout rather than from a
-framework.
+Three external requests: `cdn.tailwindcss.com`, and DM Sans from `fonts.googleapis.com` /
+`fonts.gstatic.com`. **The consequence, stated plainly:** the admin UI needs network access to
+render correctly. Offline or behind a proxy that blocks those hosts, `/setup/` renders unstyled.
+Nothing else is affected — the submit endpoint, the whole `/admin/api/*` surface and every stored
+submission are untouched, because none of them are served by this page.
+
+**No build step, and that constraint is not negotiable.** `public/` is served directly by
+`app.static`, so the template stays forkable and `coho deploy`-able with nothing installed. This is
+why shadcn/ui was considered and rejected: it is React source built on Radix, so adopting it means
+React, JSX and a bundler, and `public/` becomes build output that a customer must rebuild to change
+a colour. Its interaction model is worth copying; its packaging is not.
+
+### Components, not utility soup
+
+The reference template styles 56 buttons with roughly 40 distinct Tailwind utility strings. That is
+the thing its own CLAUDE.md calls a maintenance hazard, and copying it would be a downgrade — the
+version of this dashboard it replaced had 41 semantic classes and four button variants.
+
+So: Tailwind's scale and palette, but the repeated pieces live in `@layer components` inside a
+`<style type="text/tailwindcss">` block — `.btn`, `.btn-primary`, `.btn-danger`, `.btn-quiet`,
+`.field`, `.label`, `.chip`, `.eyebrow`. View modules emit semantic class names; a change of mind is
+one edit rather than forty.
+
+**No native form controls.** `<select>`, `<dialog>` and `<input type="date">` each impose browser
+chrome that no amount of CSS brings fully into the palette, and they look pasted in from another
+application. In their place, built in `ui.js` and shared by every view:
+
+| Component | Replaces | Notes |
+|---|---|---|
+| `dropdown(input, options)` | `<select>` | `role="listbox"`, arrow-key roving focus, Escape and click-outside to close. The value lives in a hidden `<input>` carrying the public id and dispatching `change`, so consumers still read `.value` and listen for `change` |
+| `openModal({...})` | `<dialog>`, `window.prompt` | overlay with backdrop blur, focus moved to the first field |
+| `confirmInline` | `window.confirm` | two-step in place, for destructive actions |
+| `toast(message, kind)` | `alert` | bottom-right, auto-dismissing |
+| `emptyState(title, hint)` | — | icon, title and a next step, so an empty pane reads as waiting rather than broken |
+
+Icons are inline SVG paths in the sibling template's idiom — `fill="none" stroke="currentColor"
+stroke-width="2" viewBox="0 0 24 24"` — with no icon library. The product mark is the form icon from
+the codehooks.io site (`static/img/webhooks/form-icon.svg`), recoloured via `currentColor`.
 
 ## Information architecture
 
@@ -62,13 +96,15 @@ Three panes on desktop, the shape of an inbox because that is what this is:
 
 - **Rail** — every form, each with an unread count; a "New form" button.
 - **Tabs above the list** — `Submissions` | `Settings`. Settings is today's setup UI moved across
-  intact: fields, notifications, allowed domains, snippet, delete form.
+  intact: notifications, allowed domains, snippet, delete form. (There is no fields editor — the
+  old page never had one, and this UI does not add one; `fields` stays PATCH-only.)
 - **List** — one row per submission: who it is from, a content snippet, relative time, marks for
   starred and attachments. Search box, status filter, date range, and a footer showing the range and
   total with pagination.
 - **Record** — the submission itself, its files, its metadata, and its notes, with the actions.
 
-Below 1040px the rail collapses to a `<select>` in the header and the list and record stack.
+Below the `lg` breakpoint (1024px) the rail collapses to the `dropdown()` listbox (see below, not a
+native `<select>`) in the header, and the list and record stack.
 
 **The URL stays `/setup/`.** `/admin/` would collide with the `/admin/api/*` routes, and the README,
 the generated snippet, the landing page and the docs all already point at `/setup/`.
@@ -94,24 +130,26 @@ replace it.
 | `--star` | `#B45309` | starred only |
 
 Deep teal rather than notification-blue: this is an archive of correspondence received from
-strangers, and the accent should read as archival ink rather than as an alert. Status rides a **3px
+strangers, and the accent should read as archival ink rather than as an alert. Status rides a **2px
 left edge on a list row**, never a badge — `new` takes the accent edge and a heavier name, `read`
 takes neither, `archived` recedes into muted text, `spam` takes the red edge and muted text. Two
 colours in the list, total.
 
-**Two type roles, both system fonts.**
+**Two type roles.**
 
 ```
---ui:   -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
-        "Segoe UI", system-ui, Roboto, "Helvetica Neue", sans-serif
---data: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code",
-        "JetBrains Mono", Menlo, Consolas, monospace
+sans: "DM Sans", system-ui, sans-serif          — everything a person reads
+mono: ui-monospace, SFMono-Regular, "SF Mono",  — everything that is data
+      Menlo, monospace
 ```
+
+DM Sans is loaded from Google Fonts, matching the sibling template; the monospace role stays a
+system stack, because a second webfont would buy nothing. Every stack names real fallbacks, so a
+blocked font degrades to a system face rather than to nothing.
 
 The monospace face carries field keys, timestamps, IP addresses, file sizes, IDs and the endpoint
-snippet — the things that are literally data — with `font-variant-numeric: tabular-nums` wherever
-digits align. That contrast is the character of the page, and it costs zero bytes and zero requests.
-A webfont was considered and rejected for the same reason as the CDN.
+snippet — the things that are literally data — with `tabular-nums` wherever digits align. That
+contrast is the character of the page.
 
 **The record is the signature element.** Field keys set small in the monospace face, right-aligned
 in a 7.25rem column; values in the text face across a hairline grid. It reads as the payload it
@@ -174,15 +212,17 @@ prove-it-on-the-platform discipline that caught the multipart, stream and `/heal
 
 ```
 form-backend/public/
-  index.html      shell markup and <template> blocks
-  app.css         tokens, layout, components
+  index.html      shell markup, tailwind config, and the @layer components block
   app.js          entry: boot, auth gate, view routing
   api.js          one function per endpoint; the only place fetch appears
-  ui.js           el(), toast, confirm, relative time, DOM helpers
+  ui.js           el(), dropdown, modal, toast, confirm, empty states
   submissions.js  list pane and record pane
   settings.js     the current setup UI, ported
   format.js       pure display logic — no DOM, no fetch
 ```
+
+There is no `app.css`: the token system lives in the `tailwind.config` block and the component
+classes in `@layer components`, both in `index.html`, which is where the play CDN needs them.
 
 `format.js` exists so the display decisions are testable: `node --test` can import it directly, the
 way `lib/*` modules already are. Everything in it is a pure function.
@@ -214,8 +254,10 @@ Nothing here loosens the existing posture, and two things need saying explicitly
 - **Browser walkthrough** of the panes against a live deploy: select a form, read a record,
   download a file, search, filter, star, archive, add a note, delete, and every Settings control
   that exists today — confirming nothing regressed in the port.
-- Verify in the browser that no request leaves the origin: the page must load with an empty network
-  allowlist beyond `/setup/` and `/admin/api/*`.
+- Verify in the browser that the network allowlist beyond `/setup/` and `/admin/api/*` is exactly
+  the three hosts named in Approach above (`cdn.tailwindcss.com`, `fonts.googleapis.com`,
+  `fonts.gstatic.com`) — nothing else — and that the page still loads, signs in, lists submissions
+  and opens a record with those three blocked, unstyled but functional.
 
 ## Risks
 
@@ -225,5 +267,5 @@ Nothing here loosens the existing posture, and two things need saying explicitly
 | ES modules fail to load on the platform | Verified before design: `.js` serves as `application/javascript`; `.mjs` 404s, so no file uses it |
 | Counts shown are wrong | Counts come from count queries, never from the drifting `stats.total` |
 | Untrusted content escapes into the DOM | `textContent` only; a review gate on any `innerHTML` |
-| Three panes are unusable on a phone | Rail collapses to a select and panes stack below 1040px |
+| Three panes are unusable on a phone | Rail collapses to the `dropdown()` listbox and panes stack below the `lg` breakpoint (1024px) |
 | The page grows into another 2,000-line file | Eight files, each with one responsibility, split at design time rather than after |
