@@ -1,9 +1,9 @@
 // Boot, login gate, form rail, tabs. The list and record panes are wired by
-// later tasks — this module only owns the shell: signing in, which form is
+// submissions.js — this module only owns the shell: signing in, which form is
 // selected, and which tab is showing.
 
 import { login, logout, listForms, createForm } from './api.js';
-import { el, clear, toast, setBusy, openModal, closeModal, modalError, emptyState, dropdown } from './ui.js';
+import { el, clear, toast, setBusy, openModal, closeModal, modalError, dropdown } from './ui.js';
 import { relativeTime, formatCount } from './format.js';
 import { initList } from './submissions.js';
 
@@ -229,22 +229,10 @@ if (datesToggle && datesRow) {
   });
 }
 
-// --- placeholder pane ----------------------------------------------------------
-// Task 7 owns #record. Until then it carries an empty state, because a blank
-// third of the screen reads as broken rather than as waiting. #rows is owned
-// entirely by submissions.js (see initList()) as of Task 6.
-
-function renderPlaceholders() {
-  const record = document.getElementById('record');
-  if (record && !record.children.length) {
-    record.appendChild(emptyState('Nothing selected', 'Choose a submission from the list to read it.'));
-  }
-}
-
-window.addEventListener('form-changed', renderPlaceholders);
-
-
 // --- tabs --------------------------------------------------------------------
+// `#record` (the record pane) and `#rows` (the list) are both owned entirely
+// by submissions.js as of Task 7 — this module only ever toggles `.hidden` on
+// the shell around them, never their content.
 
 function setTab(tab) {
   state.tab = tab;
@@ -272,7 +260,6 @@ tabSettings.addEventListener('click', () => setTab('settings'));
 function showApp() {
   loginEl.hidden = true;
   appEl.hidden = false;
-  renderPlaceholders();
 }
 
 function showLogin() {
