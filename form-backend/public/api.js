@@ -8,7 +8,13 @@ async function call(path, options = {}) {
     ...options,
   });
 
-  if (res.status === 401) {
+  // A 401 from the login endpoint itself doesn't mean a session expired --
+  // there was never one to expire, and firing `session-expired` here has
+  // nothing to do: the login gate is already showing. It means the submitted
+  // password was wrong (or throttled). Skip straight to the normal
+  // body-parsing path below, which surfaces the server's own message
+  // (`payload.error`, e.g. "Invalid password") instead of overwriting it.
+  if (res.status === 401 && path !== '/admin/login') {
     window.dispatchEvent(new CustomEvent('session-expired'));
     throw new Error('Your session has expired. Sign in again.');
   }
