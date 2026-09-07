@@ -47,8 +47,13 @@ export function confirmInline(host, message, onConfirm) {
       clear(host);
     } catch (err) {
       setBusy(yes, false);
+      const existing = host.querySelector('p.err');
       const e = el('p', 'err', err.message);
-      host.appendChild(e);
+      if (existing) {
+        existing.replaceWith(e);
+      } else {
+        host.appendChild(e);
+      }
     }
   });
 
@@ -61,9 +66,11 @@ export function confirmInline(host, message, onConfirm) {
 export function setBusy(button, busy) {
   button.disabled = !!busy;
   if (busy) {
-    button.dataset.label = button.textContent;
-    button.textContent = 'Working…';
-  } else if (button.dataset.label) {
+    if (!('label' in button.dataset)) {
+      button.dataset.label = button.textContent;
+      button.textContent = 'Working…';
+    }
+  } else if ('label' in button.dataset) {
     button.textContent = button.dataset.label;
     delete button.dataset.label;
   }
