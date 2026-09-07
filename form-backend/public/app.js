@@ -3,7 +3,7 @@
 // selected, and which tab is showing.
 
 import { login, logout, listForms, createForm } from './api.js';
-import { el, clear, toast, setBusy } from './ui.js';
+import { el, clear, toast, setBusy, openModal, closeModal, modalError, emptyState, dropdown } from './ui.js';
 import { relativeTime, formatCount } from './format.js';
 
 export const state = { forms: [], formId: null, tab: 'submissions' };
@@ -30,11 +30,15 @@ const listFoot = document.querySelector('.list-foot');
 
 // Every api call funnels through here so a rejection becomes a toast rather
 // than an unhandled promise rejection. Returns undefined on failure.
-async function guarded(fn) {
+// Every api call goes through here, so a rejection becomes a visible message
+// rather than an unhandled promise rejection. `onError` lets a caller show the
+// message somewhere more useful than a toast — inside an open modal, say.
+async function guarded(fn, onError) {
   try {
     return await fn();
   } catch (err) {
-    toast(err.message, 'error');
+    if (onError) onError(err.message);
+    else toast(err.message, 'error');
     return undefined;
   }
 }
@@ -52,7 +56,7 @@ function badgeText(form) {
 }
 
 function buildRailItem(form) {
-  const btn = el('button', 'rail-item');
+  const btn = el('button', 'flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-body transition hover:bg-white/70 aria-[current=true]:bg-white aria-[current=true]:font-medium aria-[current=true]:text-ink aria-[current=true]:shadow-sm');
   btn.type = 'button';
   const current = form._id === state.formId;
   btn.setAttribute('aria-current', current ? 'true' : 'false');
@@ -60,7 +64,7 @@ function buildRailItem(form) {
 
   const text = badgeText(form);
   if (text !== null) {
-    const badge = el('span', 'badge', text);
+    const badge = el('span', 'chip', text);
     badge.setAttribute('data-zero', text === '0' ? 'true' : 'false');
     btn.appendChild(badge);
   }
@@ -87,17 +91,14 @@ function renderRailFoot() {
 
 function renderRail() {
   clear(railEl);
-  clear(railSelect);
 
   for (const form of state.forms) {
     railEl.appendChild(buildRailItem(form));
-
-    const opt = document.createElement('option');
-    opt.value = form._id;
-    opt.textContent = form.name;
-    if (form._id === state.formId) opt.selected = true;
-    railSelect.appendChild(opt);
   }
+
+  // The narrow-screen switcher shows the same forms as the rail.
+  railDropdown.setOptions(state.forms.map((f) => ({ value: f._id, label: f.name })));
+  if (state.formId) railDropdown.setValue(state.formId);
 
   renderRailFoot();
 }
@@ -134,74 +135,111 @@ railSelect.addEventListener('change', () => selectForm(railSelect.value));
 
 // --- new form, inline prompt (never window.prompt) --------------------------
 
-let newFormRow = null;
 
 function closeNewFormPrompt() {
-  if (newFormRow) {
-    newFormRow.remove();
-    newFormRow = null;
-  }
+  closeModal();
 }
 
 function openNewFormPrompt() {
-  if (newFormRow) {
-    newFormRow.querySelector('input').focus();
-    return;
-  }
-
-  const row = el('div', 'note-add');
   const input = document.createElement('input');
   input.type = 'text';
-  input.placeholder = 'Form name';
-  input.setAttribute('aria-label', 'New form name');
-  row.appendChild(input);
+  input.className = 'field';
+  input.placeholder = 'Contact form';
+  input.setAttribute('aria-label', 'Form name');
 
-  const create = el('button', 'act primary', 'Create');
-  create.type = 'button';
-  row.appendChild(create);
-
-  const cancel = el('button', 'act', 'Cancel');
-  cancel.type = 'button';
-  row.appendChild(cancel);
-
-  newFormBtn.insertAdjacentElement('afterend', row);
-  newFormRow = row;
-  input.focus();
-
-  cancel.addEventListener('click', closeNewFormPrompt);
-
-  const submit = async () => {
+  const submit = async (btn) => {
     const name = input.value.trim();
     if (!name) {
+      modalError('Give the form a name so you can tell it apart later.');
       input.focus();
       return;
     }
-    setBusy(create, true);
+    setBusy(btn, true);
     const created = await guarded(async () => {
       const res = await createForm(name);
       await refreshForms();
       return res.data;
-    });
-    setBusy(create, false);
+    }, (msg) => modalError(msg));
+    setBusy(btn, false);
     if (created) {
-      closeNewFormPrompt();
+      closeModal();
       selectForm(created._id);
+      toast('Form created.');
     }
   };
 
-  create.addEventListener('click', submit);
+  openModal({
+    title: 'New form',
+    description: 'Name it after the page it lives on, so submissions are easy to place.',
+    body: input,
+    actions: [{ label: 'Create form', onClick: submit }],
+  });
+
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      submit();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      closeNewFormPrompt();
+      const btn = document.querySelector('#modal-actions .btn-primary');
+      if (btn) submit(btn);
     }
   });
 }
 
+// --- listboxes ---------------------------------------------------------------
+// The value lives in a hidden input carrying the public id, so every consumer
+// still reads `.value` and listens for `change` exactly as with a <select>.
+
+const statusSlot = document.getElementById('status-slot');
+if (statusSlot) {
+  dropdown(document.getElementById('status'), [
+    { value: '', label: 'All' },
+    { value: 'new', label: 'New' },
+    { value: 'read', label: 'Read' },
+    { value: 'archived', label: 'Archived' },
+    { value: 'spam', label: 'Spam' },
+  ], 'Filter by status');
+  // Move the listbox INTO the slot. replaceWith() would discard the slot and the
+  // layout classes it carries — which is how the mobile-only switcher ended up
+  // visible on desktop, its lg:hidden thrown away with the element holding it.
+  statusSlot.appendChild(document.getElementById('status').nextElementSibling);
+}
+
+const railDropdown = dropdown(railSelect, [], 'Select a form');
+document.getElementById('rail-select-slot')?.appendChild(railSelect.nextElementSibling);
+
 newFormBtn.addEventListener('click', openNewFormPrompt);
+
+// --- date range --------------------------------------------------------------
+// Two date fields permanently parked above an inbox is a lot of furniture for a
+// filter most people never touch, so they fold away behind the calendar button.
+
+const datesToggle = document.getElementById('dates-toggle');
+const datesRow = document.getElementById('dates');
+if (datesToggle && datesRow) {
+  datesToggle.addEventListener('click', () => {
+    const open = datesRow.hidden;
+    datesRow.hidden = !open;
+    datesToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) datesRow.querySelector('input')?.focus();
+  });
+}
+
+// --- placeholder panes -------------------------------------------------------
+// Tasks 6 and 7 own these panes. Until then they carry an empty state, because a
+// blank third of the screen reads as broken rather than as waiting.
+
+function renderPlaceholders() {
+  const rows = document.getElementById('rows');
+  const record = document.getElementById('record');
+  if (rows && !rows.children.length) {
+    rows.appendChild(emptyState('No submissions yet', 'Point a form on your site at this endpoint and they will land here.'));
+  }
+  if (record && !record.children.length) {
+    record.appendChild(emptyState('Nothing selected', 'Choose a submission from the list to read it.'));
+  }
+}
+
+window.addEventListener('form-changed', renderPlaceholders);
+
 
 // --- tabs --------------------------------------------------------------------
 
@@ -229,6 +267,7 @@ tabSettings.addEventListener('click', () => setTab('settings'));
 function showApp() {
   loginEl.hidden = true;
   appEl.hidden = false;
+  renderPlaceholders();
 }
 
 function showLogin() {

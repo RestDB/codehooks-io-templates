@@ -1,70 +1,164 @@
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Form Backend</title>
-<link rel="stylesheet" href="app.css">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          paper: '#FBFAF7',
+          sunk: '#F4F2EE',
+          cream: '#E7E5E4',
+          ink: '#1C1917',
+          body: '#44403C',
+          muted: '#A8A29E',
+          primary: '#0F5C5C',
+          'primary-soft': '#E3EFEE',
+          flag: '#B91C1C',
+          star: '#B45309',
+        },
+        fontFamily: {
+          sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+          mono: ['ui-monospace', 'SFMono-Regular', '"SF Mono"', 'Menlo', 'monospace'],
+        },
+      },
+    },
+  };
+</script>
+<style type="text/tailwindcss">
+  /* Semantic components, so the view modules stay readable and a change of mind
+     is one edit rather than forty utility strings. */
+  @layer components {
+    .btn         { @apply inline-flex items-center justify-center gap-1.5 rounded-lg border border-cream bg-white px-3 py-1.5 text-sm text-body transition hover:bg-sunk disabled:cursor-not-allowed disabled:opacity-40; }
+    .btn-primary { @apply border-primary bg-primary text-white hover:bg-primary/90; }
+    .btn-danger  { @apply text-flag hover:border-flag/30 hover:bg-flag/5; }
+    .btn-quiet   { @apply border-transparent bg-transparent text-muted hover:bg-sunk hover:text-body; }
+    .field       { @apply w-full rounded-lg border border-cream bg-paper px-3 py-1.5 text-sm text-body transition placeholder:text-muted focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/20; }
+    .label       { @apply mb-1 block text-xs font-medium text-body/70; }
+    .chip        { @apply inline-flex items-center rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none tabular-nums text-white; }
+    .eyebrow     { @apply font-mono text-[10px] uppercase tracking-[0.09em] text-muted; }
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body class="bg-paper font-sans text-body antialiased">
 
-<div class="gate" id="login">
-  <form id="login-form">
-    <h1>Form Backend</h1>
-    <label for="password">Admin password</label>
-    <input type="password" id="password" autocomplete="current-password" required>
-    <button type="submit" class="act primary">Sign in</button>
-    <p class="err" id="login-error"></p>
+<!-- login -->
+<div class="grid min-h-screen place-items-center p-4" id="login">
+  <form id="login-form" class="w-full max-w-sm rounded-2xl border border-cream bg-white p-7 shadow-sm">
+    <div class="mb-5 flex items-center gap-2.5">
+      <span class="grid h-9 w-9 place-items-center rounded-lg bg-primary text-white">
+        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+      </span>
+      <div>
+        <h1 class="text-base font-semibold leading-tight text-ink">Form Backend</h1>
+        <p class="text-xs text-muted">Sign in to read your submissions</p>
+      </div>
+    </div>
+    <label class="label" for="password">Admin password</label>
+    <input type="password" id="password" class="field" autocomplete="current-password" required>
+    <button type="submit" class="btn btn-primary mt-4 w-full py-2">Sign in</button>
+    <p class="mt-3 min-h-[1.25rem] text-xs text-flag" id="login-error"></p>
   </form>
 </div>
 
-<div class="panes" id="app" hidden>
+<!-- app -->
+<div class="grid h-screen grid-cols-1 lg:grid-cols-[15rem_22rem_minmax(0,1fr)]" id="app" hidden>
 
-  <nav class="rail" aria-label="Forms">
-    <div class="rail-head">
-      <span class="mark">Form Backend</span>
+  <nav class="flex flex-col gap-5 border-b border-cream bg-sunk p-3 lg:border-b-0 lg:border-r" aria-label="Forms">
+    <div class="flex items-center gap-2 px-1 pt-1">
+      <span class="grid h-7 w-7 place-items-center rounded-md bg-primary text-white">
+        <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+      </span>
+      <span class="text-sm font-semibold text-ink">Form Backend</span>
     </div>
+
     <div>
-      <div class="rail-label">Forms</div>
-      <select id="rail-select" aria-label="Select a form"></select>
-      <div class="rail-list" id="rail"></div>
-      <button class="rail-new" type="button" id="new-form">+ New form</button>
+      <div class="eyebrow mb-1.5 px-1">Forms</div>
+      <input type="hidden" id="rail-select" value="">
+      <div class="mb-2 lg:hidden" id="rail-select-slot"></div>
+      <div class="flex flex-col gap-0.5" id="rail"></div>
+      <button class="btn btn-quiet mt-1.5 w-full justify-start border-dashed border-cream text-primary" type="button" id="new-form">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        New form
+      </button>
     </div>
-    <div class="rail-foot" id="rail-foot"></div>
-    <button class="rail-logout" type="button" id="logout">Log out</button>
+
+    <div class="mt-auto flex flex-col gap-2 px-1">
+      <div class="font-mono text-[10px] leading-relaxed text-muted" id="rail-foot"></div>
+      <button class="btn btn-quiet w-full justify-start px-1 text-xs" type="button" id="logout">
+        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        Log out
+      </button>
+    </div>
   </nav>
 
-  <section class="list" aria-label="Submissions">
-    <div class="tabs" role="tablist">
-      <button class="tab" role="tab" id="tab-submissions" aria-selected="true" type="button">Submissions</button>
-      <button class="tab" role="tab" id="tab-settings" aria-selected="false" type="button">Settings</button>
+  <section class="flex min-w-0 flex-col border-b border-cream bg-white lg:border-b-0 lg:border-r" aria-label="Submissions">
+    <div class="flex gap-1 px-3 pt-2" role="tablist">
+      <button class="border-b-2 border-transparent px-2 pb-2 pt-1 text-sm text-muted transition hover:text-body aria-selected:border-primary aria-selected:font-medium aria-selected:text-ink" role="tab" id="tab-submissions" aria-selected="true" type="button">Submissions</button>
+      <button class="border-b-2 border-transparent px-2 pb-2 pt-1 text-sm text-muted transition hover:text-body aria-selected:border-primary aria-selected:font-medium aria-selected:text-ink" role="tab" id="tab-settings" aria-selected="false" type="button">Settings</button>
     </div>
-    <div class="filters">
-      <input type="search" id="q" placeholder="Search submissions" aria-label="Search submissions">
-      <select id="status" aria-label="Filter by status">
-        <option value="">All</option>
-        <option value="new">New</option>
-        <option value="read">Read</option>
-        <option value="archived">Archived</option>
-        <option value="spam">Spam</option>
-      </select>
+
+    <div class="flex items-center gap-1.5 border-y border-cream px-3 py-2">
+      <div class="relative min-w-0 flex-1">
+        <svg class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
+        <input type="search" id="q" class="field pl-8" placeholder="Search" aria-label="Search submissions">
+      </div>
+      <input type="hidden" id="status" value="">
+      <div class="w-28 shrink-0" id="status-slot"></div>
+      <button type="button" id="dates-toggle" class="btn btn-quiet shrink-0 px-1.5" aria-expanded="false" aria-controls="dates" title="Filter by date">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3M3 11h18M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+      </button>
     </div>
-    <div class="filters">
-      <input type="date" id="from" aria-label="From date">
-      <input type="date" id="to" aria-label="To date">
+
+    <div class="flex items-center gap-1.5 border-b border-cream px-3 py-2" id="dates" hidden>
+      <input type="text" id="from" class="field font-mono text-xs" placeholder="From  YYYY-MM-DD" aria-label="From date" inputmode="numeric">
+      <input type="text" id="to" class="field font-mono text-xs" placeholder="To  YYYY-MM-DD" aria-label="To date" inputmode="numeric">
     </div>
-    <div class="rows" id="rows"></div>
-    <div class="list-foot">
-      <span id="count"></span>
-      <span class="pager">
-        <button type="button" id="prev" aria-label="Previous page">&larr;</button>
-        <button type="button" id="next" aria-label="Next page">&rarr;</button>
+
+    <div class="min-h-0 flex-1 overflow-y-auto" id="rows"></div>
+
+    <div class="flex items-center justify-between border-t border-cream bg-paper px-3 py-2">
+      <span class="font-mono text-[11px] tabular-nums text-muted" id="count"></span>
+      <span class="flex gap-1">
+        <button type="button" id="prev" class="btn btn-quiet px-1.5 py-1" aria-label="Previous page">
+          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+        </button>
+        <button type="button" id="next" class="btn btn-quiet px-1.5 py-1" aria-label="Next page">
+          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </button>
       </span>
     </div>
   </section>
 
-  <section class="record" aria-label="Submission record" id="record"></section>
-
-  <section class="record" aria-label="Form settings" id="pane-settings" hidden></section>
+  <section class="flex min-w-0 flex-col overflow-y-auto bg-white" aria-label="Submission record" id="record"></section>
+  <section class="flex min-w-0 flex-col overflow-y-auto bg-white" aria-label="Form settings" id="pane-settings" hidden></section>
 
 </div>
 
-<div id="toasts" aria-live="polite"></div>
+<!-- modal: a plain overlay, not <dialog> -->
+<div id="modal" class="fixed inset-0 z-50" hidden>
+  <div class="absolute inset-0 bg-ink/25 backdrop-blur-sm" id="modal-backdrop"></div>
+  <div class="absolute inset-0 grid place-items-center p-4">
+    <div class="w-full max-w-sm rounded-2xl border border-cream bg-white p-6 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h2 class="text-base font-semibold text-ink" id="modal-title"></h2>
+      <p class="mt-1 text-xs text-muted" id="modal-desc"></p>
+      <div class="mt-4" id="modal-body"></div>
+      <p class="mt-2 min-h-[1.25rem] text-xs text-flag" id="modal-error"></p>
+      <div class="mt-4 flex justify-end gap-2" id="modal-actions"></div>
+    </div>
+  </div>
+</div>
+
+<div id="toasts" class="fixed bottom-4 right-4 z-[60] flex flex-col gap-2" aria-live="polite"></div>
 
 <script type="module" src="app.js"></script>
+</body>
+</html>
