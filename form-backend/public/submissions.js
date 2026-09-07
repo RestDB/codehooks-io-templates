@@ -94,6 +94,32 @@ function nameClassName(status) {
   return 'truncate text-sm text-body';
 }
 
+const MARK_PATHS = {
+  star: 'M11.48 3.5a.56.56 0 011.04 0l2.13 4.32 4.77.69c.46.07.64.63.31.95l-3.45 3.36.81 4.75a.56.56 0 01-.81.59L12 15.92l-4.27 2.24a.56.56 0 01-.81-.59l.81-4.75-3.45-3.36a.56.56 0 01.31-.95l4.77-.69L11.48 3.5z',
+  clip: 'M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48',
+};
+
+/** A small inline mark for the row: a star for starred, a clip for attachments. */
+function markIcon(kind) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'mr-1 inline-block h-3 w-3 align-[-1px] ' + (kind === 'star' ? 'text-star' : 'text-muted'));
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  if (kind === 'star') {
+    svg.setAttribute('fill', 'currentColor');
+  } else {
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+  }
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', MARK_PATHS[kind]);
+  svg.appendChild(path);
+  return svg;
+}
+
 function buildRow(sub, fields) {
   const btn = el('button');
   btn.type = 'button';
@@ -108,8 +134,10 @@ function buildRow(sub, fields) {
   top.appendChild(when);
 
   const snip = el('p', 'truncate text-xs text-muted');
-  const marks = [sub.starred ? '★' : '', sub.files && sub.files.length ? '❑' : ''].filter(Boolean).join(' ');
-  if (marks) snip.appendChild(el('span', 'mr-1 text-star', marks));
+  // Icons, not glyphs. ❑ renders as an orange box in DM Sans on macOS — it falls
+  // through to an emoji font — so an attachment looked like a broken character.
+  if (sub.starred) snip.appendChild(markIcon('star'));
+  if (sub.files && sub.files.length) snip.appendChild(markIcon('clip'));
   snip.appendChild(document.createTextNode(pickSnippet(sub.data, fields)));
 
   btn.appendChild(top);

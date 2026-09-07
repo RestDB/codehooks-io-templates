@@ -31,7 +31,9 @@ const rowsEl = document.getElementById('rows');
 // nothing: listFoot became null and threw on the Settings tab, and the filter bar
 // stopped hiding. Utility classes change whenever the design does; ids are the
 // contract every view module already binds to.
-const filterRows = [document.getElementById('filter-bar'), document.getElementById('dates')].filter(Boolean);
+const filterBar = document.getElementById('filter-bar');
+const datesToggle = document.getElementById('dates-toggle');
+const datesRow = document.getElementById('dates');
 const listFoot = document.getElementById('list-foot');
 
 // Every api call funnels through here so a rejection becomes a toast rather
@@ -218,8 +220,6 @@ newFormBtn.addEventListener('click', openNewFormPrompt);
 // Two date fields permanently parked above an inbox is a lot of furniture for a
 // filter most people never touch, so they fold away behind the calendar button.
 
-const datesToggle = document.getElementById('dates-toggle');
-const datesRow = document.getElementById('dates');
 if (datesToggle && datesRow) {
   datesToggle.addEventListener('click', () => {
     const open = datesRow.hidden;
@@ -257,9 +257,11 @@ function setTab(tab) {
   paneSettings.hidden = submissionsActive;
   rowsEl.hidden = !submissionsActive;
   listFoot.hidden = !submissionsActive;
-  filterRows.forEach((row) => {
-    row.hidden = !submissionsActive;
-  });
+  // The date row is owned by its toggle, not by the tab. Unhiding it here would
+  // unfold it every time you came back from Settings, regardless of whether the
+  // customer had asked for it.
+  filterBar.hidden = !submissionsActive;
+  datesRow.hidden = !submissionsActive || datesToggle.getAttribute('aria-expanded') !== 'true';
 }
 
 tabSubmissions.addEventListener('click', () => setTab('submissions'));
