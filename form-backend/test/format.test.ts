@@ -90,6 +90,14 @@ test('pickWho ignores non-string values rather than rendering [object Object]', 
   assert.ok(!out.includes('object Object'), `pickWho rendered ${out}`);
 });
 
+test('pickWho and pickSnippet preserve hyphens rather than stripping them', () => {
+  assert.equal(pickWho({ name: 'Smith-Jones' }, []), 'Smith-Jones');
+  assert.equal(
+    pickSnippet({ name: 'Ada', message: 'Meeting on 2026-09-06' }, []),
+    'Meeting on 2026-09-06'
+  );
+});
+
 // --- pickSnippet ----------------------------------------------------
 
 test('pickSnippet prefers a message field', () => {

@@ -23,6 +23,7 @@ import {
 import { checkNotifyPatch } from '#lib/recipients';
 import { verifyFileToken } from '#lib/signed-links';
 import { buildSnippet } from '#lib/snippet';
+import { countCapped } from '#lib/counting';
 
 // Boot-time guard — a missing JWT_SECRET would make admin sessions forgeable.
 (function checkConfig() {
@@ -94,7 +95,15 @@ app.get('/admin/api/forms', async (req, res) => {
   // formView composes the `stats` object from the flat counter fields — see
   // lib/forms.ts. Every route that returns a form must go through it, or the
   // caller sees raw storage fields and a `stats` object that is missing or stale.
-  res.json({ ok: true, data: (forms as any[]).map(formView) });
+  //
+  // One bounded scan per form for newCount. The forms list is small by nature —
+  // this is a handful of documents, not a table scan per page view.
+  const withCounts = [];
+  for (const form of forms as any[]) {
+    const { total } = await countCapped(conn, 'submissions', { formId: form.uuid, status: 'new' }, 999);
+    withCounts.push({ ...formView(form), newCount: total });
+  }
+  res.json({ ok: true, data: withCounts });
 });
 
 app.post('/admin/api/forms', async (req, res) => {
@@ -551,14 +560,18 @@ app.get('/admin/api/forms/:formId/submissions', async (req, res) => {
       .getMany('submissions', query, { sort: { created: -1 }, limit: SEARCH_SCAN_CAP + 1 })
       .toArray();
     const page = filterAndPaginate(scanned as any[], String(search), off, lim, SEARCH_SCAN_CAP);
-    return res.json({ ok: true, ...page });
+    return res.json({ ok: true, ...page, exact: !page.truncated });
   }
 
   const rows = await conn
     .getMany('submissions', query, { sort: { created: -1 }, limit: lim, offset: off })
     .toArray();
 
-  res.json({ ok: true, data: rows });
+  // The same filter the page was drawn from, so the total can never describe a
+  // different set than the rows above it.
+  const { total, exact } = await countCapped(conn, 'submissions', query);
+
+  res.json({ ok: true, data: rows, total, exact });
 });
 
 app.get('/admin/api/submissions/:id', async (req, res) => {
