@@ -58,3 +58,33 @@ test('a failing store yields zero rather than breaking the page', async () => {
   const r = await countCapped(broken as any, 'submissions', {});
   assert.deepEqual(r, { total: 0, exact: false });
 });
+
+// --- GET /admin/api/forms must forward `exact`, not just `total` ------------
+//
+// index.ts cannot be imported under `node --test` (it pulls in codehooks-js,
+// same restriction documented in test/stats.test.ts for lib/forms.ts), so this
+// exercises the real countCapped() and applies the exact mapping the route
+// uses — { newCount: total, newCountExact: exact } — to prove the three states
+// a consumer must be able to tell apart stay distinguishable. A regression that
+// drops `exact` (`const { total } = await countCapped(...)`) collapses "scan
+// failed" and "genuinely zero" into the same { newCount: 0 } shape.
+
+function toFormsRouteShape(r: { total: number; exact: boolean }) {
+  const { total, exact } = r;
+  return { newCount: total, newCountExact: exact };
+}
+
+test('the forms route must forward exact so a failed scan is not shown as zero', async () => {
+  const zero = await countCapped(fakeConn(0), 'submissions', { formId: 'f1', status: 'new' }, 999);
+  const broken = { getMany() { throw new Error('db down'); } };
+  const failed = await countCapped(broken as any, 'submissions', { formId: 'f2', status: 'new' }, 999);
+  const atCap = await countCapped(fakeConn(5000), 'submissions', { formId: 'f3', status: 'new' }, 999);
+
+  assert.deepEqual(toFormsRouteShape(zero), { newCount: 0, newCountExact: true });
+  assert.deepEqual(toFormsRouteShape(failed), { newCount: 0, newCountExact: false });
+  assert.deepEqual(toFormsRouteShape(atCap), { newCount: 999, newCountExact: false });
+
+  // The whole point: "genuinely zero" and "scan failed" must not collapse into
+  // the same shape once `newCount` alone is all a consumer can see.
+  assert.notDeepEqual(toFormsRouteShape(zero), toFormsRouteShape(failed));
+});

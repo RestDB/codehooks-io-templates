@@ -100,8 +100,8 @@ app.get('/admin/api/forms', async (req, res) => {
   // this is a handful of documents, not a table scan per page view.
   const withCounts = [];
   for (const form of forms as any[]) {
-    const { total } = await countCapped(conn, 'submissions', { formId: form.uuid, status: 'new' }, 999);
-    withCounts.push({ ...formView(form), newCount: total });
+    const { total, exact } = await countCapped(conn, 'submissions', { formId: form.uuid, status: 'new' }, 999);
+    withCounts.push({ ...formView(form), newCount: total, newCountExact: exact });
   }
   res.json({ ok: true, data: withCounts });
 });
